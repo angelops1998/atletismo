@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% block title %}Asistencia — {{ club.club_nombre }}{% endblock %}
+
+{% block barra %}
+<header class="barra">
+    <div class="barra-izq">
+        <h1>Tomar lista</h1>
+        <div class="sub">{{ dia|fecha }}</div>
+    </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+{% if guardado %}
+<div class="aviso aviso-ok" style="margin-bottom:14px">La lista quedó guardada.</div>
+{% endif %}
+
+<div class="acciones" style="margin-bottom:12px; align-items:center">
+    <a href="/asistencia?fecha={{ anterior }}" class="btn btn-sm">{{ icono('flecha-izq') }}</a>
+    <form method="get" action="/asistencia" style="flex:1">
+        <input type="date" name="fecha" value="{{ dia }}" onchange="this.form.submit()">
+    </form>
+    <a href="/asistencia?fecha={{ siguiente }}" class="btn btn-sm">{{ icono('flecha-der') }}</a>
+    {% if not es_hoy %}<a href="/asistencia" class="btn btn-sm">Hoy</a>{% endif %}
+</div>
+
+<form method="post" action="/asistencia">
+    {{ csrf_input(request) }}
+    <input type="hidden" name="fecha" value="{{ dia }}">
+
+    <div class="card">
+        <div class="card-head">
+            <h3>{{ filas|length }} atletas</h3>
+            <button type="button" class="btn btn-sm" data-todos-presentes>Todos presentes</button>
+        </div>
+        <div class="lista">
+            {% for f in filas %}
+            <div class="item" style="flex-wrap:wrap">
+                <span class="avatar">{{ f.atleta.nombre[0] }}</span>
+                <div class="item-txt">
+                    <div class="item-nombre">{{ f.atleta.nombre }}</div>
+                    <div class="item-sub">
+                        {% if f.pct is not none %}
+                        Viene al {{ f.pct }}% ({{ f.presentes }} de {{ f.tomadas }} últimas)
+                        {% else %}Sin historial{% endif %}
+                    </div>
+                </div>
+                <div class="binario estados">
+                    {% for estado in estados %}
+                    <input type="radio" id="est_{{ f.atleta.id }}_{{ estado }}"
+                           name="estado_{{ f.atleta.id }}" value="{{ estado }}"
+                           {% if f.estado == estado %}checked{% endif %}>
+                    <label for="est_{{ f.atleta.id }}_{{ estado }}">{{ estado|capitalize }}</label>
+                    {% endfor %}
+                    {# "Sin marcar" no es lo mismo que "ausente": es para deshacer una
+                       marca puesta por error, y un día sin lista tomada no puede contar
+                       como faltas de todo el grupo. #}
+                    <input type="radio" id="est_{{ f.atleta.id }}_nada"
+                           name="estado_{{ f.atleta.id }}" value=""
+                           {% if not f.estado %}checked{% endif %}>
+                    <label for="est_{{ f.atleta.id }}_nada">Sin marcar</label>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div style="margin-top:16px">
+        <button type="submit" class="btn btn-primario btn-bloque btn-grande">
+            {{ icono('check') }} Guardar la lista
+        </button>
+    </div>
+</form>
+{% endblock %}

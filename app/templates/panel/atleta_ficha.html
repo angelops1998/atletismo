@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% from "_graficos.html" import linea, barras %}
+{% block title %}{{ atleta.nombre }} — {{ club.club_nombre }}{% endblock %}
+
+{% block barra %}
+<header class="barra">
+    <div class="barra-izq">
+        <h1>{{ atleta.nombre }}</h1>
+        <div class="sub">
+            {{ atleta.categoria or 'Sin categoría' }}
+            {%- if atleta.edad() %} · {{ atleta.edad() }} años{% endif -%}
+            {%- if not atleta.is_active %} · dado de baja{% endif -%}
+        </div>
+    </div>
+    <div class="barra-acciones">
+        <a href="/atletas/{{ atleta.id }}/editar" class="btn btn-sm">Editar</a>
+    </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+<a href="/atletas" class="volver">{{ icono('flecha-izq') }} Todos los atletas</a>
+
+{% if password_nueva %}
+<div class="aviso aviso-atencion" style="margin-bottom:14px">
+    <strong>Contraseña provisoria: {{ password_nueva }}</strong><br>
+    Dictásela ahora: no se vuelve a mostrar. La app le va a pedir que la cambie
+    cuando entre.
+</div>
+{% endif %}
+
+{% if not atleta.is_active %}
+<div class="aviso aviso-info" style="margin-bottom:14px">
+    Este atleta está dado de baja: no cuenta para las estadísticas ni para la cobranza.
+</div>
+{% endif %}
+
+{% if alertas %}
+<div class="card" style="border-color: var(--mal-tint)">
+    <div class="card-head"><h3>Para revisar</h3></div>
+    {% for a in alertas %}
+    <div class="alerta alerta-{{ a.nivel }}">
+        <span class="alerta-punto"></span>
+        <div>
+            <div class="alerta-titulo">{{ a.titulo }}</div>
+            <div class="alerta-detalle">{{ a.detalle }}</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="kpis" style="margin-top:12px">
+    {% set ultimo = serie[-1] %}
+    <div class="kpi">
+        <div class="valor">{{ ultimo.bienestar or '—' }}</div>
+        <div class="etiqueta">Bienestar</div>
+        <div class="detalle">esta semana, sobre {{ maximo }}</div>
+    </div>
+    <div class="kpi">
+        <div class="valor">{{ ('%.1f'|format(ultimo.sueno)) if ultimo.sueno else '—' }}</div>
+        <div class="etiqueta">Horas de sueño</div>
+        <div class="detalle">promedio por noche</div>
+    </div>
+    <div class="kpi {{ 'kpi-mal' if acwr and (acwr > 1.5 or acwr < 0.8) else '' }}">
+        <div class="valor">{{ acwr or '—' }}</div>
+        <div class="etiqueta">Ratio de carga</div>
+        <div class="detalle">1.0 = igual que lo habitual</div>
+    </div>
+    <div class="kpi {{ 'kpi-mal' if cuenta.estado == 'debe' else 'kpi-ok' }}">
+        <div class="valor" style="font-size:19px">{{ cuenta.texto }}</div>
+        <div class="etiqueta">Cuota</div>
+        <div class="detalle">{{ atleta.cuota_mensual|pesos }} por mes</div>
+    </div>
+</div>
+
+<div class="seccion-titulo"><h2>Evolución</h2></div>
+<div class="split">
+    <div class="card">
+        <div class="card-head"><h3>Bienestar</h3></div>
+        <div class="card-body">
+            {{ linea(grafico_bienestar, 'hace ' ~ serie|length ~ ' semanas', 'esta semana') }}
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head"><h3>Carga de entrenamiento</h3></div>
+        <div class="card-body">
+            {{ barras(grafico_carga) }}
+            <p class="apunte">Esfuerzo percibido × minutos. Los saltos bruscos son
+                los que terminan en lesión.</p>
+        </div>
+    </div>
+</div>
+<div class="split">
+    <div class="card">
+        <div class="card-head"><h3>Horas de sueño</h3></div>
+        <div class="card-body">{{ linea(grafico_sueno) }}</div>
+    </div>
+    {% if tiene_peso %}
+    <div class="card">
+        <div class="card-head"><h3>Peso</h3></div>
+        <div class="card-body">{{ linea(grafico_peso) }}</div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="seccion-titulo"><h2>Partes semanales</h2></div>
+<div class="card">
+    <div class="tabla-scroll">
+        <table>
+            <thead>
+            <tr>
+                <th>Semana</th><th class="num">Bienestar</th><th class="num">Sueño</th>
+                <th class="num">Comida</th><th class="num">Carga</th>
+                <th>Molestias</th><th>Comentarios</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for f in serie|reverse %}
+            <tr>
+                <td>{{ f.semana|fecha_corta }}</td>
+                <td class="num">
+                    {% if f.bienestar %}
+                    <span class="chip chip-{{ 'ok' if f.bienestar > 17 else ('atencion' if f.bienestar > 12 else 'mal') }}">{{ f.bienestar }}</span>
+                    {% else %}<span class="tenue">sin cargar</span>{% endif %}
+                </td>
+                <td class="num">{{ ('%.1f'|format(f.sueno)) if f.sueno else '—' }}</td>
+                <td class="num">{{ f.parte.alimentacion_calidad if f.parte and f.parte.alimentacion_calidad else '—' }}</td>
+                <td class="num">{{ f.carga or '—' }}</td>
+                <td>
+                    {% if f.parte and f.parte.molestias %}
+                    <span class="chip chip-mal">{{ f.parte.molestia_zona }} {{ f.parte.molestia_dolor }}/10</span>
+                    {% else %}<span class="tenue">—</span>{% endif %}
+                </td>
+                <td class="tenue" style="max-width:220px">{{ (f.parte.comentarios if f.parte else '') or '' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="seccion-titulo">
+    <h2>Marcas</h2>
+    <a href="/marcas">Cargar una marca</a>
+</div>
+{% if resumen_pruebas %}
+{% for r in resumen_pruebas %}
+<div class="card">
+    <div class="card-head">
+        <h3>{{ r.nombre }}</h3>
+        <div class="acciones">
+            <span class="chip chip-tartan">Mejor: {{ pruebas.formatear(r.clave, r.mejor) }}</span>
+            {% if r.progreso is not none %}
+            <span class="chip chip-{{ 'ok' if r.progreso > 0 else 'mal' }}">
+                {{ '+' if r.progreso > 0 }}{{ r.progreso }}%
+            </span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-body">
+        {% if r.marcas|length > 1 %}{{ linea(r.grafico) }}{% endif %}
+        <div class="tabla-scroll">
+            <table>
+                <thead><tr><th>Fecha</th><th>Marca</th><th>Viento</th><th>Dónde</th><th></th></tr></thead>
+                <tbody>
+                {% for m in r.marcas|reverse %}
+                <tr>
+                    <td>{{ m.fecha|fecha_corta }}</td>
+                    <td class="mono-num"><strong>{{ pruebas.formatear(m.prueba, m.valor) }}</strong></td>
+                    <td class="num tenue">{{ ('%+.1f'|format(m.viento)) if m.viento is not none else '—' }}</td>
+                    <td class="tenue">{{ m.competencia or m.lugar or 'Entrenamiento' }}</td>
+                    <td class="num">
+                        <form method="post" action="/marcas/{{ m.id }}/borrar"
+                              data-confirmar="¿Borrar esta marca?">
+                            {{ csrf_input(request) }}
+                            <input type="hidden" name="volver" value="/atletas/{{ atleta.id }}">
+                            <button type="submit" class="btn btn-sm btn-fantasma">Borrar</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="card"><div class="card-body">
+    <div class="vacio">{{ icono('marcas') }}<p>Todavía no tiene marcas cargadas.</p></div>
+</div></div>
+{% endif %}
+
+<div class="seccion-titulo"><h2>Cuota y pagos</h2></div>
+<div class="card">
+    <div class="card-body">
+        {% if cuenta.estado == 'debe' %}
+        <div class="aviso aviso-error">
+            <strong>{{ cuenta.texto }}</strong> — {{ cuenta.deuda|pesos }}<br>
+            {% for m in cuenta.meses %}{{ m|mes }}{% if not loop.last %} · {% endif %}{% endfor %}
+        </div>
+        <form method="post" action="/pagos" style="margin-top:12px">
+            {{ csrf_input(request) }}
+            <input type="hidden" name="atleta_id" value="{{ atleta.id }}">
+            <input type="hidden" name="volver" value="/atletas/{{ atleta.id }}">
+            <input type="hidden" name="periodo" value="{{ cuenta.meses[0] }}">
+            <button type="submit" class="btn btn-primario btn-bloque">
+                Registrar el pago de {{ cuenta.meses[0]|mes }} ({{ atleta.cuota_mensual|pesos }})
+            </button>
+        </form>
+        {% elif cuenta.estado == 'al_dia' %}
+        <div class="aviso aviso-ok">Está al día con la cuota.</div>
+        {% else %}
+        <div class="aviso aviso-info">Todavía no tiene cuota asignada.
+            <a href="/atletas/{{ atleta.id }}/editar">Asignarla</a>.</div>
+        {% endif %}
+    </div>
+    {% if pagos %}
+    <div class="tabla-scroll">
+        <table>
+            <thead><tr><th>Mes</th><th>Pagado el</th><th class="num">Monto</th><th>Forma</th><th></th></tr></thead>
+            <tbody>
+            {% for p in pagos %}
+            <tr>
+                <td>{{ p.periodo|mes }}</td>
+                <td>{{ p.fecha_pago|fecha_corta }}</td>
+                <td class="num mono-num">{{ p.monto|pesos }}</td>
+                <td class="tenue">{{ p.metodo }}</td>
+                <td class="num">
+                    <form method="post" action="/pagos/{{ p.id }}/borrar"
+                          data-confirmar="¿Anular este pago? El mes va a volver a figurar como adeudado.">
+                        {{ csrf_input(request) }}
+                        <input type="hidden" name="volver" value="/atletas/{{ atleta.id }}">
+                        <button type="submit" class="btn btn-sm btn-fantasma">Anular</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<div class="seccion-titulo"><h2>Asistencia</h2></div>
+<div class="card">
+    <div class="card-body">
+        {% if asistencias %}
+        <p><strong>{{ presentes }}</strong> presentes de {{ asistencias|length }} listas tomadas.</p>
+        <div class="item-chips">
+            {% for a in asistencias %}
+            <span class="chip chip-{{ 'ok' if a.estado == 'presente' else ('info' if a.estado == 'justificado' else 'mal') }}">
+                {{ a.fecha|fecha_corta }}
+            </span>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="vacio">{{ icono('asistencia') }}<p>Todavía no hay asistencias registradas.</p></div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="seccion-titulo"><h2>Ficha</h2></div>
+<div class="card">
+    <div class="tabla-scroll">
+        <table>
+            <tr><th>Usuario</th><td>{{ atleta.username }}</td></tr>
+            <tr><th>Documento</th><td>{{ atleta.documento or '—' }}</td></tr>
+            <tr><th>Teléfono</th><td>
+                {% if atleta.telefono %}
+                <a href="https://wa.me/{{ atleta.telefono|replace('+','')|replace(' ','')|replace('-','') }}"
+                   target="_blank" rel="noopener">{{ atleta.telefono }}</a>
+                {% else %}—{% endif %}
+            </td></tr>
+            <tr><th>Correo</th><td>{{ atleta.email or '—' }}</td></tr>
+            <tr><th>Nacimiento</th><td>{{ atleta.fecha_nacimiento|fecha }}</td></tr>
+            <tr><th>En el club desde</th><td>{{ atleta.fecha_alta|fecha }}</td></tr>
+            <tr><th>Emergencia</th><td>{{ atleta.contacto_emergencia or '—' }}</td></tr>
+            <tr><th>Observaciones médicas</th><td>{{ atleta.observaciones_medicas or '—' }}</td></tr>
+        </table>
+    </div>
+    <div class="card-body">
+        <div class="acciones">
+            <form method="post" action="/atletas/{{ atleta.id }}/password"
+                  data-confirmar="Se va a generar una contraseña nueva y la actual va a dejar de servir. ¿Seguir?">
+                {{ csrf_input(request) }}
+                <button type="submit" class="btn btn-sm">Generar contraseña nueva</button>
+            </form>
+            <form method="post" action="/atletas/{{ atleta.id }}/estado"
+                  data-confirmar="{{ '¿Reactivar a este atleta?' if not atleta.is_active else '¿Dar de baja a este atleta? Sus datos se conservan.' }}">
+                {{ csrf_input(request) }}
+                <button type="submit" class="btn btn-sm {{ '' if not atleta.is_active else 'btn-peligro' }}">
+                    {{ 'Reactivar' if not atleta.is_active else 'Dar de baja' }}
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

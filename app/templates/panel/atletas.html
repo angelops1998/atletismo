@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% block title %}Atletas — {{ club.club_nombre }}{% endblock %}
+
+{% block barra %}
+<header class="barra">
+    <div class="barra-izq">
+        <h1>Atletas</h1>
+        <div class="sub">{{ filas|length }} {{ 'dados de baja' if ver_bajas else 'activos' }}</div>
+    </div>
+    <div class="barra-acciones">
+        <a href="/atletas/nuevo" class="btn btn-sm btn-primario">{{ icono('mas') }} Nuevo</a>
+    </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+<form method="get" action="/atletas" style="display:flex; gap:8px; margin-bottom:12px">
+    <input type="search" name="q" value="{{ busqueda }}" placeholder="Buscar por nombre…">
+    {% if ver_bajas %}<input type="hidden" name="bajas" value="1">{% endif %}
+    <button type="submit" class="btn">Buscar</button>
+</form>
+
+<div class="acciones" style="margin-bottom:12px">
+    <a href="/atletas" class="btn btn-sm {{ 'btn-primario' if not ver_bajas }}">Activos</a>
+    <a href="/atletas?bajas=1" class="btn btn-sm {{ 'btn-primario' if ver_bajas }}">Dados de baja</a>
+</div>
+
+{% if filas %}
+<div class="card">
+    <div class="lista">
+        {% for f in filas %}
+        <a href="/atletas/{{ f.atleta.id }}" class="item">
+            <span class="avatar avatar-{{ f.semaforo or '' }}">{{ f.atleta.nombre[0] }}</span>
+            <div class="item-txt">
+                <div class="item-nombre">{{ f.atleta.nombre }}</div>
+                <div class="item-sub">
+                    {{ f.atleta.categoria or 'Sin categoría' }}
+                    {%- if f.atleta.prueba_principal %} · {{ f.atleta.prueba_principal }}{% endif -%}
+                </div>
+                <div class="item-chips">
+                    {% if f.parte %}
+                    <span class="chip chip-{{ 'ok' if f.semaforo == 'bien' else ('atencion' if f.semaforo == 'atencion' else 'mal') }}">
+                        Bienestar {{ f.bienestar }}/{{ maximo }}
+                    </span>
+                    {% else %}
+                    <span class="chip chip-atencion">Sin parte</span>
+                    {% endif %}
+
+                    {% if f.cuenta.estado == 'debe' %}
+                    <span class="chip chip-mal">{{ f.cuenta.texto }}</span>
+                    {% elif f.cuenta.estado == 'al_dia' %}
+                    <span class="chip chip-ok">Al día</span>
+                    {% endif %}
+
+                    {% for a in f.alertas %}
+                    <span class="chip chip-mal">{{ a.titulo }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="card"><div class="card-body">
+    <div class="vacio">
+        {{ icono('atletas') }}
+        <p>{% if busqueda %}Ningún atleta coincide con «{{ busqueda }}».
+           {% else %}Todavía no hay atletas cargados.{% endif %}</p>
+        <a href="/atletas/nuevo" class="btn btn-primario" style="margin-top:12px">Dar de alta al primero</a>
+    </div>
+</div></div>
+{% endif %}
+{% endblock %}

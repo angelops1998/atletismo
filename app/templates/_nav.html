@@ -1,0 +1,39 @@
+{% from "_iconos.html" import icono %}
+{# Menú lateral: solo se ve de 1024px para arriba. En el celular la navegación es
+   la barra inferior (_tabbar.html), que es donde llega el pulgar. #}
+<aside class="rail">
+    <a href="{{ '/panel' if user.role == 'profesor' else '/inicio' }}" class="marca">
+        <span class="escudo">{{ icono('corredor') }}</span>
+        <span>
+            <b>{{ club.club_nombre }}</b>
+            <span>{{ 'Panel del profesor' if user.role == 'profesor' else 'Mi seguimiento' }}</span>
+        </span>
+    </a>
+
+    <nav>
+        {% set ruta = request.url.path %}
+        {% if user.role == 'profesor' %}
+            <a href="/panel" class="{{ 'activo' if ruta == '/panel' }}">{{ icono('panel') }} Panel</a>
+            <a href="/atletas" class="{{ 'activo' if ruta.startswith('/atletas') }}">{{ icono('atletas') }} Atletas</a>
+            <a href="/asistencia" class="{{ 'activo' if ruta.startswith('/asistencia') }}">{{ icono('asistencia') }} Asistencia</a>
+            <a href="/marcas" class="{{ 'activo' if ruta.startswith('/marcas') }}">{{ icono('marcas') }} Marcas</a>
+            <a href="/pagos" class="{{ 'activo' if ruta.startswith('/pagos') }}">{{ icono('pagos') }} Pagos</a>
+            <a href="/estadisticas" class="{{ 'activo' if ruta.startswith('/estadisticas') }}">{{ icono('estadisticas') }} Estadísticas</a>
+        {% else %}
+            <a href="/inicio" class="{{ 'activo' if ruta == '/inicio' }}">{{ icono('panel') }} Inicio</a>
+            <a href="/parte" class="{{ 'activo' if ruta.startswith('/parte') }}">
+                {{ icono('parte') }} Mi parte
+                {% if parte_pendiente %}<span class="globo">1</span>{% endif %}
+            </a>
+            <a href="/mis-datos" class="{{ 'activo' if ruta.startswith('/mis-datos') }}">{{ icono('estadisticas') }} Mi evolución</a>
+        {% endif %}
+        <a href="/club" target="_blank">{{ icono('lugar') }} Ver la página del club</a>
+    </nav>
+
+    <div class="rail-usuario">
+        <div class="nom">{{ user.nombre }}</div>
+        <div class="rol">{{ user.role }}</div>
+        <a href="/cuenta">Mi cuenta</a>
+        <a href="/auth/logout">Cerrar sesión</a>
+    </div>
+</aside>

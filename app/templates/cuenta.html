@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Mi cuenta — {{ club.club_nombre }}{% endblock %}
+
+{% block barra %}
+<header class="barra">
+    <div class="barra-izq">
+        <h1>Mi cuenta</h1>
+        <div class="sub">{{ user.nombre }}</div>
+    </div>
+    <div class="barra-acciones">
+        <a href="/auth/logout" class="btn btn-sm">Salir</a>
+    </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+{% if obligatorio %}
+<div class="aviso aviso-atencion" style="margin-bottom:14px">
+    <strong>Cambiá tu contraseña para seguir.</strong><br>
+    Estás usando la contraseña provisoria que te dio el profesor. Elegí una nueva,
+    que solo sepas vos.
+</div>
+{% endif %}
+
+{% if errores %}
+<div class="aviso aviso-error" style="margin-bottom:14px">
+    <ul>{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post" action="/cuenta" class="card">
+    <div class="card-head"><h3>Cambiar la contraseña</h3></div>
+    <div class="card-body">
+        {{ csrf_input(request) }}
+        <div class="campo">
+            <label for="actual">Contraseña actual</label>
+            <input type="password" id="actual" name="actual" autocomplete="current-password" required>
+        </div>
+        <div class="campo">
+            <label for="nueva">Contraseña nueva</label>
+            <input type="password" id="nueva" name="nueva" autocomplete="new-password" required minlength="8">
+            <div class="ayuda">Al menos 8 caracteres.</div>
+        </div>
+        <div class="campo">
+            <label for="repetir">Repetir la contraseña nueva</label>
+            <input type="password" id="repetir" name="repetir" autocomplete="new-password" required minlength="8">
+        </div>
+        <button type="submit" class="btn btn-primario btn-bloque">Guardar</button>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-head"><h3>Mis datos</h3></div>
+    <div class="card-body">
+        <table>
+            <tr><th>Usuario</th><td>{{ user.username }}</td></tr>
+            <tr><th>Nombre</th><td>{{ user.full_name or '—' }}</td></tr>
+            <tr><th>Correo</th><td>{{ user.email or '—' }}</td></tr>
+            {% if user.role == 'atleta' %}
+            <tr><th>Categoría</th><td>{{ user.categoria or '—' }}</td></tr>
+            <tr><th>Prueba</th><td>{{ user.prueba_principal or '—' }}</td></tr>
+            {% endif %}
+        </table>
+        <p class="apunte">Si algo de esto está mal, avisale al profesor para que lo corrija.</p>
+    </div>
+</div>
+{% endblock %}

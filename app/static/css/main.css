@@ -1,0 +1,993 @@
+/* ============================================================
+   Club de atletismo — hoja de estilos
+
+   MOBILE FIRST. Todo lo de acá abajo es el diseño para el celular, que es
+   donde los atletas cargan el parte; las media queries van con min-width y
+   solo agregan lo que hace falta en pantallas grandes. Escrito al revés
+   (de escritorio para abajo) terminaba con reglas del sidebar que había que
+   deshacer en el celular, que es el 90% del uso real.
+   ============================================================ */
+
+:root {
+    /* Pista de tartán: el naranja quemado es el color de la pista */
+    --tartan:       #C2410C;
+    --tartan-2:     #EA580C;
+    --tartan-tint:  #FDEBE0;
+    --carbon:       #17191D;
+    --papel:        #F7F5F2;
+    --superficie:   #FFFFFF;
+    --superficie-2: #FBF9F7;
+    --tinta:        #17191D;
+    --gris:         #6B6F76;
+    --tenue:        #9AA0A6;
+    --linea:        #E7E3DE;
+    --linea-fuerte: #D5D0C9;
+
+    /* Semáforo del bienestar */
+    --ok:           #157F5B;
+    --ok-tint:      #E4F2EC;
+    --atencion:     #A97207;
+    --atencion-tint:#FBF0DA;
+    --mal:          #B3261E;
+    --mal-tint:     #F8E3E1;
+    --info:         #1D4E89;
+    --info-tint:    #E7EEF7;
+
+    --sombra:       0 1px 2px rgba(23,25,29,.04), 0 8px 20px rgba(23,25,29,.06);
+    --sombra-alta:  0 8px 30px rgba(23,25,29,.14);
+    --r:            14px;
+    --r-sm:         10px;
+    --sans:         "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --display:      "Barlow Condensed", var(--sans);
+
+    /* Alto de la barra inferior: lo usa el padding del contenido para que el
+       último botón de cada pantalla no quede tapado por la navegación. */
+    --tabbar: 62px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+    font-family: var(--sans);
+    background: var(--papel);
+    color: var(--tinta);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+}
+a { color: inherit; text-decoration: none; }
+button, input, select, textarea { font-family: inherit; font-size: inherit; }
+button { cursor: pointer; }
+img { max-width: 100%; display: block; }
+svg { display: block; }
+
+/* ============================================================
+   ESTRUCTURA
+   ============================================================ */
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+.principal { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pantalla {
+    flex: 1;
+    padding: 16px 16px calc(var(--tabbar) + 28px);
+    max-width: 1180px;
+    width: 100%;
+    margin: 0 auto;
+}
+.pantalla-ancha { max-width: 100%; }
+
+/* Barra superior: título de la pantalla y acceso a la cuenta */
+.barra {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: var(--superficie);
+    border-bottom: 1px solid var(--linea);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+}
+.barra h1 { font-size: 19px; font-weight: 700; line-height: 1.2; }
+.barra .sub { font-size: 13px; color: var(--tenue); font-weight: 500; }
+.barra-izq { flex: 1; min-width: 0; }
+.barra-acciones { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+
+.volver {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--gris);
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+.volver svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+/* Barra inferior de navegación (celular) */
+.tabbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    display: flex;
+    background: var(--superficie);
+    border-top: 1px solid var(--linea);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+.tabbar a {
+    flex: 1;
+    /* 44px es el mínimo táctil cómodo: más chico y el profesor falla el botón
+       tomando lista con el celular en una mano. */
+    min-height: 44px;
+    padding: 8px 2px 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--tenue);
+    position: relative;
+}
+.tabbar a svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.tabbar a.activo { color: var(--tartan); }
+.tabbar a .globo {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    margin-left: 4px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 9px;
+    background: var(--mal);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+}
+.rail { display: none; }
+
+/* Botón flotante del celular: única salida a la landing y a cerrar sesión
+   cuando no hay menú lateral (ver _menu_movil.html). */
+.menu-movil {
+    position: fixed;
+    bottom: calc(var(--tabbar) + 14px);
+    right: 14px;
+    z-index: 45;
+}
+.menu-movil > summary {
+    list-style: none;
+    width: 46px;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--tinta);
+    color: #fff;
+    box-shadow: var(--sombra-alta);
+}
+.menu-movil > summary::-webkit-details-marker { display: none; }
+.menu-movil > summary svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.menu-movil-panel {
+    position: absolute;
+    bottom: 54px;
+    right: 0;
+    background: var(--superficie);
+    border: 1px solid var(--linea);
+    border-radius: var(--r-sm);
+    box-shadow: var(--sombra-alta);
+    min-width: 200px;
+    padding: 6px;
+}
+.menu-movil-panel a {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 11px 12px;
+    border-radius: 8px;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--tinta);
+}
+.menu-movil-panel a svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; flex: 0 0 auto; }
+.menu-movil-panel a:hover, .menu-movil-panel a:active { background: var(--superficie-2); }
+
+/* ============================================================
+   TIPOGRAFÍA Y BLOQUES
+   ============================================================ */
+h2 { font-size: 20px; font-weight: 700; line-height: 1.25; }
+h3 { font-size: 16px; font-weight: 700; }
+.seccion-titulo {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 26px 0 10px;
+}
+.seccion-titulo h2 { font-size: 17px; }
+.seccion-titulo a { font-size: 13px; font-weight: 600; color: var(--tartan); }
+.apunte { font-size: 13px; color: var(--gris); line-height: 1.45; }
+.tenue { color: var(--tenue); }
+.mono-num { font-variant-numeric: tabular-nums; }
+
+.card {
+    background: var(--superficie);
+    border: 1px solid var(--linea);
+    border-radius: var(--r);
+    box-shadow: var(--sombra);
+    overflow: hidden;
+}
+.card + .card { margin-top: 12px; }
+.card-head {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--linea);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+.card-head h3 { font-size: 15px; }
+.card-body { padding: 16px; }
+.card-body > * + * { margin-top: 12px; }
+
+/* ============================================================
+   BOTONES
+   ============================================================ */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 10px 18px;
+    border: 1.5px solid var(--linea-fuerte);
+    border-radius: var(--r-sm);
+    background: var(--superficie);
+    color: var(--tinta);
+    font-weight: 600;
+    font-size: 15px;
+    transition: background .12s, border-color .12s, transform .06s;
+}
+.btn:active { transform: translateY(1px); }
+.btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+.btn-primario {
+    background: var(--tartan);
+    border-color: var(--tartan);
+    color: #fff;
+}
+.btn-primario:hover { background: var(--tartan-2); border-color: var(--tartan-2); }
+.btn-fantasma { background: transparent; border-color: transparent; color: var(--gris); }
+.btn-fantasma:hover { background: var(--superficie-2); color: var(--tinta); }
+.btn-peligro { color: var(--mal); border-color: var(--mal-tint); background: var(--mal-tint); }
+.btn-bloque { width: 100%; }
+.btn-grande { min-height: 56px; font-size: 17px; border-radius: var(--r); }
+.btn-sm { min-height: 34px; padding: 5px 12px; font-size: 13px; border-radius: 8px; }
+.acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+.acciones-fin { justify-content: flex-end; }
+
+/* ============================================================
+   CHIPS Y AVISOS
+   ============================================================ */
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    background: var(--superficie-2);
+    color: var(--gris);
+    white-space: nowrap;
+}
+.chip-ok { background: var(--ok-tint); color: var(--ok); }
+.chip-atencion { background: var(--atencion-tint); color: var(--atencion); }
+.chip-mal { background: var(--mal-tint); color: var(--mal); }
+.chip-info { background: var(--info-tint); color: var(--info); }
+.chip-tartan { background: var(--tartan-tint); color: var(--tartan); }
+
+.aviso {
+    border-radius: var(--r-sm);
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 1.45;
+    border: 1px solid transparent;
+}
+.aviso-ok { background: var(--ok-tint); color: var(--ok); border-color: #C6E4D8; }
+.aviso-error { background: var(--mal-tint); color: var(--mal); border-color: #EFC9C6; }
+.aviso-info { background: var(--info-tint); color: var(--info); border-color: #CBDCEF; }
+.aviso-atencion { background: var(--atencion-tint); color: var(--atencion); border-color: #EDDCB4; }
+.aviso ul { margin: 6px 0 0 18px; }
+.aviso strong { font-weight: 700; }
+
+.vacio {
+    text-align: center;
+    padding: 30px 20px;
+    color: var(--tenue);
+}
+.vacio svg { width: 38px; height: 38px; margin: 0 auto 10px; stroke: currentColor; fill: none; stroke-width: 1.4; opacity: .6; }
+.vacio p { font-size: 14px; }
+
+/* ============================================================
+   KPIs
+   ============================================================ */
+.kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.kpi {
+    background: var(--superficie);
+    border: 1px solid var(--linea);
+    border-radius: var(--r);
+    padding: 13px 14px;
+    box-shadow: var(--sombra);
+}
+.kpi .valor { font-size: 26px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.kpi .etiqueta { font-size: 12px; color: var(--tenue); font-weight: 600; margin-top: 2px; line-height: 1.3; }
+.kpi .detalle { font-size: 12px; color: var(--gris); margin-top: 5px; }
+.kpi-ok .valor { color: var(--ok); }
+.kpi-mal .valor { color: var(--mal); }
+.kpi-atencion .valor { color: var(--atencion); }
+.kpi-tartan .valor { color: var(--tartan); }
+
+/* ============================================================
+   FORMULARIOS
+   ============================================================ */
+.campo { margin-bottom: 14px; }
+.campo label, .campo > .lbl {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gris);
+    margin-bottom: 5px;
+}
+.campo .ayuda { font-size: 12px; color: var(--tenue); margin-top: 4px; line-height: 1.4; }
+input[type="text"], input[type="email"], input[type="password"], input[type="date"],
+input[type="number"], input[type="tel"], input[type="search"], select, textarea {
+    width: 100%;
+    /* 16px exactos: con menos, iOS hace zoom al enfocar el campo y descoloca
+       toda la pantalla del formulario. */
+    font-size: 16px;
+    min-height: 46px;
+    padding: 11px 13px;
+    border: 1.5px solid var(--linea-fuerte);
+    border-radius: var(--r-sm);
+    background: var(--superficie);
+    color: var(--tinta);
+    transition: border-color .12s, box-shadow .12s;
+}
+textarea { min-height: 84px; resize: vertical; line-height: 1.5; }
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--tartan);
+    box-shadow: 0 0 0 3px var(--tartan-tint);
+}
+select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B6F76' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 18px;
+    padding-right: 38px;
+}
+.fila-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fila-3 { display: grid; grid-template-columns: 1fr; gap: 10px; }
+fieldset { border: none; }
+.grupo-titulo {
+    font-size: 12px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--tenue);
+    font-weight: 700;
+    margin: 22px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--linea);
+}
+
+/* --- Escala 1–5 del parte semanal ---
+   El control central de toda la app: es lo que el atleta toca cinco veces por
+   semana desde el celular. Son radios reales (funciona sin JavaScript y el
+   navegador valida solo), con las etiquetas convertidas en botones grandes. */
+.escala { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.escala input { position: absolute; opacity: 0; pointer-events: none; }
+.escala label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 62px;
+    padding: 6px 2px;
+    margin: 0;
+    border: 1.5px solid var(--linea-fuerte);
+    border-radius: var(--r-sm);
+    background: var(--superficie);
+    cursor: pointer;
+    text-align: center;
+    transition: border-color .12s, background .12s, color .12s;
+}
+.escala label .n { font-size: 19px; font-weight: 800; line-height: 1; }
+.escala label .txt {
+    font-size: 9.5px;
+    font-weight: 600;
+    color: var(--tenue);
+    line-height: 1.15;
+    letter-spacing: -.1px;
+}
+.escala input:checked + label {
+    border-color: var(--tartan);
+    background: var(--tartan-tint);
+    color: var(--tartan);
+}
+.escala input:checked + label .txt { color: var(--tartan); }
+.escala input:focus-visible + label { box-shadow: 0 0 0 3px var(--tartan-tint); }
+
+/* Escala de 1 a 10 (esfuerzo percibido y dolor): más chica, dos filas */
+.escala-10 { grid-template-columns: repeat(5, 1fr); }
+.escala-10 label { min-height: 46px; }
+.escala-10 label .n { font-size: 17px; }
+
+/* Sí / No */
+.binario { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.binario input { position: absolute; opacity: 0; pointer-events: none; }
+.binario label {
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    border: 1.5px solid var(--linea-fuerte);
+    border-radius: var(--r-sm);
+    background: var(--superficie);
+    font-weight: 600;
+    cursor: pointer;
+}
+.binario input:checked + label {
+    border-color: var(--tartan);
+    background: var(--tartan-tint);
+    color: var(--tartan);
+}
+
+/* Los cuatro estados de la lista de asistencia: en el celular van en dos filas
+   de dos, que es lo que entra sin que las etiquetas se corten. */
+.estados { grid-template-columns: repeat(2, 1fr); width: 100%; margin-top: 8px; }
+.estados label { font-size: 14px; }
+
+/* Bloque del parte que se muestra/oculta según la respuesta anterior */
+.condicional { display: none; }
+.condicional.abierto { display: block; }
+
+/* ============================================================
+   TABLAS
+   ============================================================ */
+.tabla-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th {
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--tenue);
+    font-weight: 700;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--linea);
+    white-space: nowrap;
+}
+td { padding: 11px 12px; border-bottom: 1px solid var(--linea); vertical-align: middle; }
+tbody tr:last-child td { border-bottom: none; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.nombre-celda { font-weight: 600; }
+
+/* ============================================================
+   LISTAS DE ATLETAS (en el celular, en vez de tabla)
+   ============================================================ */
+.lista { display: flex; flex-direction: column; }
+.item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--linea);
+    min-height: 62px;
+}
+.item:last-child { border-bottom: none; }
+.item-txt { flex: 1; min-width: 0; }
+.item-nombre { font-weight: 600; font-size: 15px; line-height: 1.25; }
+.item-sub { font-size: 12.5px; color: var(--tenue); margin-top: 2px; }
+.item-fin { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.item-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+
+.avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    background: var(--tartan-tint);
+    color: var(--tartan);
+    font-weight: 800;
+    font-size: 15px;
+    text-transform: uppercase;
+}
+.avatar svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.avatar-ok { background: var(--ok-tint); color: var(--ok); }
+.avatar-atencion { background: var(--atencion-tint); color: var(--atencion); }
+.avatar-mal { background: var(--mal-tint); color: var(--mal); }
+.avatar-grande { width: 58px; height: 58px; font-size: 21px; }
+
+/* ============================================================
+   ALERTAS DEL PANEL
+   ============================================================ */
+.alerta {
+    display: flex;
+    gap: 11px;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--linea);
+}
+.alerta:last-child { border-bottom: none; }
+.alerta-punto {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    margin-top: 6px;
+    background: var(--tenue);
+}
+.alerta-alta .alerta-punto { background: var(--mal); }
+.alerta-media .alerta-punto { background: var(--atencion); }
+.alerta-baja .alerta-punto { background: var(--tenue); }
+.alerta-titulo { font-weight: 700; font-size: 14px; line-height: 1.3; }
+.alerta-detalle { font-size: 13px; color: var(--gris); margin-top: 2px; line-height: 1.4; }
+.alerta-grupo { border-bottom: 1px solid var(--linea); }
+.alerta-grupo:last-child { border-bottom: none; }
+.alerta-grupo-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px 4px;
+}
+.alerta-grupo-head .nom { font-weight: 700; font-size: 15px; flex: 1; min-width: 0; }
+
+/* ============================================================
+   GRÁFICOS (SVG generado en el servidor)
+   ============================================================ */
+.grafico { width: 100%; }
+.grafico svg { width: 100%; height: auto; overflow: visible; }
+.g-linea { fill: none; stroke: var(--tartan); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.g-punto { fill: var(--superficie); stroke: var(--tartan); stroke-width: 2; }
+.g-barra { fill: var(--tartan); opacity: .85; }
+.g-barra-vacia { fill: var(--linea); }
+.g-reja { stroke: var(--linea); stroke-width: 1; }
+.g-disperso { fill: var(--tartan); opacity: .55; }
+.g-eje {
+    font-size: 10px;
+    fill: var(--tenue);
+    font-weight: 600;
+    font-family: var(--sans);
+}
+.grafico-pie {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--tenue);
+    font-weight: 600;
+    margin-top: 4px;
+}
+.chispa { width: 120px; flex: 0 0 auto; }
+.chispa svg { height: 34px; }
+.chispa .g-linea { stroke-width: 2; }
+
+/* Barras horizontales del promedio por ítem */
+.barra-item { margin-bottom: 10px; }
+.barra-item-top {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.barra-item-riel { height: 8px; border-radius: 4px; background: var(--superficie-2); border: 1px solid var(--linea); overflow: hidden; }
+.barra-item-relleno { height: 100%; background: var(--tartan); border-radius: 4px; }
+.barra-item-relleno.ok { background: var(--ok); }
+.barra-item-relleno.atencion { background: var(--atencion); }
+.barra-item-relleno.mal { background: var(--mal); }
+
+/* ============================================================
+   LOGIN
+   ============================================================ */
+.login-pantalla {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 28px 20px calc(28px + env(safe-area-inset-bottom));
+    background: var(--papel);
+}
+.login-caja { width: 100%; max-width: 380px; margin: 0 auto; }
+.login-marca { text-align: center; margin-bottom: 26px; }
+.login-marca .escudo {
+    width: 62px;
+    height: 62px;
+    margin: 0 auto 12px;
+    border-radius: 18px;
+    background: var(--tartan);
+    display: grid;
+    place-items: center;
+}
+.login-marca .escudo svg { width: 34px; height: 34px; stroke: #fff; fill: none; stroke-width: 1.8; }
+.login-marca h1 { font-family: var(--display); font-size: 30px; font-weight: 700; letter-spacing: -.01em; line-height: 1.05; }
+.login-marca p { font-size: 14px; color: var(--gris); margin-top: 4px; }
+.login-pie { text-align: center; margin-top: 20px; font-size: 13px; color: var(--tenue); }
+.login-pie a { color: var(--tartan); font-weight: 600; }
+
+/* ============================================================
+   PÁGINA PÚBLICA (promoción del club)
+   ============================================================ */
+.publico { background: var(--superficie); }
+.nav-publica {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(255,255,255,.94);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--linea);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+}
+.nav-publica .marca {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--display);
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: -.01em;
+    flex: 1;
+    min-width: 0;
+}
+.nav-publica .marca .escudo {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: var(--tartan);
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+}
+.nav-publica .marca .escudo svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2; }
+.nav-publica .enlaces { display: none; }
+
+.hero {
+    position: relative;
+    padding: 44px 20px 40px;
+    background:
+        radial-gradient(120% 90% at 80% 0%, rgba(234,88,12,.16) 0%, rgba(234,88,12,0) 60%),
+        linear-gradient(180deg, #1B1D22 0%, #232630 100%);
+    color: #fff;
+    overflow: hidden;
+}
+/* Las calles de la pista, dibujadas con gradientes: da la textura de tartán sin
+   depender de ninguna imagen (la página tiene que abrir rápido con datos móviles). */
+.hero::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 90px;
+    background: repeating-linear-gradient(
+        90deg,
+        rgba(234,88,12,.30) 0 44px,
+        rgba(255,255,255,.06) 44px 46px);
+    transform: skewY(-3deg);
+    transform-origin: bottom left;
+    opacity: .5;
+    pointer-events: none;
+}
+.hero-contenido { position: relative; z-index: 1; max-width: 720px; }
+.hero .antetitulo svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; }
+.hero .antetitulo {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--tartan-2);
+    margin-bottom: 12px;
+}
+.hero h1 {
+    font-family: var(--display);
+    font-size: 42px;
+    line-height: .98;
+    font-weight: 700;
+    letter-spacing: -.015em;
+    text-transform: uppercase;
+}
+.hero h1 em { font-style: normal; color: var(--tartan-2); }
+.hero p { font-size: 16px; line-height: 1.55; color: rgba(255,255,255,.78); margin-top: 14px; }
+.hero .acciones { margin-top: 22px; }
+.hero .btn { border-color: rgba(255,255,255,.28); background: rgba(23,25,29,.55); color: #fff; }
+.hero .btn-primario { background: var(--tartan-2); border-color: var(--tartan-2); }
+
+.seccion { padding: 40px 20px; }
+.seccion-oscura { background: var(--carbon); color: #fff; }
+.seccion-clara { background: var(--superficie-2); }
+.seccion-cabecera { max-width: 620px; margin-bottom: 24px; }
+.seccion-cabecera .antetitulo {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--tartan);
+    display: block;
+    margin-bottom: 7px;
+}
+.seccion-cabecera h2 {
+    font-family: var(--display);
+    font-size: 32px;
+    line-height: 1.03;
+    text-transform: uppercase;
+    letter-spacing: -.01em;
+}
+.seccion-cabecera p { color: var(--gris); margin-top: 10px; line-height: 1.6; }
+.seccion-oscura .seccion-cabecera p { color: rgba(255,255,255,.7); }
+
+.grilla { display: grid; grid-template-columns: 1fr; gap: 14px; }
+
+.pilar {
+    border: 1px solid var(--linea);
+    border-radius: var(--r);
+    padding: 20px;
+    background: var(--superficie);
+}
+.pilar .icono {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--tartan-tint);
+    display: grid;
+    place-items: center;
+    margin-bottom: 12px;
+}
+.pilar .icono svg { width: 23px; height: 23px; stroke: var(--tartan); fill: none; stroke-width: 1.8; }
+.pilar h3 { font-size: 17px; margin-bottom: 6px; }
+.pilar p { font-size: 14.5px; color: var(--gris); line-height: 1.55; }
+.seccion-oscura .pilar { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.1); }
+.seccion-oscura .pilar p { color: rgba(255,255,255,.68); }
+.seccion-oscura .pilar .icono { background: rgba(234,88,12,.18); }
+.seccion-oscura .pilar .icono svg { stroke: var(--tartan-2); }
+
+.disciplina {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--linea);
+    border-radius: var(--r-sm);
+    background: var(--superficie);
+}
+.disciplina .num {
+    font-family: var(--display);
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--tartan);
+    line-height: 1;
+    flex: 0 0 auto;
+    min-width: 42px;
+}
+.disciplina b { display: block; font-size: 15px; }
+.disciplina span { font-size: 13px; color: var(--tenue); }
+
+.perfil { text-align: center; padding: 22px 16px; }
+.perfil .foto {
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    margin: 0 auto 12px;
+    display: grid;
+    place-items: center;
+    background: var(--tartan-tint);
+    color: var(--tartan);
+    font-family: var(--display);
+    font-size: 30px;
+    font-weight: 700;
+}
+.perfil h3 { font-size: 16px; }
+.perfil .rol { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--tartan); margin-top: 3px; }
+.perfil p { font-size: 13.5px; color: var(--gris); margin-top: 8px; line-height: 1.55; }
+
+.plan {
+    border: 1px solid var(--linea);
+    border-radius: var(--r);
+    padding: 22px 20px;
+    background: var(--superficie);
+}
+.plan.destacado { border-color: var(--tartan); box-shadow: 0 0 0 3px var(--tartan-tint); }
+.plan .nivel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--tartan); }
+.plan .horario { font-family: var(--display); font-size: 27px; line-height: 1.1; margin: 6px 0 10px; }
+.plan ul { list-style: none; }
+.plan li {
+    font-size: 14px;
+    color: var(--gris);
+    padding: 5px 0 5px 22px;
+    position: relative;
+    line-height: 1.45;
+}
+.plan li::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 11px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--tartan-tint);
+    border: 2px solid var(--tartan);
+}
+
+.contacto-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+}
+.contacto-item:last-child { border-bottom: none; }
+.contacto-item svg { width: 20px; height: 20px; stroke: var(--tartan-2); fill: none; stroke-width: 1.8; flex: 0 0 auto; margin-top: 2px; }
+.contacto-item b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: rgba(255,255,255,.5); font-weight: 700; }
+.contacto-item span, .contacto-item a { font-size: 15px; color: #fff; }
+
+.pie {
+    background: var(--carbon);
+    color: rgba(255,255,255,.55);
+    padding: 26px 20px calc(26px + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(255,255,255,.1);
+    font-size: 13px;
+    text-align: center;
+}
+.pie .enlaces { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin-bottom: 14px; }
+.pie .enlaces a { color: rgba(255,255,255,.7); font-weight: 600; }
+
+/* Botón flotante de WhatsApp: en el celular es la forma real en que alguien
+   pregunta por el club. */
+.wa-flotante {
+    position: fixed;
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    z-index: 60;
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    background: #25D366;
+    display: grid;
+    place-items: center;
+    box-shadow: var(--sombra-alta);
+}
+.wa-flotante svg { width: 28px; height: 28px; fill: #fff; }
+
+/* ============================================================
+   ≥ 700px — tablet: las grillas se abren
+   ============================================================ */
+@media (min-width: 700px) {
+    .kpis { grid-template-columns: repeat(4, 1fr); }
+    .fila-3 { grid-template-columns: repeat(3, 1fr); }
+    .grilla { grid-template-columns: repeat(2, 1fr); }
+    .escala-10 { grid-template-columns: repeat(10, 1fr); }
+    .estados { grid-template-columns: repeat(4, 1fr); }
+    .hero { padding: 70px 32px 64px; }
+    .hero h1 { font-size: 60px; }
+    .hero p { font-size: 18px; }
+    .seccion { padding: 60px 32px; }
+    .seccion-cabecera h2 { font-size: 40px; }
+    .pantalla { padding: 22px 24px calc(var(--tabbar) + 30px); }
+    .barra { padding: 12px 24px; }
+    .escala label .txt { font-size: 11px; }
+}
+
+/* ============================================================
+   ≥ 1024px — escritorio: aparece el menú lateral y se va la barra inferior
+   ============================================================ */
+@media (min-width: 1024px) {
+    .app { display: grid; grid-template-columns: 244px 1fr; }
+    .tabbar { display: none; }
+    .menu-movil { display: none; }
+    .pantalla { padding: 26px 32px 60px; }
+    :root { --tabbar: 0px; }
+
+    .rail {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        background: var(--superficie);
+        border-right: 1px solid var(--linea);
+        padding: 18px 13px;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow-y: auto;
+    }
+    .rail .marca {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 2px 6px 18px;
+    }
+    .rail .marca .escudo {
+        width: 36px;
+        height: 36px;
+        border-radius: 11px;
+        background: var(--tartan);
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+    }
+    .rail .marca .escudo svg { width: 21px; height: 21px; stroke: #fff; fill: none; stroke-width: 2; }
+    .rail .marca b { font-family: var(--display); font-size: 20px; line-height: 1; display: block; }
+    .rail .marca span { font-size: 12px; color: var(--tenue); font-weight: 600; }
+    .rail nav { display: flex; flex-direction: column; gap: 2px; }
+    .rail nav a {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding: 10px 12px;
+        border-radius: var(--r-sm);
+        color: var(--gris);
+        font-size: 15px;
+        font-weight: 500;
+        transition: background .1s, color .1s;
+    }
+    .rail nav a svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; flex: 0 0 auto; }
+    .rail nav a:hover { background: var(--superficie-2); color: var(--tinta); }
+    .rail nav a.activo { background: var(--tartan-tint); color: var(--tartan); font-weight: 700; }
+    .rail nav a .globo {
+        margin-left: auto;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 10px;
+        background: var(--mal);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        display: grid;
+        place-items: center;
+    }
+    .rail-usuario {
+        margin-top: auto;
+        padding: 11px 12px;
+        border: 1px solid var(--linea);
+        border-radius: var(--r-sm);
+        background: var(--superficie-2);
+    }
+    .rail-usuario .nom { font-weight: 700; font-size: 14px; line-height: 1.2; }
+    .rail-usuario .rol { font-size: 11.5px; color: var(--tartan); font-weight: 700; text-transform: capitalize; }
+    .rail-usuario a { display: block; font-size: 13px; color: var(--gris); margin-top: 7px; font-weight: 600; }
+    .rail-usuario a:hover { color: var(--tartan); }
+
+    .nav-publica { padding: 14px 32px; }
+    .nav-publica .enlaces { display: flex; align-items: center; gap: 26px; }
+    .nav-publica .enlaces a { font-size: 15px; font-weight: 600; color: var(--gris); }
+    .nav-publica .enlaces a:hover { color: var(--tartan); }
+    .grilla-3 { grid-template-columns: repeat(3, 1fr); }
+    .grilla-4 { grid-template-columns: repeat(4, 1fr); }
+    .hero h1 { font-size: 76px; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    .split-3-2 { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; align-items: start; }
+}
+
+/* ============================================================
+   IMPRESIÓN — el profesor imprime la ficha del atleta para llevarla a la pista
+   ============================================================ */
+@media print {
+    .rail, .tabbar, .menu-movil, .barra-acciones, .acciones, .wa-flotante { display: none !important; }
+    body { background: #fff; }
+    .app { display: block; }
+    .card { box-shadow: none; break-inside: avoid; }
+    .pantalla { padding: 0; max-width: 100%; }
+}

@@ -1,0 +1,21 @@
+{% from "_iconos.html" import icono %}
+{# Navegación del celular. Cinco destinos como máximo: con más, los objetivos
+   táctiles quedan por debajo de lo que se puede tocar sin mirar. #}
+<nav class="tabbar">
+    {% set ruta = request.url.path %}
+    {% if user.role == 'profesor' %}
+        <a href="/panel" class="{{ 'activo' if ruta == '/panel' }}">{{ icono('panel') }} Panel</a>
+        <a href="/atletas" class="{{ 'activo' if ruta.startswith('/atletas') }}">{{ icono('atletas') }} Atletas</a>
+        <a href="/asistencia" class="{{ 'activo' if ruta.startswith('/asistencia') }}">{{ icono('asistencia') }} Lista</a>
+        <a href="/pagos" class="{{ 'activo' if ruta.startswith('/pagos') }}">{{ icono('pagos') }} Pagos</a>
+        <a href="/estadisticas" class="{{ 'activo' if ruta.startswith('/estadisticas') }}">{{ icono('estadisticas') }} Datos</a>
+    {% else %}
+        <a href="/inicio" class="{{ 'activo' if ruta == '/inicio' }}">{{ icono('panel') }} Inicio</a>
+        <a href="/parte" class="{{ 'activo' if ruta.startswith('/parte') }}">
+            {{ icono('parte') }} Mi parte
+            {% if parte_pendiente %}<span class="globo">1</span>{% endif %}
+        </a>
+        <a href="/mis-datos" class="{{ 'activo' if ruta.startswith('/mis-datos') }}">{{ icono('estadisticas') }} Evolución</a>
+        <a href="/cuenta" class="{{ 'activo' if ruta.startswith('/cuenta') }}">{{ icono('cuenta') }} Cuenta</a>
+    {% endif %}
+</nav>

@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% from "_graficos.html" import linea, barras, dispersion %}
+{% block title %}Estadísticas — {{ club.club_nombre }}{% endblock %}
+
+{% block barra %}
+<header class="barra">
+    <div class="barra-izq">
+        <h1>Estadísticas</h1>
+        <div class="sub">Últimas {{ rango }} semanas</div>
+    </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+<div class="acciones" style="margin-bottom:14px">
+    {% for r in rangos %}
+    <a href="/estadisticas?semanas={{ r }}" class="btn btn-sm {{ 'btn-primario' if r == rango }}">{{ r }} sem.</a>
+    {% endfor %}
+</div>
+
+{% set ultima = serie[-1] %}
+<div class="kpis">
+    <div class="kpi">
+        <div class="valor">{{ ultima.bienestar or '—' }}</div>
+        <div class="etiqueta">Bienestar del club</div>
+        <div class="detalle">esta semana, sobre {{ maximo }}</div>
+    </div>
+    <div class="kpi">
+        <div class="valor">{{ ('%.1f'|format(ultima.sueno)) if ultima.sueno else '—' }}</div>
+        <div class="etiqueta">Horas de sueño</div>
+        <div class="detalle">promedio del grupo</div>
+    </div>
+    <div class="kpi {{ 'kpi-mal' if ultima.con_molestias else 'kpi-ok' }}">
+        <div class="valor">{{ ultima.con_molestias }}</div>
+        <div class="etiqueta">Con molestias</div>
+        <div class="detalle">esta semana</div>
+    </div>
+    <div class="kpi">
+        <div class="valor">{{ ultima.pct_cargados }}%</div>
+        <div class="etiqueta">Cargaron el parte</div>
+        <div class="detalle">{{ ultima.cargados }} de {{ ultima.total }}</div>
+    </div>
+</div>
+
+<div class="seccion-titulo"><h2>Tendencias del grupo</h2></div>
+<div class="split">
+    <div class="card">
+        <div class="card-head"><h3>Bienestar</h3></div>
+        <div class="card-body">
+            {{ linea(grafico_bienestar, 'hace ' ~ rango ~ ' semanas', 'esta semana', rango=true) }}
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head"><h3>Horas de sueño</h3></div>
+        <div class="card-body">{{ linea(grafico_sueno) }}</div>
+    </div>
+</div>
+<div class="split">
+    <div class="card">
+        <div class="card-head"><h3>Carga de entrenamiento</h3></div>
+        <div class="card-body">
+            {{ barras(grafico_carga) }}
+            <p class="apunte">Promedio de esfuerzo × minutos de todo el club.</p>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head"><h3>Molestias reportadas</h3></div>
+        <div class="card-body">
+            {{ barras(grafico_molestias) }}
+            <p class="apunte">Cuántos atletas reportaron dolor cada semana. Si sube
+                justo después de una semana de carga alta, la carga fue demasiada.</p>
+        </div>
+    </div>
+</div>
+
+{# El cruce con las marcas es la razón de ser de todo el sistema: es lo que
+   convierte "cómo dormiste" en una decisión de entrenamiento. #}
+<div class="seccion-titulo"><h2>¿El bienestar se nota en las marcas?</h2></div>
+{% if cruce.muestras >= 4 %}
+<div class="split">
+    <div class="card">
+        <div class="card-head">
+            <h3>Bienestar y rendimiento</h3>
+            {% if r_bienestar is not none %}<span class="chip chip-tartan">r = {{ r_bienestar }}</span>{% endif %}
+        </div>
+        <div class="card-body">
+            {{ dispersion(dispersion_bienestar, 'bienestar de la semana →', '↑ % del récord personal') }}
+            <p class="apunte">{{ texto_bienestar }}</p>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head">
+            <h3>Sueño y rendimiento</h3>
+            {% if r_sueno is not none %}<span class="chip chip-tartan">r = {{ r_sueno }}</span>{% endif %}
+        </div>
+        <div class="card-body">
+            {{ dispersion(dispersion_sueno, 'horas de sueño →', '↑ % del récord personal') }}
+            <p class="apunte">{{ texto_sueno }}</p>
+        </div>
+    </div>
+</div>
+<p class="apunte" style="margin-top:10px">
+    Cada punto es una marca, comparada con el mejor registro personal de ese
+    atleta en esa prueba: así se pueden mirar juntos un velocista y un lanzador.
+    {{ cruce.muestras }} marcas con parte cargado esa misma semana.
+</p>
+{% else %}
+<div class="card"><div class="card-body">
+    <div class="vacio">
+        {{ icono('estadisticas') }}
+        <p>Hacen falta más marcas cargadas en semanas con parte para poder cruzarlas.
+            Van {{ cruce.muestras }}; con cuatro ya se puede empezar a mirar.</p>
+    </div>
+</div></div>
+{% endif %}
+
+<div class="seccion-titulo"><h2>Atleta por atleta</h2></div>
+<div class="card">
+    <div class="tabla-scroll">
+        <table>
+            <thead>
+            <tr>
+                <th>Atleta</th><th class="num">Promedio</th><th class="num">Esta semana</th>
+                <th>Tendencia</th><th class="num">Sueño</th><th class="num">Carga</th>
+                <th class="num">Ratio</th><th class="num">Cargó</th><th>Evolución</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for f in filas %}
+            <tr>
+                <td class="nombre-celda"><a href="/atletas/{{ f.atleta.id }}">{{ f.atleta.nombre }}</a></td>
+                <td class="num mono-num">{{ f.promedio or '—' }}</td>
+                <td class="num">
+                    {% if f.ultimo %}
+                    <span class="chip chip-{{ 'ok' if f.ultimo > 17 else ('atencion' if f.ultimo > 12 else 'mal') }}">{{ f.ultimo }}</span>
+                    {% else %}<span class="tenue">—</span>{% endif %}
+                </td>
+                <td>
+                    {% if f.tendencia == 'sube' %}<span class="chip chip-ok">▲ sube</span>
+                    {% elif f.tendencia == 'baja' %}<span class="chip chip-mal">▼ baja</span>
+                    {% elif f.tendencia %}<span class="chip">= igual</span>
+                    {% else %}<span class="tenue">—</span>{% endif %}
+                </td>
+                <td class="num mono-num">{{ ('%.1f'|format(f.sueno)) if f.sueno else '—' }}</td>
+                <td class="num mono-num">{{ f.carga|round|int if f.carga else '—' }}</td>
+                <td class="num mono-num">
+                    {% if f.acwr %}
+                    <span class="chip chip-{{ 'mal' if f.acwr > 1.5 or f.acwr < 0.8 else 'ok' }}">{{ f.acwr }}</span>
+                    {% else %}—{% endif %}
+                </td>
+                <td class="num tenue">{{ f.cargados }}/{{ f.posibles }}</td>
+                <td>{% if f.cargados %}<div class="chispa">{{ linea(f.chispa) }}</div>{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<p class="apunte" style="margin-top:8px">
+    El <strong>ratio</strong> compara la carga de la última semana contra el promedio de
+    las cuatro anteriores. Por encima de 1.5 el atleta subió la carga de golpe, que es
+    el escenario clásico de lesión; por debajo de 0.8 viene entrenando menos que lo habitual.
+</p>
+{% endblock %}

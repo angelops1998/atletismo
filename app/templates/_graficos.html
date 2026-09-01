@@ -1,0 +1,68 @@
+{# Macros que dibujan los SVG. Los puntos vienen calculados de services/grafico.py:
+   acá solo se interpolan, así el template no hace matemática. #}
+
+{% macro linea(g, etiqueta_min='', etiqueta_max='', rango=false) %}
+<div class="grafico">
+    <svg viewBox="0 0 {{ g.ancho }} {{ g.alto }}" preserveAspectRatio="none" role="img">
+        <line class="g-reja" x1="0" y1="{{ g.alto - 6 }}" x2="{{ g.ancho }}" y2="{{ g.alto - 6 }}"/>
+        {% for seg in g.segmentos %}
+        <polyline class="g-linea" points="{{ seg }}"/>
+        {% endfor %}
+        {% for p in g.puntos %}{% if p %}
+        <circle class="g-punto" cx="{{ p.x }}" cy="{{ p.y }}" r="{{ 3.5 if g.solo_puntos else 2.6 }}"/>
+        {% endif %}{% endfor %}
+    </svg>
+    {% if etiqueta_min or etiqueta_max %}
+    <div class="grafico-pie">
+        <span>{{ etiqueta_min }}</span>
+        {% if rango %}<span>de {{ g.min|round(1) }} a {{ g.max|round(1) }}</span>{% endif %}
+        <span>{{ etiqueta_max }}</span>
+    </div>
+    {% endif %}
+</div>
+{% endmacro %}
+
+{% macro barras(g, etiqueta_min='', etiqueta_max='') %}
+<div class="grafico">
+    <svg viewBox="0 0 {{ g.ancho }} {{ g.alto }}" preserveAspectRatio="none" role="img">
+        <line class="g-reja" x1="0" y1="{{ g.piso }}" x2="{{ g.ancho }}" y2="{{ g.piso }}"/>
+        {% for b in g.barras %}
+        <rect class="{{ 'g-barra-vacia' if b.vacia else 'g-barra' }}"
+              x="{{ b.x }}" y="{{ b.y if not b.vacia else g.piso - 2 }}"
+              width="{{ b.w }}" height="{{ b.h if not b.vacia else 2 }}" rx="2"/>
+        {% endfor %}
+    </svg>
+    {% if etiqueta_min or etiqueta_max %}
+    <div class="grafico-pie"><span>{{ etiqueta_min }}</span><span>{{ etiqueta_max }}</span></div>
+    {% endif %}
+</div>
+{% endmacro %}
+
+{% macro dispersion(g, eje_x='', eje_y='') %}
+<div class="grafico">
+    <svg viewBox="0 0 {{ g.ancho }} {{ g.alto }}" role="img">
+        <line class="g-reja" x1="0" y1="{{ g.alto - 6 }}" x2="{{ g.ancho }}" y2="{{ g.alto - 6 }}"/>
+        {% for p in g.puntos %}
+        <circle class="g-disperso" cx="{{ p.x }}" cy="{{ p.y }}" r="5"/>
+        {% endfor %}
+    </svg>
+    <div class="grafico-pie"><span>{{ eje_x }}</span><span>{{ eje_y }}</span></div>
+</div>
+{% endmacro %}
+
+{# Barra horizontal 0–5 para el promedio de cada ítem del cuestionario #}
+{% macro barra_item(etiqueta, valor, maximo=5) %}
+<div class="barra-item">
+    <div class="barra-item-top">
+        <span>{{ etiqueta }}</span>
+        <span class="mono-num">{{ '%.1f'|format(valor) if valor is not none else '—' }}</span>
+    </div>
+    <div class="barra-item-riel">
+        {% if valor is not none %}
+        {% set pct = (valor / maximo * 100)|round %}
+        <div class="barra-item-relleno {{ 'mal' if valor < 2.5 else ('atencion' if valor < 3.5 else 'ok') }}"
+             style="width: {{ pct }}%"></div>
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}

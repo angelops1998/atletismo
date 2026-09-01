@@ -1,0 +1,29 @@
+# Secretos y configuración local
+.env
+*.env.local
+
+# Entorno virtual
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Datos de los atletas — nunca al repo
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+
+# Archivos subidos
+app/static/uploads/
+
+# Config local de Claude Code (permisos de esta máquina)
+.claude/settings.local.json
+
+# Editor / OS
+.DS_Store
+*.swp

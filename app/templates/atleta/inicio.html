@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% from "_graficos.html" import linea %}
+{% block title %}Inicio — {{ club.club_nombre }}{% endblock %}
+
+{% block barra %}
+<header class="barra">
+    <div class="barra-izq">
+        <h1>Hola, {{ (user.full_name or user.username).split()[0] }}</h1>
+        <div class="sub">{{ semana|semana|capitalize }}</div>
+    </div>
+    <div class="barra-acciones">
+        <span class="avatar">{{ (user.full_name or user.username)[0] }}</span>
+    </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+{% if guardado %}
+<div class="aviso aviso-ok" style="margin-bottom:14px">
+    <strong>¡Listo!</strong> Tu parte de esta semana quedó guardado.
+</div>
+{% endif %}
+{% if password_cambiada %}
+<div class="aviso aviso-ok" style="margin-bottom:14px">Tu contraseña quedó cambiada.</div>
+{% endif %}
+
+{# Lo primero y más grande de la pantalla es siempre el parte: es lo único que el
+   atleta tiene que hacer sin pensar, con una mano y desde el vestuario. #}
+{% if not parte %}
+<div class="card" style="border-color: var(--tartan)">
+    <div class="card-body">
+        <h2>Todavía no cargaste tu parte</h2>
+        <p class="apunte">Son dos minutos. Con esto el profesor sabe cómo venís
+            y ajusta tu entrenamiento de la semana que viene.</p>
+        <a href="/parte" class="btn btn-primario btn-bloque btn-grande">
+            {{ icono('parte') }} Cargar mi parte
+        </a>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body">
+        <div style="display:flex; align-items:center; gap:14px">
+            <div class="avatar avatar-grande avatar-{{ 'ok' if bienestar_total > 17 else ('atencion' if bienestar_total > 12 else 'mal') }}">
+                {{ bienestar_total }}
+            </div>
+            <div style="flex:1; min-width:0">
+                <h2 style="font-size:17px">Parte cargado</h2>
+                <p class="apunte">Tu bienestar de esta semana: {{ bienestar_total }} de {{ maximo }}.</p>
+            </div>
+        </div>
+        <a href="/parte" class="btn btn-bloque">Corregir mi parte</a>
+    </div>
+</div>
+{% endif %}
+
+{% if falta_anterior %}
+<div class="aviso aviso-atencion" style="margin-top:12px">
+    Te quedó sin cargar la {{ semana_anterior|semana }}.
+    <a href="/parte?semana={{ semana_anterior }}"><strong>Cargala ahora</strong></a>.
+</div>
+{% endif %}
+
+<div class="seccion-titulo">
+    <h2>Cómo venís</h2>
+    <a href="/mis-datos">Ver todo</a>
+</div>
+<div class="card">
+    <div class="card-body">
+        {% set cargados = serie | selectattr('bienestar') | list %}
+        {% if cargados %}
+        {{ linea(grafico_bienestar, 'hace ' ~ serie|length ~ ' semanas', 'esta semana') }}
+        <p class="apunte">Tu bienestar semana a semana, sobre {{ maximo }}. Los cortes
+            son las semanas que no cargaste.</p>
+        {% else %}
+        <div class="vacio">
+            {{ icono('vacio') }}
+            <p>Cuando cargues un par de semanas vas a poder ver acá tu evolución.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="seccion-titulo"><h2>Mi cuota</h2></div>
+<div class="card">
+    <div class="card-body">
+        {% if estado_cuenta.estado == 'al_dia' %}
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px">
+            <div>
+                <div style="font-weight:700">Estás al día</div>
+                <div class="apunte">Cuota mensual: {{ user.cuota_mensual|pesos }}</div>
+            </div>
+            <span class="chip chip-ok">Al día</span>
+        </div>
+        {% elif estado_cuenta.estado == 'debe' %}
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px">
+            <div>
+                <div style="font-weight:700">{{ estado_cuenta.texto }}</div>
+                <div class="apunte">
+                    {% for m in estado_cuenta.meses %}{{ m|mes }}{% if not loop.last %} · {% endif %}{% endfor %}
+                </div>
+            </div>
+            <span class="chip chip-mal">{{ estado_cuenta.deuda|pesos }}</span>
+        </div>
+        {% else %}
+        <p class="apunte">El profesor todavía no te asignó una cuota.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="seccion-titulo"><h2>Mis últimas marcas</h2></div>
+<div class="card">
+    {% if marcas %}
+    <div class="lista">
+        {% for m in marcas %}
+        <div class="item">
+            <div class="item-txt">
+                <div class="item-nombre">{{ pruebas.nombre(m.prueba) }}</div>
+                <div class="item-sub">
+                    {{ m.fecha|fecha(false) }}
+                    {% if m.competencia %} · {{ m.competencia }}{% endif %}
+                </div>
+            </div>
+            <div class="item-fin">
+                <strong class="mono-num">{{ pruebas.formatear(m.prueba, m.valor) }}</strong>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card-body">
+        <div class="vacio">
+            {{ icono('marcas') }}
+            <p>Todavía no tenés marcas cargadas. Las carga el profesor después de
+                cada test o competencia.</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

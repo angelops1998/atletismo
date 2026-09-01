@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% from "_graficos.html" import barras %}
+{% block title %}Pagos — {{ club.club_nombre }}{% endblock %}
+
+{% block barra %}
+<header class="barra">
+    <div class="barra-izq">
+        <h1>Pagos</h1>
+        <div class="sub">{{ resumen.mes|mes }}</div>
+    </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+{% if error == 'duplicado' %}
+<div class="aviso aviso-error" style="margin-bottom:14px">
+    Ese mes ya figura pagado para ese atleta. Si el pago anterior estaba mal,
+    anulalo desde su ficha y cargalo de nuevo.
+</div>
+{% elif error == 'monto' %}
+<div class="aviso aviso-error" style="margin-bottom:14px">
+    Poné un monto, o asignale una cuota mensual al atleta para que se complete sola.
+</div>
+{% elif error == 'periodo' %}
+<div class="aviso aviso-error" style="margin-bottom:14px">Elegí qué mes cubre el pago.</div>
+{% endif %}
+
+<div class="kpis">
+    <div class="kpi kpi-ok">
+        <div class="valor">{{ resumen.cobrado_mes|pesos }}</div>
+        <div class="etiqueta">Cobrado este mes</div>
+        <div class="detalle">de {{ resumen.esperado_mes|pesos }}</div>
+    </div>
+    <div class="kpi kpi-atencion">
+        <div class="valor">{{ resumen.pendiente_mes|pesos }}</div>
+        <div class="etiqueta">Falta cobrar</div>
+        <div class="detalle">del mes en curso</div>
+    </div>
+    <div class="kpi {{ 'kpi-mal' if resumen.deudores else 'kpi-ok' }}">
+        <div class="valor">{{ resumen.deudores|length }}</div>
+        <div class="etiqueta">Atletas con deuda</div>
+        <div class="detalle">{{ resumen.deuda_total|pesos }} acumulado</div>
+    </div>
+    <div class="kpi">
+        <div class="valor">{{ resumen.al_dia }}/{{ resumen.total_atletas }}</div>
+        <div class="etiqueta">Al día</div>
+    </div>
+</div>
+
+<div class="seccion-titulo"><h2>Registrar un pago</h2></div>
+<div class="card">
+    <form method="post" action="/pagos" class="card-body">
+        {{ csrf_input(request) }}
+        <div class="campo">
+            <label for="atleta_id">Atleta</label>
+            <select id="atleta_id" name="atleta_id" required>
+                <option value="">Elegir…</option>
+                {% for p in pendientes %}
+                <option value="{{ p.atleta.id }}">
+                    {{ p.atleta.nombre }}{% if p.estado == 'debe' %} — {{ p.texto }}{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="fila-2">
+            <div class="campo">
+                <label for="periodo">Mes que cubre</label>
+                <input type="date" id="periodo" name="periodo" required
+                       value="{{ resumen.mes }}">
+                <div class="ayuda">Se guarda el mes, no el día.</div>
+            </div>
+            <div class="campo">
+                <label for="fecha_pago">Fecha del pago</label>
+                <input type="date" id="fecha_pago" name="fecha_pago" value="{{ hoy }}">
+            </div>
+        </div>
+        <div class="fila-2">
+            <div class="campo">
+                <label for="monto">Monto</label>
+                <input type="text" id="monto" name="monto" inputmode="decimal"
+                       placeholder="Su cuota mensual">
+                <div class="ayuda">Vacío = la cuota que tiene asignada.</div>
+            </div>
+            <div class="campo">
+                <label for="metodo">Forma de pago</label>
+                <select id="metodo" name="metodo">
+                    {% for m in metodos %}<option value="{{ m }}">{{ m|capitalize }}</option>{% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="campo">
+            <label for="nota">Nota (opcional)</label>
+            <input type="text" id="nota" name="nota" maxlength="200">
+        </div>
+        <button type="submit" class="btn btn-primario btn-bloque">Registrar el pago</button>
+    </form>
+</div>
+
+{% if resumen.deudores %}
+<div class="seccion-titulo"><h2>A quién hay que cobrarle</h2></div>
+<div class="card">
+    <div class="lista">
+        {% for d in resumen.deudores %}
+        <div class="item">
+            <span class="avatar avatar-mal">{{ d.atleta.nombre[0] }}</span>
+            <div class="item-txt">
+                <a href="/atletas/{{ d.atleta.id }}" class="item-nombre">{{ d.atleta.nombre }}</a>
+                <div class="item-sub">
+                    {% for m in d.meses %}{{ m|mes }}{% if not loop.last %} · {% endif %}{% endfor %}
+                </div>
+            </div>
+            <div class="item-fin">
+                <strong>{{ d.deuda|pesos }}</strong>
+                <form method="post" action="/pagos">
+                    {{ csrf_input(request) }}
+                    <input type="hidden" name="atleta_id" value="{{ d.atleta.id }}">
+                    <input type="hidden" name="periodo" value="{{ d.meses[0] }}">
+                    <button type="submit" class="btn btn-sm btn-primario">Cobré</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="seccion-titulo"><h2>Ingresos por mes</h2></div>
+<div class="card"><div class="card-body">
+    {{ barras(grafico_ingresos, historial[0].mes|mes, historial[-1].mes|mes) }}
+</div></div>
+
+<div class="seccion-titulo"><h2>Últimos pagos registrados</h2></div>
+<div class="card">
+    {% if ultimos %}
+    <div class="tabla-scroll">
+        <table>
+            <thead><tr><th>Atleta</th><th>Mes</th><th>Pagado el</th><th class="num">Monto</th><th></th></tr></thead>
+            <tbody>
+            {% for p in ultimos %}
+            <tr>
+                <td class="nombre-celda">
+                    <a href="/atletas/{{ p.atleta_id }}">{{ nombres[p.atleta_id].nombre if p.atleta_id in nombres else '—' }}</a>
+                </td>
+                <td>{{ p.periodo|mes }}</td>
+                <td>{{ p.fecha_pago|fecha_corta }}</td>
+                <td class="num mono-num">{{ p.monto|pesos }}</td>
+                <td class="num">
+                    <form method="post" action="/pagos/{{ p.id }}/borrar"
+                          data-confirmar="¿Anular este pago? El mes va a volver a figurar como adeudado.">
+                        {{ csrf_input(request) }}
+                        <button type="submit" class="btn btn-sm btn-fantasma">Anular</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card-body"><div class="vacio">{{ icono('pagos') }}
+        <p>Todavía no se registró ningún pago.</p></div></div>
+    {% endif %}
+</div>
+{% endblock %}

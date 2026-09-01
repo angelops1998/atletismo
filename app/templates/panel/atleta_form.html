@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% set editando = atleta is not none %}
+{% block title %}{{ 'Editar' if editando else 'Nuevo' }} atleta — {{ club.club_nombre }}{% endblock %}
+
+{% macro dato(campo, defecto='') -%}
+{%- if form and form.get(campo) is not none -%}{{ form.get(campo) }}
+{%- elif atleta and atleta|attr(campo) is not none -%}{{ atleta|attr(campo) }}
+{%- else -%}{{ defecto }}{%- endif -%}
+{%- endmacro %}
+
+{% block barra %}
+<header class="barra">
+    <div class="barra-izq">
+        <h1>{{ 'Editar atleta' if editando else 'Nuevo atleta' }}</h1>
+        <div class="sub">{{ atleta.nombre if editando else 'Alta en el padrón' }}</div>
+    </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+<a href="{{ '/atletas/' ~ atleta.id if editando else '/atletas' }}" class="volver">
+    {{ icono('flecha-izq') }} Volver
+</a>
+
+{% if errores %}
+<div class="aviso aviso-error" style="margin-bottom:14px">
+    <ul>{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post" action="{{ '/atletas/' ~ atleta.id ~ '/editar' if editando else '/atletas/nuevo' }}">
+    {{ csrf_input(request) }}
+
+    <div class="card">
+        <div class="card-head"><h3>Datos personales</h3></div>
+        <div class="card-body">
+            <div class="campo">
+                <label for="full_name">Nombre y apellido *</label>
+                <input type="text" id="full_name" name="full_name" required
+                       value="{{ dato('full_name') }}" autocapitalize="words">
+            </div>
+            <div class="fila-2">
+                <div class="campo">
+                    <label for="fecha_nacimiento">Fecha de nacimiento</label>
+                    <input type="date" id="fecha_nacimiento" name="fecha_nacimiento"
+                           value="{{ dato('fecha_nacimiento') }}">
+                </div>
+                <div class="campo">
+                    <label for="documento">Documento</label>
+                    <input type="text" id="documento" name="documento" value="{{ dato('documento') }}"
+                           inputmode="numeric">
+                </div>
+            </div>
+            <div class="fila-2">
+                <div class="campo">
+                    <label for="telefono">Teléfono</label>
+                    <input type="tel" id="telefono" name="telefono" value="{{ dato('telefono') }}"
+                           placeholder="+591 65555555">
+                    <div class="ayuda">Con el código de país: es el que abre el WhatsApp
+                        desde el panel.</div>
+                </div>
+                <div class="campo">
+                    <label for="email">Correo (opcional)</label>
+                    <input type="email" id="email" name="email" value="{{ dato('email') }}"
+                           autocapitalize="none">
+                </div>
+            </div>
+            <div class="campo">
+                <label for="contacto_emergencia">Contacto de emergencia</label>
+                <input type="text" id="contacto_emergencia" name="contacto_emergencia"
+                       value="{{ dato('contacto_emergencia') }}"
+                       placeholder="Nombre y teléfono">
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h3>Datos deportivos</h3></div>
+        <div class="card-body">
+            <div class="fila-2">
+                <div class="campo">
+                    <label for="categoria">Categoría</label>
+                    <select id="categoria" name="categoria">
+                        <option value="">Sin definir</option>
+                        {% for cat in ["Prebenjamín", "Benjamín", "Alevín", "Infantil", "Cadete", "Juvenil", "Junior/Promesa", "Senior", "Máster"] %}
+                        <option value="{{ cat }}" {% if dato('categoria') == cat %}selected{% endif %}>{{ cat }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="campo">
+                    <label for="prueba_principal">Prueba principal</label>
+                    <select id="prueba_principal" name="prueba_principal">
+                        <option value="">Sin definir</option>
+                        {% for grupo, lista in pruebas.grupos().items() %}
+                        <optgroup label="{{ grupo }}">
+                            {% for clave, nom in lista %}
+                            <option value="{{ nom }}" {% if dato('prueba_principal') == nom %}selected{% endif %}>{{ nom }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="campo">
+                <label for="fecha_alta">Fecha de alta en el club</label>
+                <input type="date" id="fecha_alta" name="fecha_alta"
+                       value="{{ dato('fecha_alta', hoy) }}">
+            </div>
+            <div class="campo">
+                <label for="observaciones_medicas">Observaciones médicas</label>
+                <textarea id="observaciones_medicas" name="observaciones_medicas"
+                          placeholder="Lesiones previas, alergias, medicación…">{{ dato('observaciones_medicas') }}</textarea>
+                <div class="ayuda">Lo que haya que saber antes de mandarlo a una serie fuerte.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h3>Cuota</h3></div>
+        <div class="card-body">
+            <div class="fila-2">
+                <div class="campo">
+                    <label for="cuota_mensual">Cuota mensual</label>
+                    <input type="text" id="cuota_mensual" name="cuota_mensual"
+                           inputmode="decimal" value="{{ dato('cuota_mensual', '0') }}">
+                </div>
+                <div class="campo">
+                    <label for="cobro_desde">Se le cobra desde</label>
+                    <input type="date" id="cobro_desde" name="cobro_desde" value="{{ dato('cobro_desde') }}">
+                    <div class="ayuda">Si lo dejás vacío se toma el mes del alta.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if not editando %}
+    <div class="card">
+        <div class="card-head"><h3>Acceso</h3></div>
+        <div class="card-body">
+            <div class="campo">
+                <label for="username">Usuario</label>
+                <input type="text" id="username" name="username" value="{{ dato('username') }}"
+                       autocapitalize="none" placeholder="Se genera solo con el nombre">
+                <div class="ayuda">Si lo dejás vacío se arma con el nombre (por ejemplo
+                    «jperez»). Tiene que ser fácil de dictar.</div>
+            </div>
+            <div class="campo">
+                <label for="password">Contraseña provisoria *</label>
+                <input type="text" id="password" name="password" required minlength="6"
+                       value="{{ password_sugerida }}">
+                <div class="ayuda">Se la das al atleta y la app le va a pedir que la
+                    cambie la primera vez que entre.</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div style="margin-top:16px">
+        <button type="submit" class="btn btn-primario btn-bloque btn-grande">
+            {{ icono('check') }} {{ 'Guardar cambios' if editando else 'Dar de alta' }}
+        </button>
+    </div>
+</form>
+{% endblock %}

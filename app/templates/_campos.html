@@ -1,0 +1,42 @@
+{# Controles del parte semanal.
+
+   Son radios de verdad (no botones con JavaScript): el formulario se puede
+   completar y enviar aunque el JS no cargue, el navegador valida los
+   obligatorios solo y el lector de pantalla los lee como lo que son. #}
+
+{% macro escala(nombre, valor, etiquetas, requerido=true) %}
+<div class="escala">
+    {% for texto in etiquetas %}
+    {% set n = loop.index %}
+    <input type="radio" id="{{ nombre }}_{{ n }}" name="{{ nombre }}" value="{{ n }}"
+           {% if valor and valor|int == n %}checked{% endif %}
+           {% if requerido and loop.first %}required{% endif %}>
+    <label for="{{ nombre }}_{{ n }}">
+        <span class="n">{{ n }}</span>
+        <span class="txt">{{ texto }}</span>
+    </label>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro escala_num(nombre, valor, desde=1, hasta=10) %}
+<div class="escala escala-10">
+    {% for n in range(desde, hasta + 1) %}
+    <input type="radio" id="{{ nombre }}_{{ n }}" name="{{ nombre }}" value="{{ n }}"
+           {% if valor and valor|int == n %}checked{% endif %}>
+    <label for="{{ nombre }}_{{ n }}"><span class="n">{{ n }}</span></label>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro binario(nombre, valor, si='Sí', no='No', abre='') %}
+<div class="binario">
+    <input type="radio" id="{{ nombre }}_si" name="{{ nombre }}" value="si"
+           {% if valor == 'si' %}checked{% endif %}
+           {% if abre %}data-abre="{{ abre }}"{% endif %}>
+    <label for="{{ nombre }}_si">{{ si }}</label>
+    <input type="radio" id="{{ nombre }}_no" name="{{ nombre }}" value="no"
+           {% if valor == 'no' %}checked{% endif %}>
+    <label for="{{ nombre }}_no">{{ no }}</label>
+</div>
+{% endmacro %}

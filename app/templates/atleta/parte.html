@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% from "_campos.html" import escala, escala_num, binario %}
+{% from "_iconos.html" import icono %}
+{% block title %}Mi parte semanal — {{ club.club_nombre }}{% endblock %}
+
+{% macro dato(campo) -%}
+{#- El valor que va en el control: lo que se acaba de escribir (si el formulario
+    volvió con un error) tiene prioridad sobre lo que hay guardado. -#}
+{%- if form and form.get(campo) is not none -%}{{ form.get(campo) }}
+{%- elif parte -%}{{ parte|attr(campo) if parte|attr(campo) is not none else '' }}
+{%- endif -%}
+{%- endmacro %}
+
+{% block barra %}
+<header class="barra">
+    <div class="barra-izq">
+        <h1>Mi parte semanal</h1>
+        <div class="sub">{{ semana|semana|capitalize }}</div>
+    </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+{% if errores %}
+<div class="aviso aviso-error" style="margin-bottom:14px">
+    <ul>{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if parte %}
+<div class="aviso aviso-info" style="margin-bottom:14px">
+    Ya cargaste esta semana. Si algo cambió, corregilo y volvé a guardar.
+</div>
+{% endif %}
+
+{% if falta_anterior %}
+<div class="aviso aviso-atencion" style="margin-bottom:14px">
+    Te quedó sin cargar la {{ semana_anterior|semana }}.
+    <a href="/parte?semana={{ semana_anterior }}"><strong>Cargala ahora</strong></a>.
+</div>
+{% endif %}
+
+{% if not es_semana_actual %}
+<div class="aviso aviso-atencion" style="margin-bottom:14px">
+    Estás completando la <strong>{{ semana|semana }}</strong>, que ya terminó.
+    <a href="/parte">Ir a la semana actual</a>.
+</div>
+{% endif %}
+
+<form method="post" action="/parte">
+    {{ csrf_input(request) }}
+    <input type="hidden" name="semana" value="{{ semana }}">
+
+    <div class="card">
+        <div class="card-head">
+            <h3>¿Cómo estuviste esta semana?</h3>
+        </div>
+        <div class="card-body">
+            <p class="apunte">Contestá pensando en la semana entera, no solo en hoy.
+                No hay respuestas buenas ni malas: el profesor las usa para decidir
+                cuánto cargarte la semana que viene.</p>
+
+            {% for campo, etiqueta, pregunta in items %}
+            <div class="campo">
+                <div class="lbl">{{ pregunta }}</div>
+                {{ escala(campo, dato(campo), etiquetas[campo]) }}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h3>Sueño y alimentación</h3></div>
+        <div class="card-body">
+            <div class="fila-2">
+                <div class="campo">
+                    <label for="horas_sueno">Horas de sueño por noche</label>
+                    <input type="number" id="horas_sueno" name="horas_sueno" step="0.5"
+                           min="0" max="24" inputmode="decimal"
+                           value="{{ dato('horas_sueno') }}" placeholder="7.5">
+                </div>
+                <div class="campo">
+                    <label for="hidratacion_litros">Litros de agua por día</label>
+                    <input type="number" id="hidratacion_litros" name="hidratacion_litros"
+                           step="0.5" min="0" max="15" inputmode="decimal"
+                           value="{{ dato('hidratacion_litros') }}" placeholder="2">
+                </div>
+            </div>
+
+            <div class="campo">
+                <div class="lbl">¿Cómo comiste esta semana?</div>
+                {{ escala('alimentacion_calidad', dato('alimentacion_calidad'),
+                          ['Muy mal', 'Mal', 'Normal', 'Bien', 'Muy bien'], false) }}
+            </div>
+
+            <div class="fila-2">
+                <div class="campo">
+                    <label for="comidas_dia">Comidas por día</label>
+                    <input type="number" id="comidas_dia" name="comidas_dia" min="0" max="10"
+                           inputmode="numeric" value="{{ dato('comidas_dia') }}" placeholder="4">
+                </div>
+                <div class="campo">
+                    <label for="peso_kg">Peso (kg)</label>
+                    <input type="number" id="peso_kg" name="peso_kg" step="0.1" min="20" max="250"
+                           inputmode="decimal" value="{{ dato('peso_kg') }}" placeholder="68.5">
+                </div>
+            </div>
+
+            <div class="campo">
+                <div class="lbl">¿Comiste algo antes de entrenar?</div>
+                {% set comer = form.get('come_antes_entrenar') if form
+                               else ('si' if parte and parte.come_antes_entrenar
+                                     else ('no' if parte and parte.come_antes_entrenar is not none else '')) %}
+                {{ binario('come_antes_entrenar', comer) }}
+                <div class="ayuda">Entrenar en ayunas explica la mayoría de los bajones
+                    en el entrenamiento de la tarde.</div>
+            </div>
+
+            <div class="campo">
+                <label for="suplementos">Suplementos o vitaminas (opcional)</label>
+                <input type="text" id="suplementos" name="suplementos" maxlength="200"
+                       value="{{ dato('suplementos') }}" placeholder="Hierro, magnesio…">
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h3>Entrenamiento</h3></div>
+        <div class="card-body">
+            <div class="fila-2">
+                <div class="campo">
+                    <label for="sesiones">Entrenamientos que hiciste</label>
+                    <input type="number" id="sesiones" name="sesiones" min="0" max="21"
+                           inputmode="numeric" value="{{ dato('sesiones') }}" placeholder="4">
+                </div>
+                <div class="campo">
+                    <label for="minutos_totales">Minutos en total</label>
+                    <input type="number" id="minutos_totales" name="minutos_totales"
+                           min="0" max="3000" inputmode="numeric"
+                           value="{{ dato('minutos_totales') }}" placeholder="300">
+                </div>
+            </div>
+            <div class="campo">
+                <div class="lbl">¿Qué tan duro te resultó? (1 muy suave — 10 al límite)</div>
+                {{ escala_num('rpe', dato('rpe')) }}
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h3>Molestias</h3></div>
+        <div class="card-body">
+            <div class="campo">
+                <div class="lbl">¿Tenés alguna molestia o dolor?</div>
+                {% set tiene = form.get('molestias') if form else ('si' if parte and parte.molestias else ('no' if parte else '')) %}
+                {{ binario('molestias', tiene, abre='bloque-molestia') }}
+            </div>
+
+            <div id="bloque-molestia" class="condicional {{ 'abierto' if tiene == 'si' }}">
+                <div class="campo">
+                    <label for="molestia_zona">¿En qué parte del cuerpo?</label>
+                    <input type="text" id="molestia_zona" name="molestia_zona" maxlength="80"
+                           value="{{ dato('molestia_zona') }}"
+                           placeholder="Isquiotibial derecho, tobillo izquierdo…">
+                </div>
+                <div class="campo">
+                    <div class="lbl">¿Cuánto te duele? (1 apenas — 10 muchísimo)</div>
+                    {{ escala_num('molestia_dolor', dato('molestia_dolor')) }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h3>Algo más que el profesor deba saber</h3></div>
+        <div class="card-body">
+            <div class="campo">
+                <textarea name="comentarios" maxlength="1000"
+                          placeholder="Estudios, viajes, si dormiste mal por algo puntual…">{{ dato('comentarios') }}</textarea>
+            </div>
+        </div>
+    </div>
+
+    <div style="margin-top:16px">
+        <button type="submit" class="btn btn-primario btn-bloque btn-grande">
+            {{ icono('check') }} {{ 'Guardar los cambios' if parte else 'Enviar mi parte' }}
+        </button>
+    </div>
+</form>
+{% endblock %}

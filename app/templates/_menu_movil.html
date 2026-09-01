@@ -1,0 +1,12 @@
+{% from "_iconos.html" import icono %}
+{# Acceso a la landing y a cerrar sesión en el celular: esos enlaces viven en el
+   menú lateral (_nav.html), que solo se ve de 1024px para arriba. Este botón
+   flotante es la única forma de llegar a ellos en la barra inferior. #}
+<details class="menu-movil">
+    <summary aria-label="Más opciones">{{ icono('menu') }}</summary>
+    <div class="menu-movil-panel">
+        <a href="/club" target="_blank">{{ icono('lugar') }} Ver la página del club</a>
+        <a href="/cuenta">{{ icono('cuenta') }} Mi cuenta</a>
+        <a href="/auth/logout">{{ icono('salir') }} Cerrar sesión</a>
+    </div>
+</details>

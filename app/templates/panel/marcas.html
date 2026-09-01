@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% block title %}Marcas — {{ club.club_nombre }}{% endblock %}
+
+{% block barra %}
+<header class="barra">
+    <div class="barra-izq">
+        <h1>Marcas</h1>
+        <div class="sub">{{ pruebas.nombre(prueba) if prueba else 'Todas las pruebas' }}</div>
+    </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+{% if error == 'valor' %}
+<div class="aviso aviso-error" style="margin-bottom:14px">
+    La marca no se entendió. Escribila como 12.34, o como 4:32.10 en las pruebas largas.
+</div>
+{% elif error == 'prueba' %}
+<div class="aviso aviso-error" style="margin-bottom:14px">Elegí una prueba.</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-head"><h3>Cargar una marca</h3></div>
+    <form method="post" action="/marcas" class="card-body">
+        {{ csrf_input(request) }}
+        <div class="fila-2">
+            <div class="campo">
+                <label for="atleta_id">Atleta</label>
+                <select id="atleta_id" name="atleta_id" required>
+                    <option value="">Elegir…</option>
+                    {% for a in atletas %}<option value="{{ a.id }}">{{ a.nombre }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="campo">
+                <label for="prueba">Prueba</label>
+                <select id="prueba" name="prueba" required>
+                    <option value="">Elegir…</option>
+                    {% for grupo, lista in grupos.items() %}
+                    <optgroup label="{{ grupo }}">
+                        {% for clave, nom in lista %}
+                        <option value="{{ clave }}" {% if clave == prueba %}selected{% endif %}>{{ nom }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="fila-3">
+            <div class="campo">
+                <label for="valor">Marca</label>
+                <input type="text" id="valor" name="valor" required inputmode="decimal"
+                       placeholder="12.34 · 5.87 · 4:32.10">
+                <div class="ayuda">Segundos o metros. En las pruebas largas se acepta minutos:segundos.</div>
+            </div>
+            <div class="campo">
+                <label for="fecha">Fecha</label>
+                <input type="date" id="fecha" name="fecha" value="{{ hoy }}">
+            </div>
+            <div class="campo">
+                <label for="viento">Viento (m/s)</label>
+                <input type="text" id="viento" name="viento" inputmode="decimal" placeholder="+1.2">
+            </div>
+        </div>
+        <div class="fila-2">
+            <div class="campo">
+                <label for="competencia">Competencia (opcional)</label>
+                <input type="text" id="competencia" name="competencia" maxlength="120"
+                       placeholder="Torneo Apertura">
+            </div>
+            <div class="campo">
+                <label for="lugar">Lugar</label>
+                <input type="text" id="lugar" name="lugar" maxlength="120">
+            </div>
+        </div>
+        <div class="campo">
+            <div class="lbl">¿Fue en competencia?</div>
+            <div class="binario">
+                <input type="radio" id="comp_si" name="es_competencia" value="si">
+                <label for="comp_si">En competencia</label>
+                <input type="radio" id="comp_no" name="es_competencia" value="no" checked>
+                <label for="comp_no">En entrenamiento</label>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primario btn-bloque">Guardar la marca</button>
+    </form>
+</div>
+
+<div class="seccion-titulo"><h2>Ranking del club</h2></div>
+<div class="card">
+    <form method="get" action="/marcas" class="card-body" style="padding-bottom:0">
+        <div class="campo">
+            <label for="filtro">Ver el ranking de</label>
+            <select id="filtro" name="prueba" onchange="this.form.submit()">
+                <option value="">Elegir una prueba…</option>
+                {% for grupo, lista in grupos.items() %}
+                <optgroup label="{{ grupo }}">
+                    {% for clave, nom in lista %}
+                    <option value="{{ clave }}" {% if clave == prueba %}selected{% endif %}>{{ nom }}</option>
+                    {% endfor %}
+                </optgroup>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+
+    {% if ranking %}
+    <div class="lista">
+        {% for r in ranking %}
+        <a href="/atletas/{{ r.atleta.id }}" class="item">
+            <span class="avatar">{{ loop.index }}</span>
+            <div class="item-txt">
+                <div class="item-nombre">{{ r.atleta.nombre }}</div>
+                <div class="item-sub">{{ r.marca.fecha|fecha_corta }}
+                    {%- if r.marca.competencia %} · {{ r.marca.competencia }}{% endif %}</div>
+            </div>
+            <div class="item-fin">
+                <strong class="mono-num">{{ pruebas.formatear(r.marca.prueba, r.marca.valor) }}</strong>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% elif prueba %}
+    <div class="card-body"><div class="vacio">{{ icono('marcas') }}
+        <p>Todavía no hay marcas cargadas en esta prueba.</p></div></div>
+    {% endif %}
+</div>
+
+<div class="seccion-titulo"><h2>Últimas marcas cargadas</h2></div>
+<div class="card">
+    {% if filas %}
+    <div class="tabla-scroll">
+        <table>
+            <thead><tr><th>Fecha</th><th>Atleta</th><th>Prueba</th><th class="num">Marca</th><th>Dónde</th><th></th></tr></thead>
+            <tbody>
+            {% for m, a in filas %}
+            <tr>
+                <td>{{ m.fecha|fecha_corta }}</td>
+                <td class="nombre-celda"><a href="/atletas/{{ a.id }}">{{ a.nombre }}</a></td>
+                <td>{{ pruebas.nombre(m.prueba) }}</td>
+                <td class="num mono-num"><strong>{{ pruebas.formatear(m.prueba, m.valor) }}</strong></td>
+                <td class="tenue">{{ m.competencia or m.lugar or 'Entrenamiento' }}</td>
+                <td class="num">
+                    <form method="post" action="/marcas/{{ m.id }}/borrar"
+                          data-confirmar="¿Borrar esta marca?">
+                        {{ csrf_input(request) }}
+                        <button type="submit" class="btn btn-sm btn-fantasma">Borrar</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card-body"><div class="vacio">{{ icono('marcas') }}
+        <p>Todavía no hay marcas cargadas.</p></div></div>
+    {% endif %}
+</div>
+{% endblock %}

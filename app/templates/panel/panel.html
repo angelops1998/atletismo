@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% from "_graficos.html" import linea, barras, barra_item %}
+{% block title %}Panel — {{ club.club_nombre }}{% endblock %}
+
+{% block barra %}
+<header class="barra">
+    <div class="barra-izq">
+        <h1>Panel</h1>
+        <div class="sub">{{ semana|semana|capitalize }}</div>
+    </div>
+    <div class="barra-acciones">
+        <a href="/atletas/nuevo" class="btn btn-sm btn-primario">{{ icono('mas') }} Atleta</a>
+    </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+<div class="kpis">
+    <div class="kpi {{ 'kpi-ok' if cargados == total_atletas and total_atletas else 'kpi-atencion' }}">
+        <div class="valor">{{ cargados }}/{{ total_atletas }}</div>
+        <div class="etiqueta">Partes de esta semana</div>
+        <div class="detalle">{{ sin_cargar|length }} sin cargar</div>
+    </div>
+    <div class="kpi {{ 'kpi-mal' if con_molestias else '' }}">
+        <div class="valor">{{ con_molestias|length }}</div>
+        <div class="etiqueta">Con molestias</div>
+        <div class="detalle">reportadas esta semana</div>
+    </div>
+    <div class="kpi kpi-tartan">
+        <div class="valor">{{ finanzas.cobrado_mes|pesos }}</div>
+        <div class="etiqueta">Cobrado en {{ finanzas.mes|mes }}</div>
+        <div class="detalle">de {{ finanzas.esperado_mes|pesos }} esperado</div>
+    </div>
+    <div class="kpi {{ 'kpi-mal' if finanzas.deudores else 'kpi-ok' }}">
+        <div class="valor">{{ finanzas.deudores|length }}</div>
+        <div class="etiqueta">Atletas con deuda</div>
+        <div class="detalle">{{ finanzas.deuda_total|pesos }} en total</div>
+    </div>
+</div>
+
+{# Las alertas van antes que cualquier gráfico: si el profesor abre el panel y lo
+   primero que ve son tendencias, se pierde al atleta que reportó dolor 8/10. #}
+<div class="seccion-titulo">
+    <h2>Para revisar</h2>
+    <a href="/estadisticas">Ver estadísticas</a>
+</div>
+
+{% if alertas_club %}
+<div class="card">
+    {% for fila in alertas_club %}
+    <div class="alerta-grupo">
+        <div class="alerta-grupo-head">
+            <span class="avatar avatar-{{ 'mal' if fila.peor == 0 else ('atencion' if fila.peor == 1 else '') }}">
+                {{ fila.atleta.nombre[0] }}
+            </span>
+            <a href="/atletas/{{ fila.atleta.id }}" class="nom">{{ fila.atleta.nombre }}</a>
+            <span class="chip">{{ fila.alertas|length }}</span>
+        </div>
+        {% for a in fila.alertas %}
+        <div class="alerta alerta-{{ a.nivel }}">
+            <span class="alerta-punto"></span>
+            <div>
+                <div class="alerta-titulo">{{ a.titulo }}</div>
+                <div class="alerta-detalle">{{ a.detalle }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card"><div class="card-body">
+    <div class="vacio">
+        {{ icono('check') }}
+        <p>No hay nada para revisar: todos cargaron su parte, sin molestias ni deudas.</p>
+    </div>
+</div></div>
+{% endif %}
+
+{% if sin_cargar %}
+<div class="seccion-titulo"><h2>Todavía no cargaron el parte</h2></div>
+<div class="card">
+    <div class="lista">
+        {% for a in sin_cargar %}
+        <a href="/atletas/{{ a.id }}" class="item">
+            <span class="avatar">{{ a.nombre[0] }}</span>
+            <div class="item-txt">
+                <div class="item-nombre">{{ a.nombre }}</div>
+                <div class="item-sub">{{ a.categoria or 'Sin categoría' }}</div>
+            </div>
+            <div class="item-fin">
+                {% if a.telefono %}
+                <a href="https://wa.me/{{ a.telefono|replace('+','')|replace(' ','')|replace('-','') }}?text=Hola%20{{ a.nombre.split()[0]|urlencode }},%20te%20falta%20cargar%20el%20parte%20de%20esta%20semana."
+                   class="btn btn-sm" target="_blank" rel="noopener">Recordar</a>
+                {% endif %}
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="seccion-titulo"><h2>Cómo viene el grupo</h2></div>
+<div class="split">
+    <div class="card">
+        <div class="card-head"><h3>Bienestar promedio</h3></div>
+        <div class="card-body">
+            {{ linea(grafico_bienestar, 'hace ' ~ serie|length ~ ' semanas', 'esta semana', rango=true) }}
+            <p class="apunte">Promedio del club sobre {{ 25 }}, semana a semana.</p>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head"><h3>Qué está flojo esta semana</h3></div>
+        <div class="card-body">
+            {% for campo, etiqueta, pregunta in items %}
+            {{ barra_item(etiqueta, items_semana[campo]) }}
+            {% endfor %}
+            <p class="apunte">Promedio de cada pregunta, de 1 a 5. Lo que aparece bajo
+                acá es lo que conviene trabajar con todo el grupo.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-head"><h3>Cuántos cargan el parte</h3></div>
+    <div class="card-body">
+        {{ barras(grafico_participacion, 'hace ' ~ serie|length ~ ' semanas', 'esta semana') }}
+        <p class="apunte">Porcentaje del club que cargó cada semana. Si esto baja,
+            los promedios de arriba están hechos con menos gente y no se comparan.</p>
+    </div>
+</div>
+
+<div class="seccion-titulo"><h2>Accesos</h2></div>
+<div class="card">
+    <div class="lista">
+        <a href="/marcas" class="item">
+            <span class="avatar">{{ icono('marcas') }}</span>
+            <div class="item-txt"><div class="item-nombre">Marcas y rankings</div>
+                <div class="item-sub">Cargar un test o una competencia</div></div>
+        </a>
+        <a href="/asistencia" class="item">
+            <span class="avatar">{{ icono('asistencia') }}</span>
+            <div class="item-txt"><div class="item-nombre">Tomar lista</div>
+                <div class="item-sub">Asistencia del día</div></div>
+        </a>
+        <a href="/atletas" class="item">
+            <span class="avatar">{{ icono('atletas') }}</span>
+            <div class="item-txt"><div class="item-nombre">Padrón de atletas</div>
+                <div class="item-sub">{{ total_atletas }} activos</div></div>
+        </a>
+    </div>
+</div>
+{% endblock %}

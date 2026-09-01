@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% block title %}Sin permiso — {{ club.club_nombre }}{% endblock %}
+{% block cuerpo %}
+<div class="login-pantalla">
+    <div class="login-caja" style="text-align:center">
+        <div class="login-marca">
+            <div class="escudo">{{ icono('corredor') }}</div>
+            <h1>Sin permiso</h1>
+            <p>{{ detalle or 'No tenés acceso a esta pantalla.' }}</p>
+        </div>
+        <a href="/" class="btn btn-primario btn-bloque">Volver al inicio</a>
+    </div>
+</div>
+{% endblock %}
