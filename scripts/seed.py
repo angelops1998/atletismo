@@ -34,18 +34,18 @@ PASSWORD_DEMO = "atletismo123"
 # El perfil define qué situación representa cada uno, para que el panel muestre
 # todas las alertas que el sistema sabe detectar.
 ATLETAS = [
-    ("Lucía Fernández",   "lfernandez", "Juveniles", "100m",   28000, "solida"),
-    ("Mateo Rivas",       "mrivas",     "Mayores",   "400m",   32000, "sobrecarga"),
-    ("Camila Ortiz",      "cortiz",     "Juveniles", "largo",  28000, "molestia"),
-    ("Tomás Aguirre",     "taguirre",   "Mayores",   "1500m",  32000, "solida"),
-    ("Valentina Sosa",    "vsosa",      "Menores",   "100m",   22000, "irregular"),
-    ("Joaquín Medina",    "jmedina",    "Mayores",   "bala",   32000, "duerme_poco"),
-    ("Martina Cabrera",   "mcabrera",   "Juveniles", "800m",   28000, "solida"),
-    ("Benjamín Ledesma",  "bledesma",   "Menores",   "60m",    22000, "sin_parte"),
-    ("Julieta Paz",       "jpaz",       "Mayores",   "jabalina", 32000, "solida"),
-    ("Santiago Vera",     "svera",      "Juveniles", "200m",   28000, "bajon"),
-    ("Renata Molina",     "rmolina",    "Menores",   "alto",   22000, "irregular"),
-    ("Facundo Ríos",      "frios",      "Mayores",   "5000m",  32000, "solida"),
+    ("Lucía Fernández",   "lfernandez", "Juveniles", "100m",   150, "solida"),
+    ("Mateo Rivas",       "mrivas",     "Mayores",   "400m",   150, "sobrecarga"),
+    ("Camila Ortiz",      "cortiz",     "Juveniles", "largo",  150, "molestia"),
+    ("Tomás Aguirre",     "taguirre",   "Mayores",   "1500m",  150, "solida"),
+    ("Valentina Sosa",    "vsosa",      "Menores",   "100m",   150, "irregular"),
+    ("Joaquín Medina",    "jmedina",    "Mayores",   "bala",   150, "duerme_poco"),
+    ("Martina Cabrera",   "mcabrera",   "Juveniles", "800m",   150, "solida"),
+    ("Benjamín Ledesma",  "bledesma",   "Menores",   "60m",    150, "sin_parte"),
+    ("Julieta Paz",       "jpaz",       "Mayores",   "jabalina", 150, "solida"),
+    ("Santiago Vera",     "svera",      "Juveniles", "200m",   150, "bajon"),
+    ("Renata Molina",     "rmolina",    "Menores",   "alto",   150, "irregular"),
+    ("Facundo Ríos",      "frios",      "Mayores",   "5000m",  150, "solida"),
 ]
 
 # Prueba real de cada atleta para las marcas (la del padrón es texto libre)

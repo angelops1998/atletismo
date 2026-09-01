@@ -98,8 +98,7 @@ async def lista(request: Request, db: Session = Depends(get_db)):
     busqueda = (request.query_params.get("q") or "").strip()
 
     consulta = db.query(User).filter(User.role == "atleta")
-    if not ver_bajas:
-        consulta = consulta.filter(User.is_active.is_(True))
+    consulta = consulta.filter(User.is_active.is_(not ver_bajas))
     if busqueda:
         patron = f"%{busqueda.lower()}%"
         consulta = consulta.filter(
