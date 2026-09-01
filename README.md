@@ -16,7 +16,9 @@ PostgreSQL, sesión JWT en cookie httpOnly con renovación deslizante y protecci
 CSRF propia. El CSS está escrito a mano y es **mobile first**: los atletas cargan
 el parte desde el teléfono. No hay frameworks de frontend ni librerías de
 gráficos — los SVG se generan en el servidor (`app/services/grafico.py`), así la
-página abre rápido con datos móviles.
+página abre rápido con datos móviles. Por el mismo motivo **no se carga nada de
+otro origen**: las tipografías se sirven desde `app/static/fonts`
+(`scripts/bajar_fuentes.py` las rearma) y la CSP no habilita ningún externo.
 
 Mismo stack y mismas convenciones que el proyecto `pami`.
 
@@ -78,6 +80,20 @@ molestia arrastrada y tres atletas con deuda.
 
 `scripts/seed.py --borrar` vacía la base y la vuelve a cargar. **No usarlo en
 producción.**
+
+## Tests
+
+```bash
+.venv/bin/pytest
+```
+
+Corren sobre SQLite en memoria: no hace falta Postgres ni el `.env`, y no hay
+forma de que toquen los datos del club. Cubren los cálculos que no se guardan en
+ninguna columna —bienestar, carga, ACWR, deuda— porque si uno se corre de lugar
+no hay nada que lo delate: la pantalla muestra un número plausible y equivocado.
+El resto son regresiones de cosas que estuvieron mal alguna vez y conviene que
+fallen ruidosamente: el control CSRF, la separación de roles, los destinos de
+redirección y los rangos de lo que se carga a mano.
 
 ## Cómo se usa
 
