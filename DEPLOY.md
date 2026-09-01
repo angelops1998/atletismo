@@ -17,14 +17,14 @@ hiciste con pami.
 
 ## 0. Antes de empezar
 
-Conectate por SSH y confirmá que el puerto 8002 está libre (pami usa el 8001):
+Conectate por SSH y confirmá que el puerto 8003 está libre (pami usa el 8001):
 
 ```bash
 ssh root@IP_DEL_VPS
-sudo ss -tlnp | grep -E ':8001|:8002'
+sudo ss -tlnp | grep -E ':8001|:8003'
 ```
 
-Si el 8002 ya lo usa otra cosa, cambialo en `deploy/atletismo.service`,
+Si el 8003 ya lo usa otra cosa, cambialo en `deploy/atletismo.service`,
 `run.py` y esta guía antes de seguir.
 
 ---
@@ -90,17 +90,17 @@ sudo cp /opt/atletismo/deploy/atletismo.service /etc/systemd/system/atletismo.se
 sudo systemctl daemon-reload
 sudo systemctl enable --now atletismo
 sudo systemctl status atletismo          # debe decir "active (running)"
-curl -I http://127.0.0.1:8002/            # debe dar 200 o 303 (redirect a login)
+curl -I http://127.0.0.1:8003/            # debe dar 200 o 303 (redirect a login)
 ```
 
 ---
 
-## 6. Firewall: abrir el puerto 8002
+## 6. Firewall: abrir el puerto 8003
 
 Como todavía no hay nginx delante, el puerto se expone directo:
 
 ```bash
-sudo ufw allow 8002/tcp
+sudo ufw allow 8003/tcp
 sudo ufw status
 ```
 
@@ -115,7 +115,7 @@ cd /opt/atletismo
 sudo -u atletismo /opt/atletismo/.venv/bin/python scripts/crear_profesor.py
 ```
 
-Después entrás a `http://IP_DEL_VPS:8002`, iniciás sesión como profesor y das
+Después entrás a `http://IP_DEL_VPS:8003`, iniciás sesión como profesor y das
 de alta a los atletas desde el panel.
 
 ---
@@ -134,12 +134,12 @@ sudo crontab -u atletismo -e
 ## Cuando consigas un dominio para el club
 
 1. Apuntá el dominio (registro A) a `IP_DEL_VPS`.
-2. En `/etc/systemd/system/atletismo.service` cambiá `--bind 0.0.0.0:8002` por
-   `--bind 127.0.0.1:8002` y `sudo systemctl restart atletismo`.
+2. En `/etc/systemd/system/atletismo.service` cambiá `--bind 0.0.0.0:8003` por
+   `--bind 127.0.0.1:8003` y `sudo systemctl restart atletismo`.
 3. Seguí los pasos que ya están comentados arriba de
    [`deploy/nginx-atletismo.conf`](deploy/nginx-atletismo.conf): copiar el
    server block, `certbot --nginx`, y poner `HTTPS_ONLY=true` en el `.env`.
-4. `sudo ufw delete allow 8002` — ya no hace falta exponer el puerto directo,
+4. `sudo ufw delete allow 8003` — ya no hace falta exponer el puerto directo,
    nginx pasa a ser la única puerta de entrada (80/443).
 
 ---
@@ -162,8 +162,8 @@ sudo systemctl restart atletismo
 - [ ] `.env` con SECRET_KEY nueva, DATABASE_URL correcta, datos del club
 - [ ] `alembic upgrade head` corrido sin errores
 - [ ] `systemctl status atletismo` = running
-- [ ] ufw permite 8002/tcp
-- [ ] `http://IP_DEL_VPS:8002` responde y el login funciona
+- [ ] ufw permite 8003/tcp
+- [ ] `http://IP_DEL_VPS:8003` responde y el login funciona
 - [ ] profesor creado, login OK
 - [ ] cron de backups configurado
 - [ ] (más adelante) dominio + nginx + certbot + `HTTPS_ONLY=true`

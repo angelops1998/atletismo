@@ -24,16 +24,16 @@ WorkingDirectory=/opt/atletismo
 EnvironmentFile=/opt/atletismo/.env
 
 # Gunicorn con workers Uvicorn (ASGI). 2-3 workers alcanza para un club chico.
-# Puerto 8002: el 8001 ya lo usa pami en el mismo VPS.
+# Puerto 8003: el 8001 ya lo usa pami en el mismo VPS.
 #
 # TODAVÍA SIN DOMINIO: bindeado a 0.0.0.0 para entrar directo por
-# http://IP_DEL_VPS:8002 mientras no haya nginx delante. El día que consigas
-# un dominio, cambiá el --bind a 127.0.0.1:8002 (ver deploy/nginx-atletismo.conf)
+# http://IP_DEL_VPS:8003 mientras no haya nginx delante. El día que consigas
+# un dominio, cambiá el --bind a 127.0.0.1:8003 (ver deploy/nginx-atletismo.conf)
 # para que solo nginx pueda hablarle a la app.
 ExecStart=/opt/atletismo/.venv/bin/gunicorn app.main:app \
     --workers 2 \
     --worker-class uvicorn.workers.UvicornWorker \
-    --bind 0.0.0.0:8002 \
+    --bind 0.0.0.0:8003 \
     --timeout 120 \
     --access-logfile - \
     --error-logfile -
