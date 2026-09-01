@@ -1,0 +1,27 @@
+# Dependencias de PRODUCCIÓN. Instalar con:
+#   pip install -r requirements-prod.txt
+# Mismas versiones que requirements.txt, más el servidor de producción
+# (gunicorn + workers uvicorn) que en desarrollo no hace falta.
+
+# --- Framework web / server ---
+fastapi==0.136.3
+uvicorn[standard]==0.49.0
+gunicorn==23.0.0
+Jinja2==3.1.6
+python-multipart==0.0.32
+starlette==1.2.1
+
+# --- Base de datos ---
+SQLAlchemy==2.0.50
+alembic==1.18.4
+psycopg2-binary==2.9.12
+
+# --- Configuración ---
+pydantic==2.13.4
+pydantic-settings==2.14.1
+python-dotenv==1.2.2
+
+# --- Seguridad (sesión JWT en cookie + hash de contraseñas) ---
+python-jose==3.5.0
+bcrypt==5.0.0
+email-validator==2.3.0

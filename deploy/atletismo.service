@@ -1,0 +1,51 @@
+# systemd unit para la app de Atletismo.
+# Instalación (en el VPS, como root):
+#   sudo cp deploy/atletismo.service /etc/systemd/system/atletismo.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now atletismo
+#   sudo systemctl status atletismo
+#
+# Supone:
+#   - Código en /opt/atletismo (git clone del repo)
+#   - virtualenv en /opt/atletismo/.venv
+#   - usuario del sistema 'atletismo' (sin login), dueño de /opt/atletismo
+#   - .env presente en /opt/atletismo/.env
+
+[Unit]
+Description=Atletismo - Gestion del club (FastAPI)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=atletismo
+Group=atletismo
+WorkingDirectory=/opt/atletismo
+EnvironmentFile=/opt/atletismo/.env
+
+# Gunicorn con workers Uvicorn (ASGI). 2-3 workers alcanza para un club chico.
+# Puerto 8002: el 8001 ya lo usa pami en el mismo VPS.
+#
+# TODAVÍA SIN DOMINIO: bindeado a 0.0.0.0 para entrar directo por
+# http://IP_DEL_VPS:8002 mientras no haya nginx delante. El día que consigas
+# un dominio, cambiá el --bind a 127.0.0.1:8002 (ver deploy/nginx-atletismo.conf)
+# para que solo nginx pueda hablarle a la app.
+ExecStart=/opt/atletismo/.venv/bin/gunicorn app.main:app \
+    --workers 2 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 0.0.0.0:8002 \
+    --timeout 120 \
+    --access-logfile - \
+    --error-logfile -
+
+Restart=on-failure
+RestartSec=5
+
+# Endurecimiento básico
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
