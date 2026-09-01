@@ -28,7 +28,19 @@
     });
   });
 
-  // 3) Marcar a todos presentes de una: tomar lista es marcar las excepciones,
+  // 3) Campos que envían su formulario al cambiar (el filtro de prueba, el
+  //    selector de fecha de la lista). Estaba como onchange="" en el HTML y se
+  //    movió acá porque la CSP no admite scripts inline. Ojo: estos dos
+  //    formularios no tienen botón de envío, así que dependen de este archivo
+  //    igual que antes dependían del onchange — sin JS no filtran. Las flechas
+  //    "◀ ▶" y "Hoy" de la lista son links y sí funcionan siempre.
+  document.querySelectorAll("[data-autoenviar]").forEach(function (campo) {
+    campo.addEventListener("change", function () {
+      if (campo.form) campo.form.submit();
+    });
+  });
+
+  // 4) Marcar a todos presentes de una: tomar lista es marcar las excepciones,
   //    no ir uno por uno cuando vinieron los treinta.
   var todos = document.querySelector("[data-todos-presentes]");
   if (todos) {

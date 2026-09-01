@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 
 from ..templates_config import templates
 from ..database import get_db
-from ..auth import get_current_user_libre, hash_password, verify_password
+from ..auth import (get_current_user_libre, hash_password, verify_password,
+                    create_access_token, huella_password, set_auth_cookie)
 from ..services import bienestar
 from ..tiempo import lunes_actual
 
@@ -61,5 +62,13 @@ async def cambiar_password(
     user.hashed_password = hash_password(nueva)
     user.debe_cambiar_password = False
     db.commit()
+
+    # Cambiar la contraseña invalida TODOS los tokens emitidos con la anterior
+    # (ver auth.huella_password), incluido el de esta misma pestaña. Se emite uno
+    # nuevo acá mismo para que quien acaba de cambiarla siga adentro y solo se
+    # caigan las sesiones de los otros aparatos, que es de lo que se trata.
     destino = "/panel" if user.role == "profesor" else "/inicio"
-    return RedirectResponse(url=f"{destino}?password=1", status_code=302)
+    respuesta = RedirectResponse(url=f"{destino}?password=1", status_code=302)
+    set_auth_cookie(respuesta, create_access_token(
+        data={"sub": user.username, "pv": huella_password(user.hashed_password)}))
+    return respuesta

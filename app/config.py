@@ -1,4 +1,5 @@
-from pydantic_settings import BaseSettings
+from pydantic import ValidationError
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 
@@ -24,18 +25,24 @@ class Settings(BaseSettings):
     club_instagram: str = ""
     club_facebook: str = ""
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env")
 
 
 @lru_cache()
 def get_settings() -> Settings:
     try:
         settings = Settings()
-    except Exception:
+    except ValidationError as e:
+        # Solo los errores de configuración se traducen a este mensaje. Capturando
+        # Exception a secas, cualquier otro problema —un import roto, un permiso—
+        # salía también como "falta el .env" y mandaba a buscar donde no era.
+        faltan = ", ".join(str(x["loc"][0]) for x in e.errors()
+                           if x["type"] == "missing")
+        detalle = (f"Faltan estas variables: {faltan}." if faltan
+                   else f"Revisá los valores:\n{e}")
         raise SystemExit(
             "\n[ERROR] No se pudo cargar la configuración.\n"
-            "Asegurate de que existe el archivo .env con DATABASE_URL y SECRET_KEY.\n"
+            f"{detalle}\n"
             "Podés partir de la plantilla:  cp .env.example .env\n"
         )
     if not settings.secret_key:

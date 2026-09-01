@@ -17,7 +17,7 @@ from ..tiempo import hoy
 
 
 def formato_pesos(monto, con_signo: bool = True, decimales: bool = False) -> str:
-    """Bs 200 — miles con punto y decimales con coma.
+    """Bs 200 — bolivianos, miles con punto y decimales con coma.
 
     Vive acá y no en el filtro de Jinja porque los montos también aparecen dentro
     de textos armados en Python (las alertas de deuda), y tener dos formatos
@@ -30,6 +30,40 @@ def formato_pesos(monto, con_signo: bool = True, decimales: bool = False) -> str
     s = f"{d:,.2f}" if decimales else f"{d:,.0f}"
     s = s.replace(",", "X").replace(".", ",").replace("X", ".")
     return f"Bs {s}" if con_signo else s
+
+
+def parsear_monto(texto) -> Decimal | None:
+    """Lee un monto escrito a mano. None si no se entiende.
+
+        '25.000'   -> 25000      '150,50'  -> 150.50
+        '150.50'   -> 150.50     '1.234,56' -> 1234.56
+
+    El profesor escribe los montos como los dice, con el punto de miles, así que
+    "25.000" tiene que dar veinticinco mil. Pero tratando el punto SIEMPRE como
+    separador de miles, "150.50" se guardaba como 15050: cien veces el cobro, sin
+    ningún error a la vista y sin forma de notarlo hasta revisar el estado de
+    cuenta del atleta.
+
+    La regla que distingue los dos casos: la coma es siempre decimal; el punto es
+    decimal solo si es el único de la cadena, no hay coma, y le siguen una o dos
+    cifras. Nadie escribe veinticinco mil como "25.0" ni "25.00", y nadie escribe
+    ciento cincuenta con cincuenta como "150.500".
+    """
+    s = str(texto or "").strip().replace(" ", "")
+    if not s:
+        return None
+    if "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif s.count(".") == 1:
+        entero, _, decimales = s.partition(".")
+        if len(decimales) not in (1, 2):
+            s = entero + decimales
+    else:
+        s = s.replace(".", "")
+    try:
+        return Decimal(s)
+    except InvalidOperation:
+        return None
 
 
 def primer_dia(d: date) -> date:
@@ -59,25 +93,47 @@ def periodos_pagados(db: Session, atleta_id: int) -> set[date]:
             .filter(Pago.atleta_id == atleta_id).all()}
 
 
-def meses_adeudados(db: Session, atleta: User, hasta: date | None = None) -> list[date]:
+def pagados_de(db: Session, atleta_ids) -> dict[int, set[date]]:
+    """Los períodos pagados de varios atletas, en UNA sola consulta.
+
+    Es la mitad del costo de las pantallas que muestran el estado de cuenta de
+    todo el padrón: sin esto, cada fila de la lista iba a buscar sus propios pagos.
+    """
+    ids = list(atleta_ids)
+    if not ids:
+        return {}
+    salida: dict[int, set[date]] = {i: set() for i in ids}
+    for atleta_id, periodo in (db.query(Pago.atleta_id, Pago.periodo)
+                               .filter(Pago.atleta_id.in_(ids)).all()):
+        salida[atleta_id].add(periodo)
+    return salida
+
+
+def meses_adeudados(db: Session, atleta: User, hasta: date | None = None,
+                    pagados: set[date] | None = None) -> list[date]:
     """Los períodos que el atleta debe, del más viejo al más nuevo.
 
     El mes en curso cuenta como adeudado desde el día 1: el club cobra por mes
     adelantado, que es como trabaja el profesor.
+
+    `pagados` se pasa ya resuelto cuando se está calculando el padrón entero (ver
+    pagados_de); si no viene, se consulta acá para el caso de un solo atleta.
     """
     if not atleta.cobro_desde or not atleta.cuota_mensual:
         return []
     esperados = meses_entre(atleta.cobro_desde, hasta or hoy())
-    pagados = periodos_pagados(db, atleta.id)
+    if pagados is None:
+        pagados = periodos_pagados(db, atleta.id)
     return [m for m in esperados if m not in pagados]
 
 
-def estado_cuenta(db: Session, atleta: User, hasta: date | None = None) -> dict:
+def estado_cuenta(db: Session, atleta: User, hasta: date | None = None,
+                  pagados: set[date] | None = None) -> dict:
     """Resumen para pintar el chip de pago: al día, debe N meses, o sin cuota."""
     if not atleta.cuota_mensual or not atleta.cobro_desde:
         return {"estado": "sin_cuota", "meses": [], "cantidad": 0,
                 "deuda": Decimal(0), "texto": "Sin cuota asignada"}
-    meses = meses_adeudados(db, atleta, hasta)
+    meses = meses_adeudados(db, atleta, hasta, pagados)
     deuda = Decimal(atleta.cuota_mensual) * len(meses)
     if not meses:
         return {"estado": "al_dia", "meses": [], "cantidad": 0,
@@ -85,6 +141,12 @@ def estado_cuenta(db: Session, atleta: User, hasta: date | None = None) -> dict:
     plural = "es" if len(meses) != 1 else ""
     return {"estado": "debe", "meses": meses, "cantidad": len(meses),
             "deuda": deuda, "texto": f"Debe {len(meses)} mes{plural}"}
+
+
+def estados_de(db: Session, atletas, hasta: date | None = None) -> dict[int, dict]:
+    """El estado de cuenta de varios atletas, con una sola consulta de pagos."""
+    pagados = pagados_de(db, [a.id for a in atletas])
+    return {a.id: estado_cuenta(db, a, hasta, pagados.get(a.id, set())) for a in atletas}
 
 
 def resumen_club(db: Session, hasta: date | None = None) -> dict:
@@ -100,8 +162,9 @@ def resumen_club(db: Session, hasta: date | None = None) -> dict:
     esperado_mes = sum((Decimal(a.cuota_mensual or 0) for a in atletas), Decimal(0))
 
     deudores, deuda_total = [], Decimal(0)
+    estados = estados_de(db, atletas, referencia)
     for a in atletas:
-        est = estado_cuenta(db, a, referencia)
+        est = estados[a.id]
         if est["estado"] == "debe":
             deudores.append({"atleta": a, **est})
             deuda_total += est["deuda"]

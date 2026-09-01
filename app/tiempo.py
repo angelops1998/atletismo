@@ -39,3 +39,24 @@ def lunes_de(dia: date) -> date:
 def lunes_actual() -> date:
     """El lunes de la semana en curso."""
     return lunes_de(hoy())
+
+
+# Año más viejo aceptable en una fecha cargada a mano.
+ANIO_MINIMO = 1900
+# Cuántos años para adelante se admiten: una fecha de alta puede adelantarse unos
+# meses, pero no una década.
+ANIOS_ADELANTE = 5
+
+
+def fecha_razonable(d: date | None) -> bool:
+    """Si la fecha puede ser un dato real del club.
+
+    Ataja el dedazo antes de que llegue a la base: un "2206" en vez de "2026", o
+    un año de tres cifras. Importa sobre todo para `users.cobro_desde`, que es el
+    punto de partida del estado de cuenta: puesto en 1900, la deuda se calcula
+    recorriendo mil quinientos meses y el atleta aparece debiendo una fortuna que
+    nunca se le cobró.
+    """
+    if d is None:
+        return False
+    return ANIO_MINIMO <= d.year <= hoy().year + ANIOS_ADELANTE

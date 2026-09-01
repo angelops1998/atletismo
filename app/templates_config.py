@@ -36,10 +36,13 @@ def _csrf_input(request) -> Markup:
     return Markup(f'<input type="hidden" name="csrf_token" value="{firmado}">')
 
 
-def pesos_filter(value, con_signo: bool = True, decimales: bool = False) -> str:
-    """Formatea un monto: $ 25.000. La implementación está en cobranza.py, para
-    que los montos dentro de los textos armados en Python (las alertas de deuda)
-    se vean exactamente igual que los de las tablas."""
+def monto_filter(value, con_signo: bool = True, decimales: bool = False) -> str:
+    """Formatea un monto: Bs 25.000.
+
+    La implementación está en cobranza.formato_pesos, para que los montos dentro
+    de los textos armados en Python (las alertas de deuda) se vean exactamente
+    igual que los de las tablas.
+    """
     from .services.cobranza import formato_pesos
     return formato_pesos(value, con_signo, decimales)
 
@@ -92,7 +95,9 @@ templates.env.globals["static"] = _static
 templates.env.globals["now"] = ahora
 templates.env.globals["hoy"] = hoy
 templates.env.globals["club"] = get_settings()
-templates.env.filters["pesos"] = pesos_filter
+# El filtro se llama «monto» y no «pesos»: el club cobra en bolivianos, y un
+# nombre que dice otra moneda es de las cosas que después nadie se anima a tocar.
+templates.env.filters["monto"] = monto_filter
 templates.env.filters["fecha"] = fecha_filter
 templates.env.filters["fecha_corta"] = fecha_corta_filter
 templates.env.filters["mes"] = mes_filter

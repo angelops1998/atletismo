@@ -19,7 +19,7 @@
 <div class="acciones" style="margin-bottom:12px; align-items:center">
     <a href="/asistencia?fecha={{ anterior }}" class="btn btn-sm">{{ icono('flecha-izq') }}</a>
     <form method="get" action="/asistencia" style="flex:1">
-        <input type="date" name="fecha" value="{{ dia }}" onchange="this.form.submit()">
+        <input type="date" name="fecha" value="{{ dia }}" data-autoenviar>
     </form>
     <a href="/asistencia?fecha={{ siguiente }}" class="btn btn-sm">{{ icono('flecha-der') }}</a>
     {% if not es_hoy %}<a href="/asistencia" class="btn btn-sm">Hoy</a>{% endif %}

@@ -28,14 +28,14 @@
         <div class="detalle">reportadas esta semana</div>
     </div>
     <div class="kpi kpi-tartan">
-        <div class="valor">{{ finanzas.cobrado_mes|pesos }}</div>
+        <div class="valor">{{ finanzas.cobrado_mes|monto }}</div>
         <div class="etiqueta">Cobrado en {{ finanzas.mes|mes }}</div>
-        <div class="detalle">de {{ finanzas.esperado_mes|pesos }} esperado</div>
+        <div class="detalle">de {{ finanzas.esperado_mes|monto }} esperado</div>
     </div>
     <div class="kpi {{ 'kpi-mal' if finanzas.deudores else 'kpi-ok' }}">
         <div class="valor">{{ finanzas.deudores|length }}</div>
         <div class="etiqueta">Atletas con deuda</div>
-        <div class="detalle">{{ finanzas.deuda_total|pesos }} en total</div>
+        <div class="detalle">{{ finanzas.deuda_total|monto }} en total</div>
     </div>
 </div>
 

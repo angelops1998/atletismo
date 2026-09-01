@@ -1,6 +1,19 @@
-"""Agrega 5 atletas de prueba con partes semanales, sin borrar datos existentes.
+"""Agrega 5 atletas de prueba a una base que YA tiene datos.
+
+Existe porque `seed.py` es todo o nada: si encuentra usuarios cargados corta con
+"Ya hay datos cargados. Usá --borrar para empezar de cero", y --borrar vacía el
+club entero. Cuando lo que hace falta es sumar unos atletas a una base que ya
+está poblada —para probar una pantalla con más gente, o para mostrarle la app al
+profesor sobre sus propios datos— hay que usar este.
+
+Carga menos que seed.py a propósito: cinco atletas y ocho semanas de partes, sin
+marcas, asistencias ni pagos. Para ver el sistema completo con todas las
+situaciones que detecta, el que sirve es seed.py sobre una base vacía.
 
     python scripts/seed_5_atletas.py
+
+Los usuarios son los mismos cinco primeros de seed.py, así que si ya corriste
+seed.py este va a chocar con los nombres. **No usar en producción.**
 """
 import sys
 import random

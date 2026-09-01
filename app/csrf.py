@@ -26,7 +26,10 @@ def set_csrf_cookie(response, token: str):
     settings = get_settings()
     response.set_cookie(
         _COOKIE, token,
-        httponly=False,
+        # El formulario lleva el token ya firmado por el servidor (ver
+        # templates_config._csrf_input): el JavaScript de la app nunca necesita
+        # leer esta cookie, así que no hay motivo para dejarla a la vista.
+        httponly=True,
         samesite="strict",
         secure=settings.https_only,
         max_age=settings.access_token_expire_minutes * 60,

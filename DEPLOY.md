@@ -24,8 +24,9 @@ ssh root@IP_DEL_VPS
 sudo ss -tlnp | grep -E ':8001|:8003'
 ```
 
-Si el 8003 ya lo usa otra cosa, cambialo en `deploy/atletismo.service`,
-`run.py` y esta guía antes de seguir.
+Si el 8003 ya lo usa otra cosa, cambialo en `deploy/atletismo.service` y en esta
+guía antes de seguir. `run.py` no se toca: es el servidor de desarrollo y usa el
+8002 en tu máquina, no en el VPS.
 
 ---
 
@@ -153,6 +154,11 @@ sudo -u atletismo /opt/atletismo/.venv/bin/pip install -r requirements-prod.txt
 sudo -u atletismo /opt/atletismo/.venv/bin/alembic upgrade head
 sudo systemctl restart atletismo
 ```
+
+**Una sola vez, al subir la versión que ata la sesión a la contraseña:** todas las
+sesiones abiertas dejan de valer y cada uno tiene que entrar de nuevo. Es
+esperado y pasa una vez sola. Avisale al profesor antes, y si algún atleta ya se
+olvidó la contraseña, se la regenerás desde su ficha.
 
 ---
 

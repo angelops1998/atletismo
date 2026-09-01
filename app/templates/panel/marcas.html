@@ -18,6 +18,10 @@
 </div>
 {% elif error == 'prueba' %}
 <div class="aviso aviso-error" style="margin-bottom:14px">Elegí una prueba.</div>
+{% elif error == 'viento' %}
+<div class="aviso aviso-error" style="margin-bottom:14px">
+    El viento va en m/s, con signo: 1.8 a favor, -0.4 en contra.
+</div>
 {% endif %}
 
 <div class="card">
@@ -91,7 +95,7 @@
     <form method="get" action="/marcas" class="card-body" style="padding-bottom:0">
         <div class="campo">
             <label for="filtro">Ver el ranking de</label>
-            <select id="filtro" name="prueba" onchange="this.form.submit()">
+            <select id="filtro" name="prueba" data-autoenviar>
                 <option value="">Elegir una prueba…</option>
                 {% for grupo, lista in grupos.items() %}
                 <optgroup label="{{ grupo }}">

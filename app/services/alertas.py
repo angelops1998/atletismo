@@ -142,8 +142,13 @@ def _peso(atleta, serie):
     return None
 
 
-def del_atleta(db: Session, atleta: User, serie: list[dict] | None = None) -> list[dict]:
-    """Todas las alertas de un atleta, de la más urgente a la menos."""
+def del_atleta(db: Session, atleta: User, serie: list[dict] | None = None,
+               cuenta: dict | None = None) -> list[dict]:
+    """Todas las alertas de un atleta, de la más urgente a la menos.
+
+    `serie` y `cuenta` se pasan ya resueltos cuando se está calculando el padrón
+    entero (ver del_club): así la pantalla no vuelve a la base una vez por atleta.
+    """
     serie = serie if serie is not None else bienestar.serie_individual(db, atleta.id)
     semana = lunes_actual()
     ultima = serie[-1] if serie else None
@@ -163,7 +168,7 @@ def del_atleta(db: Session, atleta: User, serie: list[dict] | None = None) -> li
         if regla:
             salida.append(regla)
 
-    estado = cobranza.estado_cuenta(db, atleta)
+    estado = cuenta if cuenta is not None else cobranza.estado_cuenta(db, atleta)
     if estado["estado"] == "debe":
         nivel = "media" if estado["cantidad"] >= 2 else "baja"
         salida.append(_alerta("pago_vencido", nivel, estado["texto"],
@@ -183,10 +188,13 @@ def del_club(db: Session) -> list[dict]:
                .filter(User.role == "atleta", User.is_active.is_(True))
                .order_by(User.full_name, User.username)
                .all())
+    # Todo lo que hace falta, en dos consultas en vez de dos por atleta.
+    series = bienestar.series_de(db, [a.id for a in atletas])
+    cuentas = cobranza.estados_de(db, atletas)
     salida = []
     for a in atletas:
-        serie = bienestar.serie_individual(db, a.id)
-        alertas = del_atleta(db, a, serie)
+        serie = series[a.id]
+        alertas = del_atleta(db, a, serie, cuentas[a.id])
         if alertas:
             salida.append({
                 "atleta": a,

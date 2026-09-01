@@ -1,6 +1,6 @@
 """Cobranza: quién debe, quién pagó y cuánto entró en el mes."""
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.exc import IntegrityError
@@ -12,27 +12,25 @@ from ..auth import get_current_profesor
 from ..models.user import User
 from ..models.pago import Pago, METODOS
 from ..services import cobranza, grafico
-from ..tiempo import hoy
+from ..tiempo import hoy, fecha_razonable
+from ..urls import ruta_interna
 
 router = APIRouter(prefix="/pagos", tags=["pagos"])
 
+# Tope de la columna monto (Numeric(12,2)): más que eso lo rechaza Postgres con
+# "numeric field overflow", que sin capturar sale como un 500.
+MONTO_MAXIMO = Decimal("9999999999.99")
+
 
 def _fecha(valor: str) -> date | None:
+    """La fecha del formulario, o None si está vacía o no es creíble (ver
+    tiempo.fecha_razonable): un período con un año de cuatro cifras mal tipeadas
+    deja al atleta debiendo meses que no existen."""
     try:
-        return date.fromisoformat(valor.strip()) if valor and valor.strip() else None
+        d = date.fromisoformat(valor.strip()) if valor and valor.strip() else None
     except ValueError:
         return None
-
-
-def _monto(valor: str) -> Decimal | None:
-    if not valor or not str(valor).strip():
-        return None
-    try:
-        # Se acepta "25.000" y "25000,50": el profesor escribe los montos como
-        # los dice, con el punto de miles.
-        return Decimal(str(valor).strip().replace(".", "").replace(",", "."))
-    except InvalidOperation:
-        return None
+    return d if fecha_razonable(d) else None
 
 
 @router.get("", response_class=HTMLResponse)
@@ -46,10 +44,12 @@ async def pagos(request: Request, db: Session = Depends(get_db)):
 
     # Para el formulario: los atletas activos con cuota, con lo que deben, así el
     # profesor elige a quién le está cobrando y el mes se completa solo.
+    activos = (db.query(User).filter(User.role == "atleta", User.is_active.is_(True))
+               .order_by(User.full_name, User.username).all())
+    estados = cobranza.estados_de(db, activos)
     pendientes = []
-    for a in db.query(User).filter(User.role == "atleta", User.is_active.is_(True)) \
-            .order_by(User.full_name, User.username).all():
-        estado = cobranza.estado_cuenta(db, a)
+    for a in activos:
+        estado = estados[a.id]
         pendientes.append({"atleta": a, **estado,
                            "proximo": estado["meses"][0] if estado["meses"] else None})
 
@@ -89,7 +89,9 @@ async def registrar(
         return RedirectResponse(url="/pagos?error=periodo", status_code=302)
     mes = cobranza.primer_dia(mes)
 
-    importe = _monto(monto)
+    importe = cobranza.parsear_monto(monto)
+    if importe is not None and importe > MONTO_MAXIMO:
+        return RedirectResponse(url="/pagos?error=monto", status_code=302)
     if importe is None or importe <= 0:
         # Si no se escribe monto se toma la cuota del atleta: es lo normal, y
         # tener que tipearla en cada cobro es la mitad del trabajo de la pantalla.
@@ -114,7 +116,7 @@ async def registrar(
         db.rollback()
         return RedirectResponse(url="/pagos?error=duplicado", status_code=302)
 
-    destino = volver if volver.startswith("/") and not volver.startswith("//") else "/pagos"
+    destino = ruta_interna(volver, "/pagos")
     return RedirectResponse(url=destino, status_code=302)
 
 
@@ -129,5 +131,5 @@ async def borrar(pago_id: int, request: Request, volver: str = Form(""),
         raise HTTPException(status_code=404, detail="No existe ese pago.")
     db.delete(pago)
     db.commit()
-    destino = volver if volver.startswith("/") and not volver.startswith("//") else "/pagos"
+    destino = ruta_interna(volver, "/pagos")
     return RedirectResponse(url=destino, status_code=302)

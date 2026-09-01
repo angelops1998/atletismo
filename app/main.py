@@ -21,11 +21,21 @@ from .templates_config import templates as _templates
 app = FastAPI(
     title=f"{get_settings().club_nombre} — Gestión de atletas",
     version="0.1.0",
+    # La app se renderiza entera en el servidor: no hay ninguna API que consumir
+    # desde afuera, y /docs abierto le publica el mapa completo de rutas a
+    # cualquiera que pase por la dirección, sin necesidad de tener cuenta.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 # El login maneja su propio flujo: en el primer GET todavía no hay cookie contra
 # la cual firmar el formulario.
 _CSRF_EXENTA = {"/auth/login"}
+
+# Todo lo que puede cambiar algo tiene que traer el token. No alcanza con mirar
+# los POST con cuerpo de formulario: cualquier método que escriba entra acá.
+_METODOS_INSEGUROS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):
@@ -42,16 +52,21 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             existente = headers.get("cookie", "")
             headers["cookie"] = (existente + "; " if existente else "") + f"csrf_token={nueva_cookie}"
 
+        # La validación se decide por el MÉTODO, no por el content-type. Cuando
+        # dependía del content-type, mandar el mismo POST con "application/json"
+        # salteaba el control entero y llegaba al handler: los endpoints cuyos
+        # campos de formulario tienen todos valor por defecto (borrar un pago,
+        # resetear una contraseña, dar de baja a un atleta) se ejecutaban igual.
         content_type = request.headers.get("content-type", "")
-        es_form = ("application/x-www-form-urlencoded" in content_type or
-                   "multipart/form-data" in content_type)
-        if request.method == "POST" and es_form and request.url.path not in _CSRF_EXENTA:
+        if request.method in _METODOS_INSEGUROS and request.url.path not in _CSRF_EXENTA:
             body = await request.body()
 
             async def receive():
                 return {"type": "http.request", "body": body, "more_body": False}
             request._receive = receive
 
+            # Si el cuerpo no es un formulario no hay de dónde sacar el token, y
+            # queda en "" -> 403. Es lo correcto: la app no recibe otra cosa.
             form_token = ""
             if "application/x-www-form-urlencoded" in content_type:
                 from urllib.parse import parse_qs
@@ -99,6 +114,43 @@ class SesionDeslizanteMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SesionDeslizanteMiddleware)
 
 
+# Todo lo que la app carga es propio, tipografías incluidas (ver
+# static/css/fuentes.css), así que no hay ningún origen externo en la política.
+# Los estilos sí necesitan 'unsafe-inline': hay style="…" repartidos por las
+# plantillas, y una inyección de estilo no es comparable a una de script (que acá
+# queda bloqueada). 'form-action' es la segunda red contra los redirects a otro
+# sitio: aunque a alguien se le escape un destino sin validar, el formulario no
+# sale de la app.
+_CSP = ("default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "font-src 'self'; "
+        "img-src 'self' data:; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'none'")
+
+_CABECERAS = {
+    "Content-Security-Policy": _CSP,
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    # same-origin: los links a WhatsApp y a worldathletics.org salen sin decirle a
+    # esos sitios desde qué pantalla del club se los abrió.
+    "Referrer-Policy": "same-origin",
+}
+
+
+class CabecerasSeguridadMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        for nombre, valor in _CABECERAS.items():
+            response.headers.setdefault(nombre, valor)
+        return response
+
+
+app.add_middleware(CabecerasSeguridadMiddleware)
+
+
 @app.exception_handler(NotAuthenticatedException)
 async def no_autenticado(request: Request, exc: NotAuthenticatedException):
     return RedirectResponse(url=f"/auth/login?next={exc.next_url}", status_code=302)
@@ -118,6 +170,19 @@ async def no_encontrado(request: Request, exc: HTTPException):
 async def prohibido(request: Request, exc: HTTPException):
     return _templates.TemplateResponse(
         request, "403.html", {"detalle": getattr(exc, "detail", None)}, status_code=403)
+
+
+@app.exception_handler(Exception)
+async def error_interno(request: Request, exc: Exception):
+    """Cualquier error no previsto, con la cara de la app.
+
+    Sin esto el atleta que llega a un caso raro ve el "Internal Server Error"
+    pelado de uvicorn, que no le dice qué hacer y parece que la app se rompió del
+    todo. Starlette vuelve a levantar la excepción después de mandar esta
+    respuesta, así que el traceback sigue apareciendo entero en el log del
+    servicio: esto cambia lo que ve la persona, no lo que se registra.
+    """
+    return _templates.TemplateResponse(request, "500.html", {}, status_code=500)
 
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

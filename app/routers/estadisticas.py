@@ -45,9 +45,10 @@ async def estadisticas(request: Request, db: Session = Depends(get_db)):
     # Una fila por atleta con su promedio, su última semana y hacia dónde va.
     # La tendencia se calcula contra su propio promedio previo, no contra el
     # grupo: lo que importa es si ESTE atleta viene mejorando o cayendo.
+    series = bienestar.series_de(db, [a.id for a in atletas], rango)
     filas = []
     for a in atletas:
-        individual = bienestar.serie_individual(db, a.id, rango)
+        individual = series[a.id]
         cargados = [f["bienestar"] for f in individual if f["bienestar"] is not None]
         ultimo = individual[-1]["bienestar"] if individual else None
         previos = [f["bienestar"] for f in individual[:-1] if f["bienestar"] is not None]

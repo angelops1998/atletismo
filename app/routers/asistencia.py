@@ -86,12 +86,21 @@ async def guardar(request: Request, db: Session = Depends(get_db)):
     existentes = {a.atleta_id: a for a in db.query(Asistencia)
                   .filter(Asistencia.fecha == dia).all()}
 
+    # El mismo padrón que arma la pantalla del GET. Sin cotejar contra él, lo que
+    # viniera en un campo "estado_<id>" entraba a la tabla tal cual: la clave
+    # foránea frena los ids inexistentes, pero no el del propio profesor ni el de
+    # un atleta dado de baja, que no tienen por qué estar en una lista.
+    validos = {fila[0] for fila in db.query(User.id)
+               .filter(User.role == "atleta", User.is_active.is_(True)).all()}
+
     for clave, valor in form.multi_items():
         if not clave.startswith("estado_"):
             continue
         try:
             atleta_id = int(clave.removeprefix("estado_"))
         except ValueError:
+            continue
+        if atleta_id not in validos:
             continue
 
         registro = existentes.get(atleta_id)

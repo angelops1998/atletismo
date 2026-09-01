@@ -31,6 +31,14 @@ def main() -> None:
         nombre = input("Nombre y apellido: ").strip()
         usuario = input("Usuario (para entrar): ").strip().lower()
         email = input("Correo (opcional): ").strip().lower()
+
+        # Dando Enter en el prompt, el usuario quedaba en "" y se creaba un
+        # profesor con el que después no se podía entrar desde ninguna pantalla.
+        if not usuario:
+            sys.exit("El usuario no puede quedar vacío: es con lo que vas a entrar.")
+        if len(usuario) > 50:
+            sys.exit("El usuario no puede tener más de 50 caracteres.")
+
         password = getpass("Contraseña: ")
         if len(password) < 8:
             sys.exit("La contraseña tiene que tener al menos 8 caracteres.")
@@ -39,6 +47,10 @@ def main() -> None:
 
         if db.query(User).filter(User.username == usuario).first():
             sys.exit(f"El usuario «{usuario}» ya existe.")
+        # El email es único en la base: sin chequearlo acá, el choque salía como
+        # un traceback de psycopg2 en vez de una línea que se entienda.
+        if email and db.query(User).filter(User.email == email).first():
+            sys.exit(f"El correo «{email}» ya está en uso por otra cuenta.")
 
         db.add(User(
             username=usuario,

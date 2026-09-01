@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+import hashlib
 from jose import JWTError, jwt
 import bcrypt
 from fastapi import Depends, HTTPException, Request
@@ -17,6 +18,21 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def huella_password(hashed_password: str) -> str:
+    """Un resumen corto del hash de la contraseña, que viaja dentro del token.
+
+    Es lo que hace que cambiar la contraseña cierre las sesiones abiertas en otros
+    aparatos. Sin esto, el token seguía valiendo 60 días: si la provisoria que el
+    profesor anotó en un papel se filtró, cambiarla no echaba a quien ya había
+    entrado con ella, que es justo el caso para el que existe el cambio obligado.
+
+    Se deriva del hash y no de una columna nueva porque bcrypt genera una sal
+    distinta cada vez: cambia sola en cada cambio de contraseña, incluido el
+    reseteo que hace el profesor, sin nada que acordarse de actualizar.
+    """
+    return hashlib.sha256(hashed_password.encode()).hexdigest()[:16]
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -54,12 +70,17 @@ def refrescar_token(token: str) -> Optional[str]:
         return None
     username = payload.get("sub")
     exp = payload.get("exp")
-    if not username or not exp:
+    huella = payload.get("pv")
+    # Sin huella el token ya no vale para nada (ver get_current_user_optional):
+    # renovarlo solo serviría para que una cookie muerta se arrastre para siempre.
+    if not username or not exp or not huella:
         return None
     restante = datetime.fromtimestamp(exp, timezone.utc) - datetime.now(timezone.utc)
     if restante > timedelta(minutes=settings.access_token_expire_minutes) / 2:
         return None
-    return create_access_token(data={"sub": username})
+    # La huella se arrastra tal cual: renovar no revalida nada, y un token de una
+    # contraseña vieja tiene que seguir siendo inválido después de renovarse.
+    return create_access_token(data={"sub": username, "pv": huella})
 
 
 def get_user_by_email(db: Session, email: str) -> Optional[User]:
@@ -106,7 +127,14 @@ def get_current_user_optional(
             return None
     except JWTError:
         return None
-    return get_user_by_username(db, username)
+    user = get_user_by_username(db, username)
+    if not user:
+        return None
+    # Token emitido con otra contraseña (o sin huella, de antes de que existiera):
+    # no vale. Al soltar este cambio todos entran una vez más, y listo.
+    if payload.get("pv") != huella_password(user.hashed_password):
+        return None
+    return user
 
 
 class NotAuthenticatedException(Exception):

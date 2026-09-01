@@ -89,7 +89,7 @@
         <div style="display:flex; align-items:center; justify-content:space-between; gap:10px">
             <div>
                 <div style="font-weight:700">Estás al día</div>
-                <div class="apunte">Cuota mensual: {{ user.cuota_mensual|pesos }}</div>
+                <div class="apunte">Cuota mensual: {{ user.cuota_mensual|monto }}</div>
             </div>
             <span class="chip chip-ok">Al día</span>
         </div>
@@ -101,7 +101,7 @@
                     {% for m in estado_cuenta.meses %}{{ m|mes }}{% if not loop.last %} · {% endif %}{% endfor %}
                 </div>
             </div>
-            <span class="chip chip-mal">{{ estado_cuenta.deuda|pesos }}</span>
+            <span class="chip chip-mal">{{ estado_cuenta.deuda|monto }}</span>
         </div>
         {% else %}
         <p class="apunte">El profesor todavía no te asignó una cuota.</p>

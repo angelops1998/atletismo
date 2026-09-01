@@ -101,12 +101,11 @@ def parte_de_semana(db: Session, atleta_id: int, semana: date) -> Optional[Parte
             .first())
 
 
-def serie_individual(db: Session, atleta_id: int, semanas: int = 12) -> list[dict]:
-    """Una fila por semana con los indicadores del atleta (None si no cargó)."""
-    partes = {p.semana: p for p in partes_de(db, atleta_id, semanas)}
+def _armar_serie(por_semana: dict, semanas: int) -> list[dict]:
+    """La serie a partir de los partes ya traídos de la base, indexados por semana."""
     filas = []
     for semana in semanas_hasta_hoy(semanas):
-        p = partes.get(semana)
+        p = por_semana.get(semana)
         filas.append({
             "semana": semana,
             "parte": p,
@@ -117,6 +116,36 @@ def serie_individual(db: Session, atleta_id: int, semanas: int = 12) -> list[dic
             "dolor": p.molestia_dolor if p and p.molestias else None,
         })
     return filas
+
+
+def serie_individual(db: Session, atleta_id: int, semanas: int = 12) -> list[dict]:
+    """Una fila por semana con los indicadores del atleta (None si no cargó)."""
+    return _armar_serie({p.semana: p for p in partes_de(db, atleta_id, semanas)}, semanas)
+
+
+def series_de(db: Session, atleta_ids, semanas: int = 12) -> dict[int, list[dict]]:
+    """Las series de varios atletas, en UNA sola consulta.
+
+    Las pantallas del profesor arman la serie de cada atleta para ordenarlos por
+    quién viene peor. Pidiéndolas de a una, el panel hacía una consulta por
+    persona y el costo crecía con el padrón: con treinta atletas eran treinta
+    viajes a la base para dibujar una pantalla. Acá se traen todos los partes de
+    una vez y se agrupa en Python, que sobre este volumen no cuesta nada.
+
+    Devuelve una entrada por cada id pedido, con la serie completa aunque el
+    atleta no haya cargado nunca un parte.
+    """
+    ids = list(atleta_ids)
+    if not ids:
+        return {}
+    desde = lunes_actual() - timedelta(weeks=semanas - 1)
+    partes = (db.query(ParteSemanal)
+              .filter(ParteSemanal.atleta_id.in_(ids), ParteSemanal.semana >= desde)
+              .all())
+    por_atleta: dict[int, dict] = {i: {} for i in ids}
+    for p in partes:
+        por_atleta[p.atleta_id][p.semana] = p
+    return {i: _armar_serie(por_atleta[i], semanas) for i in ids}
 
 
 def serie_grupo(db: Session, semanas: int = 12) -> list[dict]:

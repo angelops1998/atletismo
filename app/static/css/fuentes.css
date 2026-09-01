@@ -1,0 +1,74 @@
+/* Tipografías del club, servidas desde acá y no desde Google.
+
+   Es el mismo criterio por el que los gráficos son SVG generados en el servidor:
+   la app se abre sobre todo desde el celular del atleta y del profesor, muchas
+   veces en la pista y con mala señal. Pedirle la hoja de estilos a un tercero
+   agrega dos handshakes (DNS + TLS contra fonts.googleapis.com y contra
+   fonts.gstatic.com) antes de poder dibujar la primera letra, y esa cadena
+   bloquea el render. Sirviéndolas desde el mismo origen viajan en la conexión
+   que ya está abierta, y de paso ninguna visita de un atleta llega a Google.
+
+   Hanken Grotesk va en su versión variable: un archivo por subset cubre de 400
+   a 800 y pesa menos que las cinco estáticas por separado. Barlow Condensed no
+   tiene variable, así que van los dos pesos que usa el CSS (600 y 700).
+
+   Solo los subsets latin y latin-ext: el castellano, con acentos y ñ, entra
+   entero ahí. El unicode-range es el de Google, así que el navegador baja
+   latin-ext únicamente si la página tiene algún carácter que lo necesite.
+
+   ESTE ARCHIVO SE GENERA: no lo edites a mano, corré scripts/bajar_fuentes.py.
+   Ambas familias son SIL Open Font License 1.1 (ver LICENSE-fuentes.txt). */
+
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(/static/fonts/hanken-grotesk-400-800-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(/static/fonts/hanken-grotesk-400-800-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(/static/fonts/barlow-condensed-600-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(/static/fonts/barlow-condensed-600-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(/static/fonts/barlow-condensed-700-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(/static/fonts/barlow-condensed-700-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

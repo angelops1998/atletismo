@@ -71,7 +71,7 @@
     <div class="kpi {{ 'kpi-mal' if cuenta.estado == 'debe' else 'kpi-ok' }}">
         <div class="valor" style="font-size:19px">{{ cuenta.texto }}</div>
         <div class="etiqueta">Cuota</div>
-        <div class="detalle">{{ atleta.cuota_mensual|pesos }} por mes</div>
+        <div class="detalle">{{ atleta.cuota_mensual|monto }} por mes</div>
     </div>
 </div>
 
@@ -198,7 +198,7 @@
     <div class="card-body">
         {% if cuenta.estado == 'debe' %}
         <div class="aviso aviso-error">
-            <strong>{{ cuenta.texto }}</strong> — {{ cuenta.deuda|pesos }}<br>
+            <strong>{{ cuenta.texto }}</strong> — {{ cuenta.deuda|monto }}<br>
             {% for m in cuenta.meses %}{{ m|mes }}{% if not loop.last %} · {% endif %}{% endfor %}
         </div>
         <form method="post" action="/pagos" style="margin-top:12px">
@@ -207,7 +207,7 @@
             <input type="hidden" name="volver" value="/atletas/{{ atleta.id }}">
             <input type="hidden" name="periodo" value="{{ cuenta.meses[0] }}">
             <button type="submit" class="btn btn-primario btn-bloque">
-                Registrar el pago de {{ cuenta.meses[0]|mes }} ({{ atleta.cuota_mensual|pesos }})
+                Registrar el pago de {{ cuenta.meses[0]|mes }} ({{ atleta.cuota_mensual|monto }})
             </button>
         </form>
         {% elif cuenta.estado == 'al_dia' %}
@@ -226,7 +226,7 @@
             <tr>
                 <td>{{ p.periodo|mes }}</td>
                 <td>{{ p.fecha_pago|fecha_corta }}</td>
-                <td class="num mono-num">{{ p.monto|pesos }}</td>
+                <td class="num mono-num">{{ p.monto|monto }}</td>
                 <td class="tenue">{{ p.metodo }}</td>
                 <td class="num">
                     <form method="post" action="/pagos/{{ p.id }}/borrar"

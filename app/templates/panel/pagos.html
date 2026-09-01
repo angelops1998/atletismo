@@ -28,19 +28,19 @@
 
 <div class="kpis">
     <div class="kpi kpi-ok">
-        <div class="valor">{{ resumen.cobrado_mes|pesos }}</div>
+        <div class="valor">{{ resumen.cobrado_mes|monto }}</div>
         <div class="etiqueta">Cobrado este mes</div>
-        <div class="detalle">de {{ resumen.esperado_mes|pesos }}</div>
+        <div class="detalle">de {{ resumen.esperado_mes|monto }}</div>
     </div>
     <div class="kpi kpi-atencion">
-        <div class="valor">{{ resumen.pendiente_mes|pesos }}</div>
+        <div class="valor">{{ resumen.pendiente_mes|monto }}</div>
         <div class="etiqueta">Falta cobrar</div>
         <div class="detalle">del mes en curso</div>
     </div>
     <div class="kpi {{ 'kpi-mal' if resumen.deudores else 'kpi-ok' }}">
         <div class="valor">{{ resumen.deudores|length }}</div>
         <div class="etiqueta">Atletas con deuda</div>
-        <div class="detalle">{{ resumen.deuda_total|pesos }} acumulado</div>
+        <div class="detalle">{{ resumen.deuda_total|monto }} acumulado</div>
     </div>
     <div class="kpi">
         <div class="valor">{{ resumen.al_dia }}/{{ resumen.total_atletas }}</div>
@@ -111,7 +111,7 @@
                 </div>
             </div>
             <div class="item-fin">
-                <strong>{{ d.deuda|pesos }}</strong>
+                <strong>{{ d.deuda|monto }}</strong>
                 <form method="post" action="/pagos">
                     {{ csrf_input(request) }}
                     <input type="hidden" name="atleta_id" value="{{ d.atleta.id }}">
@@ -144,7 +144,7 @@
                 </td>
                 <td>{{ p.periodo|mes }}</td>
                 <td>{{ p.fecha_pago|fecha_corta }}</td>
-                <td class="num mono-num">{{ p.monto|pesos }}</td>
+                <td class="num mono-num">{{ p.monto|monto }}</td>
                 <td class="num">
                     <form method="post" action="/pagos/{{ p.id }}/borrar"
                           data-confirmar="¿Anular este pago? El mes va a volver a figurar como adeudado.">

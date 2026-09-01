@@ -12,8 +12,18 @@ from ..models.user import User
 from ..models.marca import Marca
 from ..services import pruebas
 from ..tiempo import hoy
+from ..urls import ruta_interna
 
 router = APIRouter(prefix="/marcas", tags=["marcas"])
+
+# Topes de lo que se puede cargar. El de la marca es el de la columna
+# (Numeric(8,3)): pasarse hace que Postgres corte con "numeric field overflow" y,
+# sin nadie que lo atrape, eso termina en un 500 pelado en la cara del profesor.
+# El del viento es físico y bastante más chico que la columna: arriba de 20 m/s no
+# se corre, así que un 150 no es un dato, es un dedazo, y guardarlo callado
+# arruina la lectura de la marca (una con más de +2.0 no es homologable).
+VALOR_MAXIMO = Decimal("99999.999")
+VIENTO_MAXIMO = Decimal("20")
 
 
 def _valor(texto: str, clave: str) -> Decimal | None:
@@ -47,14 +57,24 @@ async def lista(request: Request, db: Session = Depends(get_db)):
 
     # Con una prueba elegida se arma el ranking del club: es la vista que el
     # profesor usa para armar la posta o decidir quién va a la competencia.
+    #
+    # Va con su propia consulta y SIN límite, a propósito. Antes se armaba sobre
+    # `filas`, que trae solo las 100 más recientes para la tabla de arriba: pasadas
+    # las 100 marcas de una prueba, el atleta cuyo mejor registro era de temporadas
+    # anteriores desaparecía del ranking, y al que quedaba se le mostraba como
+    # "mejor" lo mejor de lo reciente. Justo al revés de para qué sirve la pantalla.
     ranking = []
     if pruebas.existe(prueba):
+        historial = (db.query(Marca, User)
+                     .join(User, User.id == Marca.atleta_id)
+                     .filter(Marca.prueba == prueba).all())
         mejores: dict[int, Marca] = {}
-        for marca, atleta in filas:
+        nombres: dict[int, User] = {}
+        for marca, atleta in historial:
+            nombres[atleta.id] = atleta
             actual = mejores.get(atleta.id)
             if actual is None or pruebas.es_mejora(prueba, marca.valor, actual.valor):
                 mejores[atleta.id] = marca
-        nombres = {a.id: a for _m, a in filas}
         ranking = sorted(
             ({"atleta": nombres[aid], "marca": m} for aid, m in mejores.items()),
             key=lambda r: float(r["marca"].valor),
@@ -96,7 +116,7 @@ async def registrar(
         return RedirectResponse(url="/marcas?error=prueba", status_code=302)
 
     numero = _valor(valor, prueba)
-    if numero is None or numero <= 0:
+    if numero is None or numero <= 0 or numero > VALOR_MAXIMO:
         return RedirectResponse(url="/marcas?error=valor", status_code=302)
 
     try:
@@ -104,10 +124,14 @@ async def registrar(
     except ValueError:
         cuando = hoy()
 
-    try:
-        aire = Decimal(viento.strip().replace(",", ".")) if viento.strip() else None
-    except InvalidOperation:
-        aire = None
+    aire = None
+    if viento.strip():
+        try:
+            aire = Decimal(viento.strip().replace(",", "."))
+        except InvalidOperation:
+            return RedirectResponse(url="/marcas?error=viento", status_code=302)
+        if abs(aire) > VIENTO_MAXIMO:
+            return RedirectResponse(url="/marcas?error=viento", status_code=302)
 
     db.add(Marca(
         atleta_id=atleta_id, prueba=prueba, fecha=cuando, valor=numero,
@@ -117,7 +141,7 @@ async def registrar(
         nota=nota.strip()[:200] or None,
     ))
     db.commit()
-    destino = volver if volver.startswith("/") and not volver.startswith("//") else "/marcas"
+    destino = ruta_interna(volver, "/marcas")
     return RedirectResponse(url=destino, status_code=302)
 
 
@@ -130,5 +154,5 @@ async def borrar(marca_id: int, request: Request, volver: str = Form(""),
         raise HTTPException(status_code=404, detail="No existe esa marca.")
     db.delete(marca)
     db.commit()
-    destino = volver if volver.startswith("/") and not volver.startswith("//") else "/marcas"
+    destino = ruta_interna(volver, "/marcas")
     return RedirectResponse(url=destino, status_code=302)

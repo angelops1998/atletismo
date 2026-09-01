@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% block title %}Algo falló — {{ club.club_nombre }}{% endblock %}
+{% block cuerpo %}
+<div class="login-pantalla">
+    <div class="login-caja" style="text-align:center">
+        <div class="login-marca">
+            <div class="escudo">{{ icono('corredor') }}</div>
+            <h1>Algo falló</h1>
+            <p>No pudimos completar lo que estabas haciendo. Probá de nuevo; si
+               vuelve a pasar, avisale al profesor.</p>
+        </div>
+        <a href="/" class="btn btn-primario btn-bloque">Volver al inicio</a>
+    </div>
+</div>
+{% endblock %}
