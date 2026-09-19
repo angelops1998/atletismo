@@ -8,69 +8,79 @@ evolución termina mostrando el progreso al revés.
 """
 from decimal import Decimal
 
-# Categorías del club para las que se lleva el historial de marcas. Son dos
-# planillas distintas porque las pruebas cambian: los Menores (10 a 13 años)
-# corren 80 y 150 m, no 100 y 200, y con vallas y pesos más bajos.
-MAYORES = "mayores"      # Juveniles y Mayores
-MENORES = "menores"      # Menores (10 a 13) y Pequeños
-CATEGORIAS = [(MAYORES, "Juveniles y Mayores"), (MENORES, "Menores")]
-_AMBAS = frozenset({MAYORES, MENORES})
+# Planillas de pruebas: la categoría por edad decide qué pruebas se compiten.
+# Son tres porque el programa cambia con la edad: en U14 se corren 60 y 150 m
+# con vallas a 60 y 190, en U16 aparecen los 80 y 300 m, las vallas a 295 y los
+# 1500 con obstáculos, y de U18 en adelante rige el programa de Mayores.
+MAYORES = "mayores"      # U18, U20 y Mayores
+U16 = "u16"              # 14 y 15 años
+U14 = "u14"              # 12 y 13 años
+CATEGORIAS = [(U14, "U14 (12–13)"), (U16, "U16 (14–15)"), (MAYORES, "U18 y Mayores")]
+_TODAS = frozenset({U14, U16, MAYORES})
 _MAY = frozenset({MAYORES})
-_MEN = frozenset({MENORES})
+_U16 = frozenset({U16})
+_U14 = frozenset({U14})
+_U16_MAY = frozenset({U16, MAYORES})
+_U14_U16 = frozenset({U14, U16})
 
-# (clave, nombre, grupo, unidad, menor_es_mejor, decimales, categorías)
+# (clave, nombre, grupo, unidad, menor_es_mejor, decimales, planillas)
 #
-# La lista de Mayores es la planilla que mandó el club. La de Menores es
-# PROVISORIA: quedó armada con el programa habitual de la categoría (U14) hasta
-# que el club mande la suya; cambiarla es tocar solo esta tabla.
+# Las tres listas son las planillas que mandó el club: la de Mayores, la de
+# combos U14 (60 m, largo, 60 c/v, 150 m, 190 c/v, 600, 1200, 800, marcha 300 y
+# 1600, alto, jabalina y disco) y la de U16 del reglamento técnico 2025 (80 m
+# vallas niñas / 100 m vallas niños, 295 c/v, 1500 obstáculos, marcha 3000
+# niñas / 5000 niños). Los relevos no están: acá se guardan marcas individuales.
 PRUEBAS = [
     # --- Velocidad ---
-    ("60m",         "60 m llanos",            "Velocidad",     "s",   True,  2, _MEN),
-    ("80m",         "80 m llanos",            "Velocidad",     "s",   True,  2, _MEN),
-    ("100m",        "100 m llanos",           "Velocidad",     "s",   True,  2, _AMBAS),
-    ("150m",        "150 m llanos",           "Velocidad",     "s",   True,  2, _MEN),
+    ("60m",         "60 m llanos",            "Velocidad",     "s",   True,  2, _U14),
+    ("80m",         "80 m llanos",            "Velocidad",     "s",   True,  2, _U16),
+    ("100m",        "100 m llanos",           "Velocidad",     "s",   True,  2, _MAY),
+    ("150m",        "150 m llanos",           "Velocidad",     "s",   True,  2, _U14_U16),
     ("200m",        "200 m llanos",           "Velocidad",     "s",   True,  2, _MAY),
-    ("300m",        "300 m llanos",           "Velocidad",     "s",   True,  2, _MEN),
+    ("300m",        "300 m llanos",           "Velocidad",     "s",   True,  2, _U16),
     ("400m",        "400 m llanos",           "Velocidad",     "s",   True,  2, _MAY),
     # --- Medio fondo ---
-    ("600m",        "600 m",                  "Medio fondo",   "s",   True,  2, _MEN),
-    ("800m",        "800 m",                  "Medio fondo",   "s",   True,  2, _MAY),
-    ("1000m",       "1000 m",                 "Medio fondo",   "s",   True,  2, _MEN),
+    ("600m",        "600 m",                  "Medio fondo",   "s",   True,  2, _U14_U16),
+    ("800m",        "800 m",                  "Medio fondo",   "s",   True,  2, frozenset({U14, MAYORES})),
+    ("1200m",       "1200 m",                 "Medio fondo",   "s",   True,  2, _U14),
     ("1500m",       "1500 m",                 "Medio fondo",   "s",   True,  2, _MAY),
     # --- Fondo ---
-    ("2000m",       "2000 m",                 "Fondo",         "s",   True,  2, _MEN),
+    ("2400m",       "2400 m",                 "Fondo",         "s",   True,  2, _U16),
     ("3000m",       "3000 m",                 "Fondo",         "s",   True,  2, _MAY),
     ("5000m",       "5000 m",                 "Fondo",         "s",   True,  2, _MAY),
     ("10000m",      "10.000 m",               "Fondo",         "s",   True,  2, _MAY),
     # --- Vallas y obstáculos ---
-    ("60vallas",    "60 m con vallas",        "Vallas",        "s",   True,  2, _MEN),
-    ("80vallas",    "80 m con vallas",        "Vallas",        "s",   True,  2, _MEN),
-    ("100vallas",   "100 m con vallas",       "Vallas",        "s",   True,  2, _MAY),
+    ("60vallas",    "60 m con vallas",        "Vallas",        "s",   True,  2, _U14),
+    ("80vallas",    "80 m con vallas",        "Vallas",        "s",   True,  2, _U16),
+    ("100vallas",   "100 m con vallas",       "Vallas",        "s",   True,  2, _U16_MAY),
     ("110vallas",   "110 m con vallas",       "Vallas",        "s",   True,  2, _MAY),
+    ("190vallas",   "190 m con vallas",       "Vallas",        "s",   True,  2, _U14),
+    ("295vallas",   "295 m con vallas",       "Vallas",        "s",   True,  2, _U16),
     ("400vallas",   "400 m con vallas",       "Vallas",        "s",   True,  2, _MAY),
+    ("1500obs",     "1500 m con obstáculos",  "Vallas",        "s",   True,  2, _U16),
     ("2000obs",     "2000 m con obstáculos",  "Vallas",        "s",   True,  2, _MAY),
     ("3000obs",     "3000 m con obstáculos",  "Vallas",        "s",   True,  2, _MAY),
     # --- Marcha ---
-    ("2000marcha",  "2000 m marcha",          "Marcha",        "s",   True,  2, _MEN),
-    ("3000marcha",  "3000 m marcha",          "Marcha",        "s",   True,  2, _MEN),
-    ("5000marcha",  "5000 m marcha",          "Marcha",        "s",   True,  2, _MAY),
+    ("300marcha",   "300 m marcha",           "Marcha",        "s",   True,  2, _U14),
+    ("1600marcha",  "1600 m marcha",          "Marcha",        "s",   True,  2, _U14),
+    ("3000marcha",  "3000 m marcha",          "Marcha",        "s",   True,  2, _U16),
+    ("5000marcha",  "5000 m marcha",          "Marcha",        "s",   True,  2, _U16_MAY),
     ("10000marcha", "10.000 m marcha",        "Marcha",        "s",   True,  2, _MAY),
     ("21kmarcha",   "21 km marcha",           "Marcha",        "s",   True,  0, _MAY),
     # --- Saltos ---
-    ("largo",       "Salto en largo",         "Saltos",        "m",   False, 2, _AMBAS),
-    ("alto",        "Salto en alto",          "Saltos",        "m",   False, 2, _AMBAS),
-    ("triple",      "Salto triple",           "Saltos",        "m",   False, 2, _AMBAS),
-    ("garrocha",    "Salto con garrocha",     "Saltos",        "m",   False, 2, _AMBAS),
+    ("largo",       "Salto en largo",         "Saltos",        "m",   False, 2, _TODAS),
+    ("alto",        "Salto en alto",          "Saltos",        "m",   False, 2, _TODAS),
+    ("triple",      "Salto triple",           "Saltos",        "m",   False, 2, _U16_MAY),
+    ("garrocha",    "Salto con garrocha",     "Saltos",        "m",   False, 2, _U16_MAY),
     # --- Lanzamientos ---
-    ("bala",        "Lanzamiento de bala",    "Lanzamientos",  "m",   False, 2, _AMBAS),
-    ("disco",       "Lanzamiento de disco",   "Lanzamientos",  "m",   False, 2, _AMBAS),
-    ("jabalina",    "Lanzamiento de jabalina", "Lanzamientos", "m",   False, 2, _AMBAS),
-    ("martillo",    "Lanzamiento de martillo", "Lanzamientos", "m",   False, 2, _AMBAS),
+    ("bala",        "Lanzamiento de bala",    "Lanzamientos",  "m",   False, 2, _U16_MAY),
+    ("disco",       "Lanzamiento de disco",   "Lanzamientos",  "m",   False, 2, _TODAS),
+    ("jabalina",    "Lanzamiento de jabalina", "Lanzamientos", "m",   False, 2, _TODAS),
+    ("martillo",    "Lanzamiento de martillo", "Lanzamientos", "m",   False, 2, _U16_MAY),
     # --- Pruebas combinadas (se cargan en puntos) ---
+    ("hexatlon",    "Hexatlón",               "Combinadas",    "pts", False, 0, _U16),
     ("heptatlon",   "Heptatlón",              "Combinadas",    "pts", False, 0, _MAY),
     ("decatlon",    "Decatlón",               "Combinadas",    "pts", False, 0, _MAY),
-    ("pentatlon",   "Pentatlón",              "Combinadas",    "pts", False, 0, _MEN),
-    ("hexatlon",    "Hexatlón",               "Combinadas",    "pts", False, 0, _MEN),
 ]
 
 _POR_CLAVE = {p[0]: p for p in PRUEBAS}
@@ -97,21 +107,31 @@ def menor_es_mejor(clave: str) -> bool:
 
 def categorias_de(clave: str) -> frozenset:
     p = _POR_CLAVE.get(clave)
-    return p[6] if p else _AMBAS
+    return p[6] if p else _TODAS
 
 
-def categoria_de(texto_categoria: str | None) -> str | None:
-    """A qué planilla de pruebas corresponde la categoría escrita en la ficha.
+def planilla_de(atleta) -> str | None:
+    """Qué planilla le corresponde a un atleta, para preseleccionarla al cargar
+    una marca.
 
-    La categoría del padrón es texto libre ("Menores", "Juveniles", "Mayores",
-    "Pequeños"…), así que se resuelve por nombre: lo que empieza con "men" o
-    "peq" va a la planilla de Menores; el resto a la de Mayores. None si la
-    ficha no tiene categoría, para no filtrar nada.
+    Primero por la edad, que es lo que define la categoría de verdad: hasta 13
+    años U14, 14 y 15 U16, de 16 en adelante Mayores. Si la ficha no tiene fecha
+    de nacimiento se mira el texto de la categoría ("Menores", "Pequeños"…), y
+    si tampoco hay nada, None: se muestran todas y el profesor elige.
     """
-    if not texto_categoria:
+    edad = atleta.edad() if atleta is not None else None
+    if edad is not None:
+        if edad <= 13:
+            return U14
+        return U16 if edad <= 15 else MAYORES
+    texto = ((atleta.categoria if atleta is not None else "") or "").strip().lower()
+    if not texto:
         return None
-    t = texto_categoria.strip().lower()
-    return MENORES if t.startswith(("men", "peq", "inf", "mini")) else MAYORES
+    if texto.startswith(("men", "peq", "inf", "mini", "u14", "u12")):
+        return U14
+    if texto.startswith(("u16", "cad")):
+        return U16
+    return MAYORES
 
 
 def grupos(categoria: str | None = None) -> dict:

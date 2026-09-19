@@ -13,9 +13,10 @@ from app.services import pruebas
 
 class TestSentidoDeLaPrueba:
     @pytest.mark.parametrize("clave", ["60m", "80m", "100m", "150m", "300m", "400m",
-                                       "600m", "1500m", "10000m", "80vallas",
-                                       "110vallas", "400vallas", "3000obs",
-                                       "5000marcha", "21kmarcha"])
+                                       "600m", "1200m", "1500m", "2400m", "10000m",
+                                       "60vallas", "190vallas", "295vallas",
+                                       "110vallas", "400vallas", "1500obs", "3000obs",
+                                       "300marcha", "5000marcha", "21kmarcha"])
     def test_en_las_carreras_menos_es_mejor(self, clave):
         assert pruebas.menor_es_mejor(clave) is True
 
@@ -24,7 +25,7 @@ class TestSentidoDeLaPrueba:
     def test_en_saltos_y_lanzamientos_mas_es_mejor(self, clave):
         assert pruebas.menor_es_mejor(clave) is False
 
-    @pytest.mark.parametrize("clave", ["heptatlon", "decatlon", "pentatlon", "hexatlon"])
+    @pytest.mark.parametrize("clave", ["heptatlon", "decatlon", "hexatlon"])
     def test_en_las_combinadas_mas_puntos_es_mejor(self, clave):
         assert pruebas.menor_es_mejor(clave) is False
         assert pruebas.unidad(clave) == "pts"
@@ -107,35 +108,63 @@ class TestCatalogo:
 
 
 class TestPlanillasPorCategoria:
-    """Las pruebas de la planilla que mandó el club para Mayores tienen que
-    estar todas, y las de Menores no pueden mezclarse con las de Mayores."""
+    """Las tres planillas que mandó el club tienen que estar completas y no
+    mezclarse: un U14 no corre 100 m con vallas ni un Mayor 190 m con vallas."""
 
     PLANILLA_MAYORES = ["100m", "200m", "400m", "800m", "1500m", "3000m", "5000m",
                         "10000m", "100vallas", "110vallas", "400vallas", "2000obs",
                         "3000obs", "5000marcha", "10000marcha", "21kmarcha",
                         "largo", "alto", "triple", "garrocha", "bala", "disco",
                         "jabalina", "martillo", "heptatlon", "decatlon"]
+    # Los combos U14: velocidad, vallas, resistencia, marcha, saltos y lanzamientos.
+    PLANILLA_U14 = ["60m", "largo", "60vallas", "150m", "190vallas", "600m", "1200m",
+                    "800m", "300marcha", "1600marcha", "alto", "jabalina", "disco"]
+    # Reglamento técnico 2025, niñas y niños juntos.
+    PLANILLA_U16 = ["80m", "150m", "300m", "600m", "2400m", "80vallas", "100vallas",
+                    "295vallas", "1500obs", "3000marcha", "5000marcha", "largo",
+                    "triple", "alto", "garrocha", "bala", "jabalina", "disco",
+                    "martillo", "hexatlon"]
+
+    @staticmethod
+    def claves(categoria):
+        return {c for lista in pruebas.grupos(categoria).values() for c, _n, _cats in lista}
 
     def test_la_planilla_de_mayores_esta_completa(self):
-        claves = {c for lista in pruebas.grupos(pruebas.MAYORES).values()
-                  for c, _n, _cats in lista}
-        assert set(self.PLANILLA_MAYORES) <= claves
+        assert set(self.PLANILLA_MAYORES) == self.claves(pruebas.MAYORES)
 
-    def test_menores_no_ve_las_pruebas_solo_de_mayores(self):
-        claves = {c for lista in pruebas.grupos(pruebas.MENORES).values()
-                  for c, _n, _cats in lista}
-        assert "400vallas" not in claves and "decatlon" not in claves
-        assert "80m" in claves and "largo" in claves
+    def test_la_planilla_u14_esta_completa(self):
+        assert set(self.PLANILLA_U14) == self.claves(pruebas.U14)
 
-    def test_mayores_no_ve_las_pruebas_solo_de_menores(self):
-        claves = {c for lista in pruebas.grupos(pruebas.MAYORES).values()
-                  for c, _n, _cats in lista}
-        assert "80m" not in claves and "600m" not in claves
+    def test_la_planilla_u16_esta_completa(self):
+        assert set(self.PLANILLA_U16) == self.claves(pruebas.U16)
+
+    def test_toda_prueba_del_catalogo_esta_en_alguna_planilla(self):
+        todas = self.claves(pruebas.U14) | self.claves(pruebas.U16) | self.claves(pruebas.MAYORES)
+        assert todas == {p[0] for p in pruebas.PRUEBAS}
+
+
+class TestPlanillaDelAtleta:
+    """Al elegir un atleta, el formulario de marcas preselecciona su planilla."""
+
+    class Ficha:
+        def __init__(self, edad=None, categoria=None):
+            self._edad, self.categoria = edad, categoria
+
+        def edad(self):
+            return self._edad
+
+    @pytest.mark.parametrize("edad,esperado", [
+        (11, "u14"), (13, "u14"), (14, "u16"), (15, "u16"), (16, "mayores"), (34, "mayores"),
+    ])
+    def test_la_edad_manda(self, edad, esperado):
+        assert pruebas.planilla_de(self.Ficha(edad=edad, categoria="Mayores")) == esperado
 
     @pytest.mark.parametrize("texto,esperado", [
-        ("Menores (10 a 13)", "menores"), ("Menores", "menores"),
-        ("Pequeños (5 a 8)", "menores"), ("Juveniles", "mayores"),
-        ("Mayores", "mayores"), ("Máster", "mayores"), ("", None), (None, None),
+        ("Menores (10 a 13)", "u14"), ("Pequeños (5 a 8)", "u14"), ("U16", "u16"),
+        ("Juveniles", "mayores"), ("Mayores", "mayores"), ("", None), (None, None),
     ])
-    def test_la_categoria_de_la_ficha_elige_la_planilla(self, texto, esperado):
-        assert pruebas.categoria_de(texto) == esperado
+    def test_sin_fecha_de_nacimiento_se_mira_la_categoria(self, texto, esperado):
+        assert pruebas.planilla_de(self.Ficha(categoria=texto)) == esperado
+
+    def test_sin_atleta_no_filtra(self):
+        assert pruebas.planilla_de(None) is None

@@ -29,28 +29,26 @@
     <div class="card-head"><h3>Cargar una marca</h3></div>
     <form method="post" action="/marcas" class="card-body">
         {{ csrf_input(request) }}
-        <div class="fila-2">
-            <div class="campo">
-                <label for="atleta_id">Atleta</label>
-                <select id="atleta_id" name="atleta_id" required data-elige-categoria="cat_prueba">
-                    <option value="">Elegir…</option>
-                    {% for a in atletas %}
-                    <option value="{{ a.id }}" data-categoria="{{ pruebas.categoria_de(a.categoria) or '' }}">{{ a.nombre }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="campo">
-                <div class="lbl">Planilla de pruebas</div>
-                {# Filtra el desplegable de al lado sin recargar. Sin JavaScript se
-                   ven todas las pruebas, que también sirve. #}
-                <div class="binario binario-3" id="cat_prueba">
-                    <input type="radio" id="cat_todas" name="cat_prueba" value="" checked data-filtra-pruebas="prueba">
-                    <label for="cat_todas">Todas</label>
-                    {% for clave, nom in categorias %}
-                    <input type="radio" id="cat_{{ clave }}" name="cat_prueba" value="{{ clave }}" data-filtra-pruebas="prueba">
-                    <label for="cat_{{ clave }}">{{ nom }}</label>
-                    {% endfor %}
-                </div>
+        <div class="campo">
+            <label for="atleta_id">Atleta</label>
+            <select id="atleta_id" name="atleta_id" required data-elige-categoria="cat_prueba">
+                <option value="">Elegir…</option>
+                {% for a in atletas %}
+                <option value="{{ a.id }}" data-categoria="{{ pruebas.planilla_de(a) or '' }}">{{ a.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="campo">
+            <div class="lbl">Planilla de pruebas</div>
+            {# Filtra el desplegable de abajo sin recargar. Sin JavaScript se
+               ven todas las pruebas, que también sirve. #}
+            <div class="binario binario-4" id="cat_prueba">
+                <input type="radio" id="cat_todas" name="cat_prueba" value="" checked data-filtra-pruebas="prueba">
+                <label for="cat_todas">Todas</label>
+                {% for clave, nom in categorias %}
+                <input type="radio" id="cat_{{ clave }}" name="cat_prueba" value="{{ clave }}" data-filtra-pruebas="prueba">
+                <label for="cat_{{ clave }}">{{ nom }}</label>
+                {% endfor %}
             </div>
         </div>
         <div class="campo">

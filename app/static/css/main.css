@@ -474,7 +474,7 @@ fieldset { border: none; }
 
 /* Sí / No */
 .binario { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.binario-3 { grid-template-columns: repeat(3, 1fr); }
+.binario-4 { grid-template-columns: repeat(2, 1fr); }
 .binario input { position: absolute; opacity: 0; pointer-events: none; }
 .binario label {
     min-height: 46px;
@@ -1000,6 +1000,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     .kpis { grid-template-columns: repeat(4, 1fr); }
     .fila-3 { grid-template-columns: repeat(3, 1fr); }
     .grilla { grid-template-columns: repeat(2, 1fr); }
+    .binario-4 { grid-template-columns: repeat(4, 1fr); }
     .escala-10 { grid-template-columns: repeat(10, 1fr); }
     .estados { grid-template-columns: repeat(4, 1fr); }
     .hero { padding: 70px 32px 64px; }
