@@ -122,7 +122,7 @@
                 <td>{{ f.semana|fecha_corta }}</td>
                 <td class="num">
                     {% if f.bienestar %}
-                    <span class="chip chip-{{ 'ok' if f.bienestar > 17 else ('atencion' if f.bienestar > 12 else 'mal') }}">{{ f.bienestar }}</span>
+                    <span class="chip chip-{{ color_bienestar(f.bienestar) }}">{{ f.bienestar }}</span>
                     {% else %}<span class="tenue">sin cargar</span>{% endif %}
                 </td>
                 <td class="num">{{ ('%.1f'|format(f.sueno)) if f.sueno else '—' }}</td>

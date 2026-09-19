@@ -2,7 +2,7 @@
 {% from "_iconos.html" import icono %}
 {% block title %}{{ club.club_nombre }} — Escuela y equipo de atletismo{% endblock %}
 {% block extra_head %}
-<meta name="description" content="{{ club.club_nombre }}: entrenamiento de atletismo para chicos, jóvenes y adultos. Velocidad, fondo, saltos y lanzamientos, con seguimiento personalizado.">
+<meta name="description" content="{{ club.club_nombre }}: escuela y equipo de atletismo en Cochabamba. Formación a largo plazo con la Pirámide Delta: motricidad, capacidades físicas, técnica y preparación para competir. Sesión de prueba gratuita.">
 {% endblock %}
 
 {% block cuerpo %}
@@ -14,13 +14,17 @@
         {{ club.club_nombre }}
     </a>
     <nav class="enlaces">
-        <a href="#club">El club</a>
-        <a href="#disciplinas">Disciplinas</a>
-        <a href="#staff">Staff</a>
-        <a href="#horarios">Horarios</a>
+        <a href="#club">Cómo trabajamos</a>
+        <a href="#ofrecemos">Qué ofrecemos</a>
+        <a href="#staff">Equipo</a>
+        <a href="#horarios">Horarios y costos</a>
         <a href="#contacto">Contacto</a>
     </nav>
+    {% if user %}
+    <a href="{{ '/panel' if user.role == 'profesor' else '/inicio' }}" class="btn btn-sm btn-primario">Mi panel</a>
+    {% else %}
     <a href="/auth/login" class="btn btn-sm btn-primario">Entrar</a>
+    {% endif %}
 </header>
 
 <section class="hero">
@@ -28,18 +32,18 @@
         <span class="antetitulo">{{ icono('corredor') }} Escuela y equipo de atletismo</span>
         <h1>Corré, saltá y <em>lanzá</em> mejor que ayer</h1>
         <p>
-            Entrenamiento de atletismo para chicos, jóvenes y adultos, con
-            planificación por objetivos y seguimiento semana a semana. No importa si
-            venís a competir o a estar mejor: entrenás con un plan hecho para vos.
+            Atletismo para niños desde los 5 años, jóvenes y adultos, con una
+            formación pensada a largo plazo: primero una base sólida, después la
+            especialización y, para quien lo busca, el alto rendimiento.
         </p>
         <div class="acciones">
             {% if club.club_whatsapp %}
-            <a href="https://wa.me/{{ club.club_whatsapp }}?text=Hola,%20quiero%20info%20sobre%20las%20clases%20de%20atletismo"
+            <a href="https://wa.me/{{ club.club_whatsapp }}?text=Hola,%20quiero%20agendar%20una%20sesi%C3%B3n%20de%20prueba%20gratuita"
                class="btn btn-primario btn-grande" target="_blank" rel="noopener">
-                Quiero probar una clase
+                Agendar una sesión de prueba gratis
             </a>
             {% endif %}
-            <a href="#horarios" class="btn btn-grande">Ver horarios</a>
+            <a href="#horarios" class="btn btn-grande">Ver horarios y costos</a>
         </div>
     </div>
 </section>
@@ -47,69 +51,86 @@
 <section class="seccion" id="club">
     <div class="seccion-cabecera">
         <span class="antetitulo">Cómo trabajamos</span>
-        <h2>Tres formas de entrenar</h2>
-        <p>Un mismo lugar y un mismo equipo técnico, con planes distintos según
-            para qué venís.</p>
+        <h2>La Pirámide Delta</h2>
+        <p>Nuestra metodología es la formación a largo plazo del deportista. En Delta
+            trabajamos de manera progresiva, respetando las etapas de formación y
+            construyendo una base sólida antes de llegar a la especialización y al
+            alto rendimiento.</p>
+    </div>
+    <div class="split piramide-bloque">
+        <div class="piramide" role="img" aria-label="Pirámide de tres niveles: base de formación multilateral, nivel medio de especialización deportiva y cúspide de alto rendimiento">
+            <div class="nivel nivel-3"><b>Alto rendimiento</b><span>Cúspide</span></div>
+            <div class="nivel nivel-2"><b>Especialización deportiva</b><span>Nivel medio</span></div>
+            <div class="nivel nivel-1"><b>Formación multilateral</b><span>Base</span></div>
+        </div>
+        <ol class="etapas">
+            <li class="etapa etapa-1">
+                <span class="marca-etapa">Base</span>
+                <h3>Formación multilateral</h3>
+                <p>El pilar fundamental del desarrollo deportivo: moverse bien en todas
+                    las formas antes de correr, saltar o lanzar de una sola manera.</p>
+            </li>
+            <li class="etapa etapa-2">
+                <span class="marca-etapa">Nivel medio</span>
+                <h3>Especialización deportiva</h3>
+                <p>Orientada al desarrollo de las capacidades y habilidades específicas
+                    del atletismo, cuando el cuerpo y la base ya están listos.</p>
+            </li>
+            <li class="etapa etapa-3">
+                <span class="marca-etapa">Cúspide</span>
+                <h3>Alto rendimiento</h3>
+                <p>Dirigido a la optimización del rendimiento deportivo y la
+                    participación competitiva.</p>
+            </li>
+        </ol>
+    </div>
+</section>
+
+<section class="seccion seccion-clara" id="ofrecemos">
+    <div class="seccion-cabecera">
+        <span class="antetitulo">Qué ofrecemos</span>
+        <h2>Del juego a la competencia</h2>
+        <p>Cada categoría entrena lo que le corresponde a su etapa. Esto es lo que
+            vas a encontrar en Delta.</p>
     </div>
     <div class="grilla grilla-3">
         <div class="pilar">
-            <div class="icono">{{ icono('marcas') }}</div>
-            <h3>Alto rendimiento</h3>
-            <p>Para quien compite. Planificación por temporada, control de cargas,
-                tests periódicos y seguimiento del descanso y la alimentación
-                semana a semana.</p>
+            <div class="icono">{{ icono('atletas') }}</div>
+            <h3>Motricidad en niños</h3>
+            <p>Juegos didácticos que estimulan las habilidades básicas de movimiento:
+                girar, rodar, atrapar, lanzar, saltar, correr y más.</p>
+        </div>
+        <div class="pilar">
+            <div class="icono">{{ icono('estadisticas') }}</div>
+            <h3>Capacidades físicas</h3>
+            <p>Mejora de la velocidad, la fuerza y la resistencia, con cargas
+                adaptadas a la edad y al momento de cada atleta.</p>
         </div>
         <div class="pilar">
             <div class="icono">{{ icono('corredor') }}</div>
-            <h3>Vida saludable</h3>
-            <p>Para adultos que quieren moverse bien. Trabajo de técnica de carrera,
-                fuerza y resistencia, adaptado a la edad y al estado de cada uno.</p>
+            <h3>Técnica del atletismo</h3>
+            <p>Desarrollo y perfeccionamiento de las habilidades técnicas de las
+                carreras, los saltos y los lanzamientos.</p>
         </div>
         <div class="pilar">
-            <div class="icono">{{ icono('atletas') }}</div>
-            <h3>Escuelita (8 a 15 años)</h3>
-            <p>La puerta de entrada al atletismo. Juegos, coordinación y las bases
-                de las carreras, los saltos y los lanzamientos, sin especializar
-                antes de tiempo.</p>
+            <div class="icono">{{ icono('marcas') }}</div>
+            <h3>Preparación para competir</h3>
+            <p>Preparación deportiva y mejora del rendimiento para las competencias,
+                con seguimiento de las marcas de cada atleta.</p>
+        </div>
+        <div class="pilar">
+            <div class="icono">{{ icono('check') }}</div>
+            <h3>Hábitos saludables</h3>
+            <p>Promoción de hábitos saludables y una mejor calidad de vida, dentro y
+                fuera de la pista.</p>
         </div>
     </div>
 </section>
 
-<section class="seccion seccion-clara" id="disciplinas">
-    <div class="seccion-cabecera">
-        <span class="antetitulo">Qué se entrena</span>
-        <h2>Todas las pruebas del atletismo</h2>
-        <p>Empezás probando de todo. Con el tiempo, y según lo que mejor te salga,
-            el profesor te orienta hacia tu prueba.</p>
-    </div>
-    <div class="grilla grilla-4">
-        <div class="disciplina">
-            <span class="num">100</span>
-            <div><b>Velocidad</b><span>100, 200 y 400 m</span></div>
-        </div>
-        <div class="disciplina">
-            <span class="num">1500</span>
-            <div><b>Medio fondo y fondo</b><span>800 m a 10.000 m</span></div>
-        </div>
-        <div class="disciplina">
-            <span class="num">110</span>
-            <div><b>Vallas</b><span>110 y 400 m con vallas</span></div>
-        </div>
-        <div class="disciplina">
-            <span class="num">↗</span>
-            <div><b>Saltos</b><span>Largo, triple, alto y garrocha</span></div>
-        </div>
-        <div class="disciplina">
-            <span class="num">◉</span>
-            <div><b>Lanzamientos</b><span>Bala, disco, jabalina y martillo</span></div>
-        </div>
-        <div class="disciplina">
-            <span class="num">+</span>
-            <div><b>Pruebas combinadas</b><span>Decatlón y heptatlón</span></div>
-        </div>
-    </div>
-</section>
-
+{# Solo para quien ya tiene cuenta: el club prefiere no mostrar el sistema de
+   seguimiento a quien todavía no está inscripto. La raíz "/" nunca llega acá
+   con sesión (redirige al panel), así que en la práctica se ve desde /club. #}
+{% if user %}
 <section class="seccion seccion-oscura" id="metodo">
     <div class="seccion-cabecera">
         <span class="antetitulo">Lo que nos diferencia</span>
@@ -140,85 +161,108 @@
         </div>
     </div>
 </section>
+{% endif %}
 
 <section class="seccion" id="staff">
     <div class="seccion-cabecera">
         <span class="antetitulo">El equipo</span>
         <h2>Quién te va a entrenar</h2>
     </div>
-    <div class="grilla grilla-3">
+    <div class="grilla grilla-2 staff">
         <div class="pilar perfil">
-            <div class="foto">LV</div>
-            <h3>Luis Valenzuela</h3>
-            <div class="rol">Director técnico</div>
-            <p>Entrenador nacional de atletismo. Más de veinte años formando
-                atletas de velocidad y saltos.</p>
+            <div class="foto">MC</div>
+            <h3>Mario Andrés Candia Antezana</h3>
+            <div class="rol">Entrenador de atletismo y preparador físico</div>
         </div>
         <div class="pilar perfil">
-            <div class="foto">ME</div>
-            <h3>María Elena Murial</h3>
-            <div class="rol">Fondo y medio fondo</div>
-            <p>Especialista en resistencia y planificación de temporada para pruebas
-                de 800 m en adelante.</p>
-        </div>
-        <div class="pilar perfil">
-            <div class="foto">CG</div>
-            <h3>Cecilia Gómez</h3>
-            <div class="rol">Escuelita</div>
-            <p>Profesora de educación física. A cargo de las categorías formativas
-                de 8 a 15 años.</p>
+            <div class="foto">LR</div>
+            <h3>Laura Ramos Cameo</h3>
+            <div class="rol">Entrenadora de mini atletismo</div>
         </div>
     </div>
-    <p class="apunte" style="margin-top:14px">
-        Los nombres y las fotos de esta sección son de ejemplo: se reemplazan por los
-        del club antes de publicar la página.
-    </p>
 </section>
 
 <section class="seccion seccion-clara" id="horarios">
     <div class="seccion-cabecera">
-        <span class="antetitulo">Horarios y planes</span>
-        <h2>Cuándo se entrena</h2>
-        <p>Todos los grupos entrenan en la pista. La primera clase es de prueba y no
-            se cobra.</p>
+        <span class="antetitulo">Horarios y costos</span>
+        <h2>Cuándo y dónde se entrena</h2>
+        <p>Tres categorías por edad, cada una con su lugar y su horario. Los costos
+            son mensuales.</p>
     </div>
     <div class="grilla grilla-3">
-        <div class="plan">
-            <div class="nivel">Escuelita</div>
-            <div class="horario">Lun · Mié · Vie<br>17:00 a 18:30</div>
-            <ul>
-                <li>8 a 15 años</li>
-                <li>Tres estímulos por semana</li>
-                <li>Todas las pruebas</li>
-            </ul>
-        </div>
         <div class="plan destacado">
-            <div class="nivel">Competitivo</div>
-            <div class="horario">Lun a Vie<br>18:30 a 20:30</div>
-            <ul>
-                <li>Desde 15 años</li>
-                <li>Plan individual por prueba</li>
-                <li>Seguimiento semanal y tests</li>
-                <li>Acompañamiento en competencia</li>
+            <div class="nivel">Juveniles y Mayores</div>
+            <div class="turnos">
+                <div class="turno">
+                    <div class="dias">Lunes, miércoles y viernes</div>
+                    <div class="franja"><b>9:45 a 11:15</b><span>Turno mañana · Pista Verde, ex Complejo Petrolero</span></div>
+                    <div class="franja"><b>16:00 a 17:30</b><span>Turno tarde · Pista del Stadium Félix Capriles</span></div>
+                </div>
+                <div class="turno">
+                    <div class="dias">Martes y jueves</div>
+                    <div class="franja"><b>16:30 a 18:00</b><span>Pista Verde, ex Complejo Petrolero (Av. 6 de Agosto)</span></div>
+                </div>
+                <div class="turno">
+                    <div class="dias">Sábado</div>
+                    <div class="franja"><b>9:00 a 10:15</b><span>Laguna Alalay (frente a los bomberos)</span></div>
+                </div>
+            </div>
+            <ul class="costos">
+                <li><b>Bs 200</b><span>6 sesiones por semana</span></li>
+                <li><b>Bs 150</b><span>3 sesiones por semana, mañana o tarde a elección</span></li>
             </ul>
         </div>
         <div class="plan">
-            <div class="nivel">Adultos</div>
-            <div class="horario">Mar · Jue<br>19:00 a 20:30</div>
-            <ul>
-                <li>Sin límite de edad</li>
-                <li>Técnica de carrera y fuerza</li>
-                <li>Preparación para calle y máster</li>
+            <div class="nivel">Menores</div>
+            <div class="edades">10 a 13 años</div>
+            <div class="turnos">
+                <div class="turno">
+                    <div class="dias">Lunes, miércoles y viernes</div>
+                    <div class="franja"><b>17:00 a 18:15</b><span>Pista principal del Stadium Félix Capriles</span></div>
+                </div>
+            </div>
+            <ul class="costos">
+                <li><b>Bs 150</b><span>por mes</span></li>
             </ul>
         </div>
+        <div class="plan">
+            <div class="nivel">Pequeños</div>
+            <div class="edades">5 a 8 años</div>
+            <div class="turnos">
+                <div class="turno">
+                    <div class="dias">Lunes, miércoles y viernes</div>
+                    <div class="franja"><b>17:00 a 18:00</b><span>Pista principal del Stadium Félix Capriles</span></div>
+                </div>
+            </div>
+            <ul class="costos">
+                <li><b>Bs 150</b><span>por mes</span></li>
+            </ul>
+        </div>
+    </div>
+    <div class="prueba-gratis">
+        <div>
+            <span class="antetitulo">Sesión de prueba gratuita</span>
+            <h3>Probá antes de inscribirte</h3>
+            <p>Podés agendar una sesión de prueba gratuita para conocer nuestra
+                metodología, el ambiente del club y a nuestro equipo.</p>
+        </div>
+        {% if club.club_whatsapp %}
+        <a href="https://wa.me/{{ club.club_whatsapp }}?text=Hola,%20quiero%20agendar%20una%20sesi%C3%B3n%20de%20prueba%20gratuita"
+           class="btn btn-primario btn-grande" target="_blank" rel="noopener">
+            Agendar mi sesión de prueba
+        </a>
+        {% else %}
+        <a href="#contacto" class="btn btn-primario btn-grande">Agendar mi sesión de prueba</a>
+        {% endif %}
     </div>
 </section>
 
 <section class="seccion seccion-oscura" id="contacto">
     <div class="seccion-cabecera">
         <span class="antetitulo">Contacto</span>
-        <h2>Vení a probar una clase</h2>
-        <p>Escribinos y te contamos en qué grupo entrarías y qué necesitás para empezar.</p>
+        <h2>Agendá tu sesión de prueba</h2>
+        <p>Escribinos y coordinamos el día: te contamos en qué categoría entrarías y
+            qué necesitás para empezar.</p>
     </div>
     <div class="split">
         <div>
@@ -242,12 +286,12 @@
             {% endif %}
             <div class="contacto-item">
                 {{ icono('reloj') }}
-                <div><b>Horario de atención</b><span>Lunes a viernes, de 17 a 21</span></div>
+                <div><b>Sesión de prueba</b><span>Gratuita, en el horario de tu categoría</span></div>
             </div>
         </div>
         <div>
             {% if club.club_whatsapp %}
-            <a href="https://wa.me/{{ club.club_whatsapp }}?text=Hola,%20quiero%20info%20sobre%20las%20clases%20de%20atletismo"
+            <a href="https://wa.me/{{ club.club_whatsapp }}?text=Hola,%20quiero%20agendar%20una%20sesi%C3%B3n%20de%20prueba%20gratuita"
                class="btn btn-primario btn-bloque btn-grande" target="_blank" rel="noopener">
                 Escribir por WhatsApp
             </a>

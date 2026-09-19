@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_campos.html" import escala, escala_num, binario %}
+{% from "_campos.html" import escala, escala_num, escala_rpe, binario %}
 {% from "_iconos.html" import icono %}
 {% block title %}Mi parte semanal — {{ club.club_nombre }}{% endblock %}
 
@@ -141,8 +141,10 @@
                 </div>
             </div>
             <div class="campo">
-                <div class="lbl">¿Qué tan duro te resultó? (1 muy suave — 10 al límite)</div>
-                {{ escala_num('rpe', dato('rpe')) }}
+                <div class="lbl">RPE: ¿qué tan duro te resultó entrenar esta semana?</div>
+                <div class="ayuda" style="margin:0 0 8px">Esfuerzo percibido del 1 al 10, pensando
+                    en cómo terminaste las sesiones: 1 es muy liviano y 10 es el máximo que podés dar.</div>
+                {{ escala_rpe('rpe', dato('rpe'), rpe_escala, rpe_franjas) }}
             </div>
         </div>
     </div>

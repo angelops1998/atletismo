@@ -26,8 +26,14 @@ async def inicio(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/club", response_class=HTMLResponse)
-async def landing(request: Request):
+async def landing(request: Request, db: Session = Depends(get_db)):
     """La misma landing, pero sin el redirect: el enlace "Ver la página del
     club" del menú usa esta ruta para que quien ya tiene sesión también pueda
-    verla, en vez de rebotar de vuelta a su panel."""
-    return templates.TemplateResponse(request, "publico/landing.html", {})
+    verla, en vez de rebotar de vuelta a su panel.
+
+    Se le pasa el usuario (si lo hay) porque la sección "Entrenamos con datos"
+    solo se muestra a quien tiene cuenta: el club no quiere exhibir el sistema
+    de seguimiento a quien todavía no está inscripto."""
+    return templates.TemplateResponse(request, "publico/landing.html", {
+        "user": get_current_user_optional(request, db),
+    })

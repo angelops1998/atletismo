@@ -50,12 +50,13 @@ async def panel(request: Request, db: Session = Depends(get_db)):
         "alertas_club": alertas.del_club(db),
         "serie": serie,
         # Escala automática: el promedio del club se mueve en un rango angosto y
-        # con la escala absoluta 5–25 la línea salía plana y no decía nada.
+        # con la escala absoluta 4–20 la línea salía plana y no decía nada.
         "grafico_bienestar": grafico.linea([f["bienestar"] for f in serie]),
         "grafico_participacion": grafico.barras([f["pct_cargados"] for f in serie],
                                                 maximo=100, alto=120),
         "items_semana": bienestar.promedio_items_grupo(db, semana),
         "items": bienestar.ITEMS,
+        "maximo": bienestar.MAXIMO,
         "finanzas": finanzas,
     })
 
@@ -91,7 +92,7 @@ async def inicio(request: Request, db: Session = Depends(get_db)):
         "maximo": bienestar.MAXIMO,
         "serie": serie,
         "grafico_bienestar": grafico.linea([f["bienestar"] for f in serie],
-                                           minimo=5, maximo=25, alto=140),
+                                           minimo=bienestar.MINIMO, maximo=bienestar.MAXIMO, alto=140),
         "falta_anterior": bienestar.parte_de_semana(db, user.id, anterior) is None,
         "semana_anterior": anterior,
         "estado_cuenta": estado,
@@ -146,7 +147,7 @@ async def mis_datos(request: Request, db: Session = Depends(get_db)):
         "tomadas": len(asistencias),
         "maximo": bienestar.MAXIMO,
         "grafico_bienestar": grafico.linea([f["bienestar"] for f in serie],
-                                           minimo=5, maximo=25, alto=150),
+                                           minimo=bienestar.MINIMO, maximo=bienestar.MAXIMO, alto=150),
         "grafico_sueno": grafico.linea([f["sueno"] for f in serie], alto=130),
         "grafico_carga": grafico.barras([f["carga"] for f in serie], alto=130),
         "resumen_pruebas": resumen_pruebas,

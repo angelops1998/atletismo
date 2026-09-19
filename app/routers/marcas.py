@@ -27,19 +27,28 @@ VIENTO_MAXIMO = Decimal("20")
 
 
 def _valor(texto: str, clave: str) -> Decimal | None:
-    """Acepta '12.34', '12,34' y también '4:32.10' para las pruebas largas.
+    """Acepta '12.34', '12,34', '4:32.10' para las pruebas largas y '1:45:30'
+    para la marcha de 21 km.
 
     Nadie anota un 1500 en segundos: el profesor lo escribe en minutos como lo
     ve en el cronómetro, y se guarda en segundos porque es lo único que se puede
-    promediar y graficar.
+    promediar y graficar. Los puntos de las combinadas se aceptan con o sin el
+    punto de miles ("6.850" y "6850" son lo mismo).
     """
     texto = (texto or "").strip().replace(",", ".")
     if not texto:
         return None
     try:
         if ":" in texto:
-            minutos, segundos = texto.split(":", 1)
-            return Decimal(minutos) * 60 + Decimal(segundos)
+            partes = texto.split(":")
+            if len(partes) > 3:
+                return None
+            total = Decimal(0)
+            for parte in partes:
+                total = total * 60 + Decimal(parte)
+            return total
+        if pruebas.unidad(clave) == "pts":
+            return Decimal(texto.replace(".", ""))
         return Decimal(texto)
     except (InvalidOperation, ValueError):
         return None
@@ -87,6 +96,7 @@ async def lista(request: Request, db: Session = Depends(get_db)):
         "prueba": prueba,
         "pruebas": pruebas,
         "grupos": pruebas.grupos(),
+        "categorias": pruebas.CATEGORIAS,
         "atletas": db.query(User).filter(User.role == "atleta", User.is_active.is_(True))
                      .order_by(User.full_name, User.username).all(),
         "hoy": hoy(),

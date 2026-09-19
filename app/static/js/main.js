@@ -2,7 +2,7 @@
 
    Todo lo que se puede resolver con HTML y CSS se resuelve así: los formularios
    funcionan aunque este archivo no cargue, que en la pista con mala señal pasa.
-   Acá quedan solo las tres cosas que el HTML no puede hacer solo. */
+   Acá quedan solo las pocas cosas que el HTML no puede hacer solo. */
 (function () {
   "use strict";
 
@@ -40,7 +40,43 @@
     });
   });
 
-  // 4) Marcar a todos presentes de una: tomar lista es marcar las excepciones,
+  // 4) Filtro de la planilla de pruebas en el formulario de marcas: los radios
+  //    con data-filtra-pruebas="id-del-select" esconden las pruebas que no son
+  //    de la categoría elegida (cada <option> dice las suyas en data-cat). Al
+  //    elegir un atleta, el select con data-elige-categoria marca solo el radio
+  //    de su categoría. Sin JS se ven todas las pruebas, que también sirve.
+  function filtrarPruebas(radio) {
+    var select = document.getElementById(radio.getAttribute("data-filtra-pruebas"));
+    if (!select) return;
+    var cat = radio.value;
+    Array.prototype.forEach.call(select.options, function (op) {
+      var cats = op.getAttribute("data-cat");
+      if (cats === null) return;
+      var oculta = !!cat && cats.split(" ").indexOf(cat) === -1;
+      op.hidden = oculta;
+      op.disabled = oculta;
+      if (oculta && op.selected) select.value = "";
+    });
+  }
+  document.querySelectorAll("[data-filtra-pruebas]").forEach(function (radio) {
+    radio.addEventListener("change", function () { if (radio.checked) filtrarPruebas(radio); });
+    if (radio.checked) filtrarPruebas(radio);
+  });
+  document.querySelectorAll("[data-elige-categoria]").forEach(function (select) {
+    var grupo = document.getElementById(select.getAttribute("data-elige-categoria"));
+    if (!grupo) return;
+    select.addEventListener("change", function () {
+      var op = select.options[select.selectedIndex];
+      var cat = op ? op.getAttribute("data-categoria") : "";
+      var radio = grupo.querySelector('input[value="' + (cat || "") + '"]');
+      if (radio && !radio.checked) {
+        radio.checked = true;
+        filtrarPruebas(radio);
+      }
+    });
+  });
+
+  // 5) Marcar a todos presentes de una: tomar lista es marcar las excepciones,
   //    no ir uno por uno cuando vinieron los treinta.
   var todos = document.querySelector("[data-todos-presentes]");
   if (todos) {

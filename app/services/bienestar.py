@@ -12,11 +12,15 @@ from ..models.parte import ParteSemanal
 from ..models.user import User
 from ..tiempo import lunes_de, lunes_actual
 
-# Los cinco ítems del cuestionario, todos 1–5 y todos en el mismo sentido
+# Los cuatro ítems del cuestionario, todos 1–5 y todos en el mismo sentido
 # (5 = mejor). El orden es el que se muestra en el formulario.
+#
+# Hubo un quinto ítem, "Energía" (columna `fatiga`), que el club pidió sacar y
+# reemplazar por el RPE de la semana: el esfuerzo percibido se pregunta con la
+# escala de 1 a 10 de más abajo y no entra en la suma de bienestar. La columna
+# sigue en la base con los valores históricos, pero ya no se carga ni se cuenta.
 ITEMS = [
     ("sueno_calidad",  "Sueño",          "¿Cómo dormiste esta semana?"),
-    ("fatiga",         "Energía",        "¿Con cuánta energía te sentiste?"),
     ("dolor_muscular", "Dolor muscular", "¿Cómo estuvieron tus músculos?"),
     ("estres",         "Estrés",         "¿Qué tan tranquilo estuviste?"),
     ("animo",          "Ánimo",          "¿Cómo estuvo tu ánimo?"),
@@ -26,17 +30,45 @@ ITEMS = [
 # que carga desde el celular; con la palabra al lado contesta lo que quiso decir.
 ETIQUETAS = {
     "sueno_calidad":  ["Muy mal", "Mal", "Normal", "Bien", "Muy bien"],
-    "fatiga":         ["Agotado", "Cansado", "Normal", "Con energía", "Muy bien"],
     "dolor_muscular": ["Muy dolorido", "Dolorido", "Algo cargado", "Casi sin dolor", "Sin dolor"],
     "estres":         ["Muy estresado", "Estresado", "Normal", "Tranquilo", "Muy tranquilo"],
     "animo":          ["Muy bajo", "Bajo", "Normal", "Bien", "Muy bien"],
 }
 
-MAXIMO = len(ITEMS) * 5   # 25
+MAXIMO = len(ITEMS) * 5   # 20
+MINIMO = len(ITEMS)       # 4: todo en 1
+
+# Cortes del semáforo, sobre MAXIMO. Eran 12 y 17 sobre 25 cuando el
+# cuestionario tenía cinco ítems; al pasar a cuatro se corrieron en la misma
+# proporción (48% y 68% → 10 y 14 sobre 20).
+UMBRAL_MAL = 10
+UMBRAL_ATENCION = 14
+
+# RPE (esfuerzo percibido) de 1 a 10, escala de Borg CR10, que es la que el club
+# imprime y usa en la pista. Cada número lleva su descriptor y pertenece a una
+# franja de intensidad (muy liviana → casi al máximo) que se pinta de un color
+# distinto, para que el atleta no elija un 7 "porque sí".
+# (desde, hasta, nombre de la franja, clase CSS)
+RPE_FRANJAS = [
+    (1, 1, "Muy liviano", "rpe-1"),
+    (2, 3, "Liviano", "rpe-2"),
+    (4, 5, "Moderado", "rpe-3"),
+    (6, 7, "Vigoroso", "rpe-4"),
+    (8, 10, "Muy vigoroso · máximo", "rpe-5"),
+]
+_RPE_TEXTOS = {
+    1: "Muy liviano", 2: "Liviano", 3: "Algo fácil", 4: "Moderado", 5: "Moderado",
+    6: "Algo duro", 7: "Duro", 8: "Muy duro", 9: "Muy duro", 10: "Máximo",
+}
+# (número, descriptor, clase CSS de su franja), del 1 al 10, para el formulario.
+RPE_ESCALA = [
+    (n, _RPE_TEXTOS[n], next(c for d, h, _t, c in RPE_FRANJAS if d <= n <= h))
+    for n in range(1, 11)
+]
 
 
 def bienestar_total(parte: ParteSemanal) -> int:
-    """Suma de los cinco ítems: 5 (todo mal) a 25 (todo bien)."""
+    """Suma de los cuatro ítems: 4 (todo mal) a 20 (todo bien)."""
     return sum(getattr(parte, campo) or 0 for campo, _l, _p in ITEMS)
 
 
@@ -60,11 +92,27 @@ def carga_ua(parte: ParteSemanal) -> Optional[int]:
 def semaforo(parte: ParteSemanal) -> str:
     """'bien' | 'atencion' | 'mal' — el color con el que se pinta la semana."""
     total = bienestar_total(parte)
-    if total <= 12 or any((getattr(parte, c) or 5) == 1 for c, _l, _p in ITEMS):
+    if total <= UMBRAL_MAL or any((getattr(parte, c) or 5) == 1 for c, _l, _p in ITEMS):
         return "mal"
-    if total <= 17:
+    if total <= UMBRAL_ATENCION:
         return "atencion"
     return "bien"
+
+
+def color_total(total) -> str:
+    """'ok' | 'atencion' | 'mal' a partir de un total ya sumado (o un promedio).
+
+    Es lo que usan las plantillas para pintar los chips y los KPI: los cortes
+    viven acá y no repetidos como números sueltos en cada pantalla, que fue como
+    quedaron desparejos la última vez que se movieron.
+    """
+    if total is None:
+        return ""
+    if total <= UMBRAL_MAL:
+        return "mal"
+    if total <= UMBRAL_ATENCION:
+        return "atencion"
+    return "ok"
 
 
 def promedio(valores: Iterable) -> Optional[float]:

@@ -133,7 +133,7 @@
                 <td class="num mono-num">{{ f.promedio or '—' }}</td>
                 <td class="num">
                     {% if f.ultimo %}
-                    <span class="chip chip-{{ 'ok' if f.ultimo > 17 else ('atencion' if f.ultimo > 12 else 'mal') }}">{{ f.ultimo }}</span>
+                    <span class="chip chip-{{ color_bienestar(f.ultimo) }}">{{ f.ultimo }}</span>
                     {% else %}<span class="tenue">—</span>{% endif %}
                 </td>
                 <td>

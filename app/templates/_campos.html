@@ -29,6 +29,30 @@
 </div>
 {% endmacro %}
 
+{# La escala RPE de 1 a 10 (Borg CR10): cada número lleva su descriptor y, debajo,
+   las franjas de intensidad coloreadas como en la escala impresa que usa el
+   club. Los descriptores y las franjas vienen de services/bienestar.py. #}
+{% macro escala_rpe(nombre, valor, escala, franjas) %}
+<div class="escala escala-10 escala-rpe">
+    {% for n, texto, clase in escala %}
+    <input type="radio" id="{{ nombre }}_{{ n }}" name="{{ nombre }}" value="{{ n }}"
+           {% if valor and valor|int == n %}checked{% endif %}>
+    <label for="{{ nombre }}_{{ n }}" class="{{ clase }}">
+        <span class="n">{{ n }}</span>
+        <span class="txt">{{ texto }}</span>
+    </label>
+    {% endfor %}
+</div>
+<ol class="rpe-franjas" aria-label="Franjas de intensidad">
+    {% for desde, hasta, texto, clase in franjas %}
+    <li class="{{ clase }}">
+        <b>{{ desde }}{% if hasta != desde %}–{{ hasta }}{% endif %}</b>
+        <span>{{ texto }}</span>
+    </li>
+    {% endfor %}
+</ol>
+{% endmacro %}
+
 {% macro binario(nombre, valor, si='Sí', no='No', abre='') %}
 <div class="binario">
     <input type="radio" id="{{ nombre }}_si" name="{{ nombre }}" value="si"

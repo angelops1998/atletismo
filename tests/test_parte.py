@@ -19,8 +19,8 @@ def atleta(db):
 
 def completo(client, **campos):
     datos = {"csrf_token": con_csrf(client, "/parte"),
-             "sueno_calidad": "4", "fatiga": "4", "dolor_muscular": "4",
-             "estres": "4", "animo": "4"}
+             "sueno_calidad": "4", "dolor_muscular": "4",
+             "estres": "4", "animo": "4", "rpe": "6"}
     datos.update(campos)
     return datos
 
@@ -111,7 +111,7 @@ class TestValidacion:
         assert float(parte.horas_sueno) == 7.5 and float(parte.peso_kg) == 62.4
 
     @pytest.mark.parametrize("campo,valor", [
-        ("horas_sueno", "48"), ("peso_kg", "900"), ("rpe", "50"),
+        ("horas_sueno", "48"), ("peso_kg", "900"),
         ("minutos_totales", "999999"), ("hidratacion_litros", "80"),
     ])
     def test_los_valores_imposibles_se_descartan(self, client, db, atleta, campo, valor):
@@ -121,6 +121,49 @@ class TestValidacion:
         client.post("/parte", data=completo(client, **{campo: valor}),
                     follow_redirects=False)
         assert getattr(db.query(ParteSemanal).one(), campo) is None
+
+
+class TestRPE:
+    """El RPE reemplazó a la pregunta de energía del cuestionario, así que se
+    exige como se exigía aquella: un parte sin esfuerzo percibido deja al
+    profesor sin la carga de la semana."""
+
+    def test_sin_rpe_no_guarda(self, client, db, atleta):
+        entrar(client, atleta)
+        datos = completo(client)
+        del datos["rpe"]
+        r = client.post("/parte", data=datos)
+        assert r.status_code == 422
+        assert "RPE" in r.text
+        assert db.query(ParteSemanal).count() == 0
+
+    @pytest.mark.parametrize("valor", ["0", "11", "50", "abc"])
+    def test_fuera_de_la_escala_no_guarda(self, client, db, atleta, valor):
+        entrar(client, atleta)
+        assert client.post("/parte", data=completo(client, rpe=valor)).status_code == 422
+        assert db.query(ParteSemanal).count() == 0
+
+    def test_si_no_entreno_no_se_le_pide(self, client, db, atleta):
+        """Cero sesiones: no hay esfuerzo que calificar, y obligarlo a inventar
+        un número arruina la carga de la semana."""
+        entrar(client, atleta)
+        datos = completo(client, sesiones="0")
+        del datos["rpe"]
+        r = client.post("/parte", data=datos, follow_redirects=False)
+        assert r.status_code == 302
+        parte = db.query(ParteSemanal).one()
+        assert parte.rpe is None and parte.sesiones == 0
+
+    def test_se_guarda_el_valor_elegido(self, client, db, atleta):
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client, rpe="8"), follow_redirects=False)
+        assert db.query(ParteSemanal).one().rpe == 8
+
+    def test_el_formulario_muestra_la_escala_con_descriptores(self, client, atleta):
+        entrar(client, atleta)
+        r = client.get("/parte")
+        assert "Muy liviano" in r.text and "Máximo" in r.text
+        assert "energía" not in r.text.lower()
 
 
 class TestQuienCarga:

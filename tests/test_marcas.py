@@ -7,7 +7,10 @@ a la que le falta gente.
 from datetime import date, timedelta
 from decimal import Decimal
 
+import pytest
+
 from app.models.marca import Marca
+from app.routers.marcas import _valor
 from conftest import con_csrf, crear_usuario, entrar
 
 
@@ -104,3 +107,26 @@ class TestBorrar:
         entrar(client, atleta)
         client.post(f"/marcas/{creada.id}/borrar", data={"csrf_token": "x"})
         assert db.query(Marca).count() == 1
+
+
+class TestComoSeEscribeLaMarca:
+    """El profesor escribe la marca como la lee en el cronómetro; se guarda en
+    segundos porque es lo único que se puede promediar y graficar."""
+
+    def test_segundos_y_coma_decimal(self):
+        assert _valor("12.34", "100m") == Decimal("12.34")
+        assert _valor("12,34", "100m") == Decimal("12.34")
+
+    def test_minutos_y_segundos(self):
+        assert _valor("4:32.10", "1500m") == Decimal("272.10")
+
+    def test_horas_minutos_y_segundos_en_la_marcha(self):
+        assert _valor("1:45:30", "21kmarcha") == Decimal("6330")
+
+    def test_los_puntos_de_las_combinadas_con_o_sin_punto_de_miles(self):
+        assert _valor("6.850", "decatlon") == Decimal("6850")
+        assert _valor("6850", "decatlon") == Decimal("6850")
+
+    @pytest.mark.parametrize("texto", ["", "abc", "1:2:3:4", "4:"])
+    def test_lo_que_no_se_entiende_da_none(self, texto):
+        assert _valor(texto, "1500m") is None

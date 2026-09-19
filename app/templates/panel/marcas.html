@@ -14,7 +14,8 @@
 {% block contenido %}
 {% if error == 'valor' %}
 <div class="aviso aviso-error" style="margin-bottom:14px">
-    La marca no se entendió. Escribila como 12.34, o como 4:32.10 en las pruebas largas.
+    La marca no se entendió. Escribila como 12.34, como 4:32.10 en las pruebas largas
+    o como 1:45:30 en la marcha; en las combinadas van los puntos.
 </div>
 {% elif error == 'prueba' %}
 <div class="aviso aviso-error" style="margin-bottom:14px">Elegí una prueba.</div>
@@ -31,31 +32,47 @@
         <div class="fila-2">
             <div class="campo">
                 <label for="atleta_id">Atleta</label>
-                <select id="atleta_id" name="atleta_id" required>
+                <select id="atleta_id" name="atleta_id" required data-elige-categoria="cat_prueba">
                     <option value="">Elegir…</option>
-                    {% for a in atletas %}<option value="{{ a.id }}">{{ a.nombre }}</option>{% endfor %}
-                </select>
-            </div>
-            <div class="campo">
-                <label for="prueba">Prueba</label>
-                <select id="prueba" name="prueba" required>
-                    <option value="">Elegir…</option>
-                    {% for grupo, lista in grupos.items() %}
-                    <optgroup label="{{ grupo }}">
-                        {% for clave, nom in lista %}
-                        <option value="{{ clave }}" {% if clave == prueba %}selected{% endif %}>{{ nom }}</option>
-                        {% endfor %}
-                    </optgroup>
+                    {% for a in atletas %}
+                    <option value="{{ a.id }}" data-categoria="{{ pruebas.categoria_de(a.categoria) or '' }}">{{ a.nombre }}</option>
                     {% endfor %}
                 </select>
             </div>
+            <div class="campo">
+                <div class="lbl">Planilla de pruebas</div>
+                {# Filtra el desplegable de al lado sin recargar. Sin JavaScript se
+                   ven todas las pruebas, que también sirve. #}
+                <div class="binario binario-3" id="cat_prueba">
+                    <input type="radio" id="cat_todas" name="cat_prueba" value="" checked data-filtra-pruebas="prueba">
+                    <label for="cat_todas">Todas</label>
+                    {% for clave, nom in categorias %}
+                    <input type="radio" id="cat_{{ clave }}" name="cat_prueba" value="{{ clave }}" data-filtra-pruebas="prueba">
+                    <label for="cat_{{ clave }}">{{ nom }}</label>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="campo">
+            <label for="prueba">Prueba</label>
+            <select id="prueba" name="prueba" required>
+                <option value="">Elegir…</option>
+                {% for grupo, lista in grupos.items() %}
+                <optgroup label="{{ grupo }}">
+                    {% for clave, nom, cats in lista %}
+                    <option value="{{ clave }}" data-cat="{{ cats|join(' ') }}" {% if clave == prueba %}selected{% endif %}>{{ nom }}</option>
+                    {% endfor %}
+                </optgroup>
+                {% endfor %}
+            </select>
         </div>
         <div class="fila-3">
             <div class="campo">
                 <label for="valor">Marca</label>
                 <input type="text" id="valor" name="valor" required inputmode="decimal"
                        placeholder="12.34 · 5.87 · 4:32.10">
-                <div class="ayuda">Segundos o metros. En las pruebas largas se acepta minutos:segundos.</div>
+                <div class="ayuda">Segundos, metros o puntos (combinadas). En las pruebas largas
+                    se acepta minutos:segundos, y horas:minutos:segundos en la marcha.</div>
             </div>
             <div class="campo">
                 <label for="fecha">Fecha</label>
@@ -99,7 +116,7 @@
                 <option value="">Elegir una prueba…</option>
                 {% for grupo, lista in grupos.items() %}
                 <optgroup label="{{ grupo }}">
-                    {% for clave, nom in lista %}
+                    {% for clave, nom, cats in lista %}
                     <option value="{{ clave }}" {% if clave == prueba %}selected{% endif %}>{{ nom }}</option>
                     {% endfor %}
                 </optgroup>

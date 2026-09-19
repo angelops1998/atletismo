@@ -121,9 +121,8 @@ def crear_usuario(db, username="atleta1", role="atleta", password="claveprueba1"
 
 
 def crear_parte(db, atleta_id: int, semana: date, **campos) -> ParteSemanal:
-    """Un parte con los cinco ítems en 4 salvo lo que se pise por nombre."""
-    valores = {"sueno_calidad": 4, "fatiga": 4, "dolor_muscular": 4,
-               "estres": 4, "animo": 4}
+    """Un parte con los cuatro ítems en 4 salvo lo que se pise por nombre."""
+    valores = {"sueno_calidad": 4, "dolor_muscular": 4, "estres": 4, "animo": 4}
     valores.update(campos)
     parte = ParteSemanal(atleta_id=atleta_id, semana=semana, **valores)
     db.add(parte)

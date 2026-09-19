@@ -83,7 +83,13 @@
                     <label for="categoria">Categoría</label>
                     <select id="categoria" name="categoria">
                         <option value="">Sin definir</option>
-                        {% for cat in ["Prebenjamín", "Benjamín", "Alevín", "Infantil", "Cadete", "Juvenil", "Junior/Promesa", "Senior", "Máster"] %}
+                        {# Las categorías con las que trabaja el club. Si la ficha
+                           trae una que ya no está en la lista, se conserva. #}
+                        {% set categorias = ["Pequeños (5 a 8)", "Menores (10 a 13)", "Juveniles", "Mayores", "Máster"] %}
+                        {% if dato('categoria') and dato('categoria') not in categorias %}
+                        <option value="{{ dato('categoria') }}" selected>{{ dato('categoria') }}</option>
+                        {% endif %}
+                        {% for cat in categorias %}
                         <option value="{{ cat }}" {% if dato('categoria') == cat %}selected{% endif %}>{{ cat }}</option>
                         {% endfor %}
                     </select>
@@ -94,7 +100,7 @@
                         <option value="">Sin definir</option>
                         {% for grupo, lista in pruebas.grupos().items() %}
                         <optgroup label="{{ grupo }}">
-                            {% for clave, nom in lista %}
+                            {% for clave, nom, cats in lista %}
                             <option value="{{ nom }}" {% if dato('prueba_principal') == nom %}selected{% endif %}>{{ nom }}</option>
                             {% endfor %}
                         </optgroup>

@@ -72,7 +72,7 @@ async def estadisticas(request: Request, db: Session = Depends(get_db)):
             "carga": bienestar.promedio([f["carga"] for f in individual]),
             "acwr": alertas.acwr(individual),
             "chispa": grafico.linea([f["bienestar"] for f in individual],
-                                    minimo=5, maximo=25, ancho=120, alto=34),
+                                    minimo=bienestar.MINIMO, maximo=bienestar.MAXIMO, ancho=120, alto=34),
         })
     # Primero los que peor vienen: es a quienes hay que mirar.
     filas.sort(key=lambda f: (f["promedio"] is None, f["promedio"] or 0))

@@ -16,6 +16,9 @@ class ParteSemanal(Base):
     adaptación del cuestionario de bienestar de Hooper, que es el estándar para
     monitorear deportistas justamente porque se contesta en un minuto. Mezclar
     sentidos (5 = mucho dolor) rompía los promedios sin que nadie lo notara.
+
+    El esfuerzo de la semana no va en esa escala sino en `rpe` (1–10): el club
+    pidió que el atleta registre el RPE en lugar del ítem de energía.
     """
     __tablename__ = "partes_semanales"
     __table_args__ = (
@@ -31,7 +34,9 @@ class ParteSemanal(Base):
 
     # --- Bienestar (1 = muy mal … 5 = muy bien) ---
     sueno_calidad = Column(Integer, nullable=False)     # ¿Cómo dormiste?
-    fatiga = Column(Integer, nullable=False)            # Nivel de energía
+    # Nivel de energía. Ya no se pregunta (se reemplazó por el RPE) y no suma al
+    # bienestar; queda para conservar lo que los atletas cargaron antes.
+    fatiga = Column(Integer, nullable=True)
     dolor_muscular = Column(Integer, nullable=False)    # 5 = sin dolor
     estres = Column(Integer, nullable=False)            # 5 = tranquilo
     animo = Column(Integer, nullable=False)             # Ánimo general
@@ -54,8 +59,9 @@ class ParteSemanal(Base):
     # --- Carga de entrenamiento ---
     sesiones = Column(Integer, nullable=True)
     minutos_totales = Column(Integer, nullable=True)
-    # Esfuerzo percibido 1–10 (escala de Borg modificada). Con los minutos da la
-    # carga por sRPE, que es como se detectan los saltos de carga (ver alertas.py).
+    # Esfuerzo percibido 1–10 (RPE, escala de Borg modificada). Es lo que el club
+    # pidió registrar en lugar de la energía. Con los minutos da además la carga
+    # por sRPE, que es como se detectan los saltos de carga (ver alertas.py).
     rpe = Column(Integer, nullable=True)
 
     # --- Molestias / lesiones ---

@@ -36,7 +36,7 @@ def poblar(db, cuantos: int, desde: int = 0) -> None:
     db.add_all(atletas)
     db.flush()
     db.add_all([ParteSemanal(atleta_id=a.id, semana=semana(atras),
-                             sueno_calidad=4, fatiga=4, dolor_muscular=4,
+                             sueno_calidad=4, dolor_muscular=4,
                              estres=4, animo=4, rpe=6, minutos_totales=300,
                              horas_sueno=Decimal("7.5"), peso_kg=Decimal("62.0"))
                 for a in atletas for atras in range(16)])

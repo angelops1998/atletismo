@@ -75,6 +75,8 @@ async def formulario(request: Request, semana: str | None = None,
         "parte": parte,
         "items": bienestar.ITEMS,
         "etiquetas": bienestar.ETIQUETAS,
+        "rpe_escala": bienestar.RPE_ESCALA,
+        "rpe_franjas": bienestar.RPE_FRANJAS,
         "es_semana_actual": objetivo == lunes_actual(),
         "parte_pendiente": bienestar.parte_de_semana(db, user.id, lunes_actual()) is None,
         # Si todavía no cargó la semana pasada, se le ofrece completarla: es la
@@ -90,7 +92,6 @@ async def guardar(
     request: Request,
     semana: str = Form(""),
     sueno_calidad: str = Form(""),
-    fatiga: str = Form(""),
     dolor_muscular: str = Form(""),
     estres: str = Form(""),
     animo: str = Form(""),
@@ -117,8 +118,8 @@ async def guardar(
 
     objetivo = _semana_pedida(semana)
     valores = {campo: _entero(request_valor, 1, 5) for campo, request_valor in (
-        ("sueno_calidad", sueno_calidad), ("fatiga", fatiga),
-        ("dolor_muscular", dolor_muscular), ("estres", estres), ("animo", animo),
+        ("sueno_calidad", sueno_calidad), ("dolor_muscular", dolor_muscular),
+        ("estres", estres), ("animo", animo),
     )}
 
     errores = []
@@ -126,6 +127,14 @@ async def guardar(
                  if valores[campo] is None]
     if faltantes:
         errores.append("Faltan responder: " + ", ".join(faltantes).lower() + ".")
+
+    # El RPE reemplazó al ítem de energía, así que es obligatorio como lo era
+    # aquel: salvo que el atleta diga que no entrenó (0 sesiones), en cuyo caso no
+    # hay esfuerzo que calificar.
+    cantidad_sesiones = _entero(sesiones, 0, 21)
+    esfuerzo = _entero(rpe, 1, 10)
+    if esfuerzo is None and cantidad_sesiones != 0:
+        errores.append("Indicá del 1 al 10 qué tan duro te resultó entrenar (RPE).")
 
     tiene_molestias = molestias == "si"
     dolor = _entero(molestia_dolor, 0, 10)
@@ -139,6 +148,8 @@ async def guardar(
             "user": user, "semana": objetivo,
             "parte": bienestar.parte_de_semana(db, user.id, objetivo),
             "items": bienestar.ITEMS, "etiquetas": bienestar.ETIQUETAS,
+            "rpe_escala": bienestar.RPE_ESCALA,
+            "rpe_franjas": bienestar.RPE_FRANJAS,
             "es_semana_actual": objetivo == lunes_actual(),
             "parte_pendiente": True,
             "errores": errores,
@@ -161,9 +172,9 @@ async def guardar(
     parte.come_antes_entrenar = (come_antes_entrenar == "si") if come_antes_entrenar else None
     parte.suplementos = suplementos.strip()[:200] or None
     parte.peso_kg = _decimal(peso_kg, 20, 250)
-    parte.sesiones = _entero(sesiones, 0, 21)
+    parte.sesiones = cantidad_sesiones
     parte.minutos_totales = _entero(minutos_totales, 0, 3000)
-    parte.rpe = _entero(rpe, 1, 10)
+    parte.rpe = esfuerzo
     parte.molestias = tiene_molestias
     parte.molestia_zona = molestia_zona.strip()[:80] if tiene_molestias else None
     parte.molestia_dolor = dolor if tiene_molestias else None

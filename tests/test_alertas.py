@@ -57,8 +57,8 @@ class TestReglasDelAtleta:
 
     def test_bienestar_bajo(self, db):
         atleta = crear_usuario(db)
-        crear_parte(db, atleta.id, semana(0), sueno_calidad=2, fatiga=2,
-                    dolor_muscular=3, estres=3, animo=2)          # 12
+        crear_parte(db, atleta.id, semana(0), sueno_calidad=2,
+                    dolor_muscular=3, estres=3, animo=2)          # 10
         aviso = buscar(alertas.del_atleta(db, atleta), "bienestar_bajo")
         assert aviso and aviso["nivel"] == "alta"
 
@@ -69,24 +69,24 @@ class TestReglasDelAtleta:
         assert aviso and "ánimo" in aviso["detalle"]
 
     def test_caida_contra_sus_propias_semanas(self, db):
-        """La comparación es contra él mismo. Un atleta que venía en 25 y cae a
-        18 tiene que saltar, aunque 18 sea un buen número para el club."""
+        """La comparación es contra él mismo. Un atleta que venía en 20 y cae a
+        15 tiene que saltar, aunque 15 sea un buen número para el club."""
         atleta = crear_usuario(db)
         for atras in (3, 2, 1):
-            crear_parte(db, atleta.id, semana(atras), sueno_calidad=5, fatiga=5,
-                        dolor_muscular=5, estres=5, animo=5)      # 25
-        crear_parte(db, atleta.id, semana(0), sueno_calidad=4, fatiga=4,
-                    dolor_muscular=4, estres=3, animo=3)          # 18 (-28%)
+            crear_parte(db, atleta.id, semana(atras), sueno_calidad=5,
+                        dolor_muscular=5, estres=5, animo=5)      # 20
+        crear_parte(db, atleta.id, semana(0), sueno_calidad=4,
+                    dolor_muscular=4, estres=4, animo=3)          # 15 (-25%)
         aviso = buscar(alertas.del_atleta(db, atleta), "caida_bienestar")
         assert aviso and aviso["nivel"] == "alta"
 
     def test_el_que_siempre_puntua_bajo_no_salta_por_eso(self, db):
-        """Es la razón de comparar contra uno mismo: un atleta constante en 15 no
+        """Es la razón de comparar contra uno mismo: un atleta constante en 12 no
         empeoró, y contra el promedio del club se lo vería siempre en rojo."""
         atleta = crear_usuario(db)
         for atras in (3, 2, 1, 0):
-            crear_parte(db, atleta.id, semana(atras), sueno_calidad=3, fatiga=3,
-                        dolor_muscular=3, estres=3, animo=3)      # 15 siempre
+            crear_parte(db, atleta.id, semana(atras), sueno_calidad=3,
+                        dolor_muscular=3, estres=3, animo=3)      # 12 siempre
         assert "caida_bienestar" not in tipos(alertas.del_atleta(db, atleta))
 
     def test_molestia_con_dolor_alto_es_prioridad_alta(self, db):
@@ -147,7 +147,7 @@ class TestReglasDelAtleta:
 class TestAlertasDelClub:
     def test_los_atletas_sin_alertas_no_aparecen(self, db):
         tranquilo = crear_usuario(db, username="tranquilo")
-        crear_parte(db, tranquilo.id, semana(0), sueno_calidad=5, fatiga=5,
+        crear_parte(db, tranquilo.id, semana(0), sueno_calidad=5,
                     dolor_muscular=5, estres=5, animo=5)
         assert alertas.del_club(db) == []
 

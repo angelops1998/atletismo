@@ -6,6 +6,7 @@ import hashlib
 
 from .tiempo import ahora, hoy
 from .config import get_settings
+from .services.bienestar import color_total
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -95,6 +96,9 @@ templates.env.globals["static"] = _static
 templates.env.globals["now"] = ahora
 templates.env.globals["hoy"] = hoy
 templates.env.globals["club"] = get_settings()
+# El color de un total de bienestar (chips, avatares, KPI) sale de los umbrales
+# del servicio, no de números escritos en cada plantilla.
+templates.env.globals["color_bienestar"] = color_total
 # El filtro se llama «monto» y no «pesos»: el club cobra en bolivianos, y un
 # nombre que dice otra moneda es de las cosas que después nadie se anima a tocar.
 templates.env.filters["monto"] = monto_filter

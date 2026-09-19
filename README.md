@@ -97,8 +97,9 @@ redirección y los rangos de lo que se carga a mano.
 
 ## Cómo se usa
 
-**El atleta** entra una vez por semana y completa el parte: cinco preguntas de
-bienestar de 1 a 5, horas de sueño, alimentación, peso, carga de entrenamiento y
+**El atleta** entra una vez por semana y completa el parte: cuatro preguntas de
+bienestar de 1 a 5, horas de sueño, alimentación, peso, cuánto entrenó y qué tan
+duro le resultó (RPE de 1 a 10, con la escala de descriptores del club) y
 molestias. Le lleva dos minutos. Después ve su propia evolución y sus marcas —
 si no ve para qué sirve lo que carga, deja de cargarlo.
 
@@ -115,7 +116,7 @@ poder ajustarlos después de usar el sistema unos meses:
 | Alerta | Cuándo salta |
 |---|---|
 | No cargó el parte | No completó la semana en curso |
-| Bienestar bajo | 12 o menos sobre 25, o un 1 en cualquier pregunta |
+| Bienestar bajo | 10 o menos sobre 20, o un 1 en cualquier pregunta |
 | Cayó su bienestar | 20% por debajo de **su propio** promedio de 4 semanas |
 | Reportó una molestia | Dolor 5/10 o más |
 | Duerme poco | Dos semanas seguidas por debajo de 7 h |

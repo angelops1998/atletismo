@@ -13,21 +13,33 @@ from conftest import crear_parte, crear_usuario, semana
 
 
 class TestBienestarTotal:
-    def test_suma_los_cinco_items(self, db):
+    def test_suma_los_cuatro_items(self, db):
         atleta = crear_usuario(db)
-        parte = crear_parte(db, atleta.id, semana(), sueno_calidad=5, fatiga=4,
+        parte = crear_parte(db, atleta.id, semana(), sueno_calidad=5,
                             dolor_muscular=3, estres=2, animo=1)
-        assert bienestar.bienestar_total(parte) == 15
+        assert bienestar.bienestar_total(parte) == 11
 
-    def test_el_maximo_es_25(self, db):
+    def test_el_maximo_es_20(self, db):
         atleta = crear_usuario(db)
-        parte = crear_parte(db, atleta.id, semana(), sueno_calidad=5, fatiga=5,
+        parte = crear_parte(db, atleta.id, semana(), sueno_calidad=5,
                             dolor_muscular=5, estres=5, animo=5)
-        assert bienestar.bienestar_total(parte) == bienestar.MAXIMO == 25
+        assert bienestar.bienestar_total(parte) == bienestar.MAXIMO == 20
+
+    def test_la_energia_historica_no_suma(self, db):
+        """El ítem "Energía" (columna fatiga) se reemplazó por el RPE: los partes
+        viejos que lo tienen cargado no pueden puntuar más que los nuevos."""
+        atleta = crear_usuario(db)
+        parte = crear_parte(db, atleta.id, semana(), fatiga=5)
+        assert bienestar.bienestar_total(parte) == 16
+
+    def test_el_rpe_no_entra_en_el_bienestar(self, db):
+        atleta = crear_usuario(db)
+        parte = crear_parte(db, atleta.id, semana(), rpe=10)
+        assert bienestar.bienestar_total(parte) == 16
 
     def test_porcentaje(self, db):
         atleta = crear_usuario(db)
-        parte = crear_parte(db, atleta.id, semana())      # 4 en los cinco = 20
+        parte = crear_parte(db, atleta.id, semana())      # 4 en los cuatro = 16
         assert bienestar.bienestar_pct(parte) == 80
 
 
@@ -35,29 +47,38 @@ class TestSemaforo:
     """El color con el que se pinta la semana en el padrón. Es lo que decide a
     quién mira el profesor primero, así que los bordes importan."""
 
-    def test_bien_cuando_esta_arriba_de_17(self, db):
+    def test_bien_cuando_esta_arriba_de_14(self, db):
         atleta = crear_usuario(db)
-        assert bienestar.semaforo(crear_parte(db, atleta.id, semana())) == "bien"
+        assert bienestar.semaforo(crear_parte(db, atleta.id, semana())) == "bien"   # 16
 
     def test_atencion_en_la_franja_del_medio(self, db):
         atleta = crear_usuario(db)
-        parte = crear_parte(db, atleta.id, semana(), sueno_calidad=3, fatiga=3,
-                            dolor_muscular=3, estres=3, animo=3)   # 15
+        parte = crear_parte(db, atleta.id, semana(), sueno_calidad=3,
+                            dolor_muscular=3, estres=3, animo=3)   # 12
         assert bienestar.semaforo(parte) == "atencion"
 
-    def test_mal_cuando_suma_12_o_menos(self, db):
+    def test_mal_cuando_suma_10_o_menos(self, db):
         atleta = crear_usuario(db)
-        parte = crear_parte(db, atleta.id, semana(), sueno_calidad=2, fatiga=2,
-                            dolor_muscular=3, estres=3, animo=2)   # 12
+        parte = crear_parte(db, atleta.id, semana(), sueno_calidad=2,
+                            dolor_muscular=3, estres=3, animo=2)   # 10
         assert bienestar.semaforo(parte) == "mal"
+
+    def test_color_total_usa_los_mismos_cortes(self):
+        """Las plantillas pintan con color_total; si se corre de semaforo, el
+        chip y la alerta del mismo atleta se contradicen en la misma pantalla."""
+        assert bienestar.color_total(10) == "mal"
+        assert bienestar.color_total(11) == "atencion"
+        assert bienestar.color_total(14) == "atencion"
+        assert bienestar.color_total(15) == "ok"
+        assert bienestar.color_total(None) == ""
 
     def test_un_uno_solo_alcanza_para_pintarlo_mal(self, db):
         """Aunque el total dé bien: un 1 en cualquier pregunta es una persona
         diciendo que algo está muy mal, y el promedio se lo come."""
         atleta = crear_usuario(db)
-        parte = crear_parte(db, atleta.id, semana(), sueno_calidad=1, fatiga=5,
-                            dolor_muscular=5, estres=5, animo=5)   # 21
-        assert bienestar.bienestar_total(parte) == 21
+        parte = crear_parte(db, atleta.id, semana(), sueno_calidad=1,
+                            dolor_muscular=5, estres=5, animo=5)   # 16
+        assert bienestar.bienestar_total(parte) == 16
         assert bienestar.semaforo(parte) == "mal"
 
 
@@ -99,7 +120,7 @@ class TestSerieIndividual:
         crear_parte(db, atleta.id, semana(0))
         crear_parte(db, atleta.id, semana(2))
         serie = bienestar.serie_individual(db, atleta.id, 4)
-        assert [f["bienestar"] for f in serie] == [None, 20, None, 20]
+        assert [f["bienestar"] for f in serie] == [None, 16, None, 16]
 
     def test_va_de_la_mas_vieja_a_la_mas_nueva(self, db):
         atleta = crear_usuario(db)
@@ -110,7 +131,7 @@ class TestSerieIndividual:
     def test_no_mezcla_los_partes_de_otro_atleta(self, db):
         uno = crear_usuario(db, username="uno")
         otro = crear_usuario(db, username="otro")
-        crear_parte(db, otro.id, semana(0), sueno_calidad=1, fatiga=1,
+        crear_parte(db, otro.id, semana(0), sueno_calidad=1,
                     dolor_muscular=1, estres=1, animo=1)
         serie = bienestar.serie_individual(db, uno.id, 3)
         assert all(f["parte"] is None for f in serie)

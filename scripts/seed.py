@@ -113,7 +113,7 @@ def perfil_semana(perfil: str, i: int, total: int) -> dict | None:
     """
     es_actual = i == total - 1
     base = {
-        "sueno": random.randint(3, 5), "fatiga": random.randint(3, 5),
+        "sueno": random.randint(3, 5),
         "dolor": random.randint(3, 5), "estres": random.randint(3, 5),
         "animo": random.randint(3, 5),
         "horas": round(random.uniform(7.0, 8.5), 1),
@@ -131,7 +131,6 @@ def perfil_semana(perfil: str, i: int, total: int) -> dict | None:
     if perfil == "duerme_poco":
         base["horas"] = round(random.uniform(5.2, 6.6), 1)
         base["sueno"] = random.randint(2, 3)
-        base["fatiga"] = random.randint(2, 3)
 
     if perfil == "sobrecarga":
         # Sube la carga de a poco y pega un salto en las últimas dos semanas:
@@ -139,7 +138,6 @@ def perfil_semana(perfil: str, i: int, total: int) -> dict | None:
         if i >= total - 2:
             base["minutos"] = random.randint(520, 600)
             base["rpe"] = random.randint(8, 9)
-            base["fatiga"] = 2
             base["dolor"] = 2
         else:
             base["minutos"] = random.randint(260, 320)
@@ -151,7 +149,7 @@ def perfil_semana(perfil: str, i: int, total: int) -> dict | None:
         base["dolor"] = 2
 
     if perfil == "bajon" and i >= total - 2:
-        base.update({"sueno": 2, "fatiga": 1, "estres": 2, "animo": 2,
+        base.update({"sueno": 2, "dolor": 1, "estres": 2, "animo": 2,
                      "horas": round(random.uniform(5.0, 6.0), 1)})
 
     return base
@@ -171,7 +169,7 @@ def crear_partes(db, creados: dict) -> None:
             molestia = datos["molestia"]
             db.add(ParteSemanal(
                 atleta_id=atleta.id, semana=semana,
-                sueno_calidad=datos["sueno"], fatiga=datos["fatiga"],
+                sueno_calidad=datos["sueno"],
                 dolor_muscular=datos["dolor"], estres=datos["estres"],
                 animo=datos["animo"],
                 horas_sueno=Decimal(str(datos["horas"])),
@@ -212,11 +210,11 @@ def crear_marcas(db, creados: dict) -> None:
                              ParteSemanal.semana == semana).first())
             if parte is None:
                 continue
-            bienestar = sum([parte.sueno_calidad, parte.fatiga, parte.dolor_muscular,
+            bienestar = sum([parte.sueno_calidad, parte.dolor_muscular,
                              parte.estres, parte.animo])
-            # De 5 a 25 -> de -1.6% a +1.6% sobre la marca de referencia, más la
+            # De 4 a 20 -> de -1.6% a +1.6% sobre la marca de referencia, más la
             # mejora natural por entrenar, más un poco de ruido.
-            efecto = (bienestar - 15) / 10 * 1.6
+            efecto = (bienestar - 12) / 8 * 1.6
             progreso = i / SEMANAS * 2.0
             ruido = random.uniform(-0.5, 0.5)
             pct = efecto + progreso + ruido

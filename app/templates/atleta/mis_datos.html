@@ -19,7 +19,7 @@
         <div class="etiqueta">Partes cargados</div>
         <div class="detalle">de {{ serie|length }} semanas</div>
     </div>
-    <div class="kpi {{ 'kpi-ok' if promedio_bienestar and promedio_bienestar > 17 else ('kpi-atencion' if promedio_bienestar else '') }}">
+    <div class="kpi {{ 'kpi-' ~ color_bienestar(promedio_bienestar) if promedio_bienestar else '' }}">
         <div class="valor">{{ promedio_bienestar or '—' }}</div>
         <div class="etiqueta">Bienestar promedio</div>
         <div class="detalle">sobre {{ maximo }}</div>
@@ -104,7 +104,7 @@
                 <td>{{ f.semana|fecha_corta }}</td>
                 <td class="num">
                     {% if f.bienestar %}
-                    <span class="chip chip-{{ 'ok' if f.bienestar > 17 else ('atencion' if f.bienestar > 12 else 'mal') }}">{{ f.bienestar }}</span>
+                    <span class="chip chip-{{ color_bienestar(f.bienestar) }}">{{ f.bienestar }}</span>
                     {% else %}<span class="tenue">—</span>{% endif %}
                 </td>
                 <td class="num">{{ ('%.1f h'|format(f.sueno)) if f.sueno else '—' }}</td>

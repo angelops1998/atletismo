@@ -82,7 +82,7 @@ def crear_partes(db, creados: dict) -> None:
             peso = round(peso + random.uniform(-0.4, 0.4), 1)
             db.add(ParteSemanal(
                 atleta_id=atleta.id, semana=semana,
-                sueno_calidad=random.randint(3, 5), fatiga=random.randint(3, 5),
+                sueno_calidad=random.randint(3, 5),
                 dolor_muscular=random.randint(3, 5), estres=random.randint(3, 5),
                 animo=random.randint(3, 5),
                 horas_sueno=Decimal(str(round(random.uniform(7.0, 8.5), 1))),

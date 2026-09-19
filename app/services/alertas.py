@@ -19,7 +19,7 @@ from ..tiempo import lunes_actual
 from . import bienestar, cobranza
 
 # --- Umbrales ---
-BIENESTAR_BAJO = 12          # sobre 25: por debajo de esto la semana fue mala
+BIENESTAR_BAJO = bienestar.UMBRAL_MAL   # sobre 20: por debajo de esto la semana fue mala
 CAIDA_PCT = 20               # % de caída contra su propio promedio de 4 semanas
 DOLOR_ALTO = 5               # sobre 10: de acá para arriba se revisa antes de entrenar
 SUENO_MINIMO = 7.0           # horas por noche

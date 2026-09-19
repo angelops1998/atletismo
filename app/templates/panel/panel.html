@@ -107,7 +107,7 @@
         <div class="card-head"><h3>Bienestar promedio</h3></div>
         <div class="card-body">
             {{ linea(grafico_bienestar, 'hace ' ~ serie|length ~ ' semanas', 'esta semana', rango=true) }}
-            <p class="apunte">Promedio del club sobre {{ 25 }}, semana a semana.</p>
+            <p class="apunte">Promedio del club sobre {{ maximo }}, semana a semana.</p>
         </div>
     </div>
     <div class="card">

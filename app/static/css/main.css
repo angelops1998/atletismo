@@ -430,8 +430,51 @@ fieldset { border: none; }
 .escala-10 label { min-height: 46px; }
 .escala-10 label .n { font-size: 17px; }
 
+/* RPE: cada número lleva su descriptor y el color de su franja de intensidad,
+   igual que la escala impresa del club (gris → azul → verde → naranja → rojo).
+   El color va en un borde superior para que el botón elegido se siga viendo
+   con el estilo naranja de :checked. */
+:root {
+    --rpe-1: #6B7280;
+    --rpe-2: #3B82C4;
+    --rpe-3: #3F8F78;
+    --rpe-4: #D97A2B;
+    --rpe-5: #C2245A;
+}
+.escala-rpe label { min-height: 58px; border-top-width: 4px; }
+.escala-rpe label .txt { font-size: 9px; }
+.escala-rpe label.rpe-1 { border-top-color: var(--rpe-1); }
+.escala-rpe label.rpe-2 { border-top-color: var(--rpe-2); }
+.escala-rpe label.rpe-3 { border-top-color: var(--rpe-3); }
+.escala-rpe label.rpe-4 { border-top-color: var(--rpe-4); }
+.escala-rpe label.rpe-5 { border-top-color: var(--rpe-5); }
+.rpe-franjas {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    margin-top: 10px;
+    font-size: 11.5px;
+    color: var(--gris);
+}
+.rpe-franjas li { display: flex; align-items: center; gap: 6px; }
+.rpe-franjas li::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex: 0 0 auto;
+}
+.rpe-franjas li b { font-weight: 700; color: var(--tinta); }
+.rpe-franjas .rpe-1::before { background: var(--rpe-1); }
+.rpe-franjas .rpe-2::before { background: var(--rpe-2); }
+.rpe-franjas .rpe-3::before { background: var(--rpe-3); }
+.rpe-franjas .rpe-4::before { background: var(--rpe-4); }
+.rpe-franjas .rpe-5::before { background: var(--rpe-5); }
+
 /* Sí / No */
 .binario { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.binario-3 { grid-template-columns: repeat(3, 1fr); }
 .binario input { position: absolute; opacity: 0; pointer-events: none; }
 .binario label {
     min-height: 46px;
@@ -802,34 +845,113 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .perfil .rol { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--tartan); margin-top: 3px; }
 .perfil p { font-size: 13.5px; color: var(--gris); margin-top: 8px; line-height: 1.55; }
 
+/* --- La Pirámide Delta: tres trapecios apilados, dibujados con clip-path para
+   no depender de una imagen. La base es la más ancha y la más oscura. --- */
+.piramide {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    width: 100%;      /* con container-type, sin ancho explícito colapsa a 0 */
+    max-width: 400px;
+    margin: 0 auto 22px;
+    /* Las etiquetas se achican con el ancho de la pirámide (unidades cqi): un
+       trapecio angosto con letra fija recorta "rendimiento" por los costados. */
+    container-type: inline-size;
+}
+.piramide .nivel {
+    color: #fff;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 74px;
+    padding: 10px 14%;
+    line-height: 1.15;
+}
+.piramide .nivel b { font-family: var(--display); font-size: clamp(12px, 5cqi, 18px); text-transform: uppercase; letter-spacing: .02em; }
+.piramide .nivel-3 b { font-size: clamp(11px, 4.2cqi, 15px); }
+.piramide .nivel-3 { padding-top: 18px; }
+.piramide .nivel span { font-size: clamp(9px, 2.8cqi, 11px); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; opacity: .75; margin-top: 2px; }
+.piramide .nivel-3 {
+    width: 64%;
+    padding-inline: 20%;
+    background: var(--tartan-2);
+    clip-path: polygon(19% 0, 81% 0, 100% 100%, 0 100%);
+}
+.piramide .nivel-2 {
+    width: 82%;
+    background: var(--tartan);
+    clip-path: polygon(11% 0, 89% 0, 100% 100%, 0 100%);
+}
+.piramide .nivel-1 {
+    width: 100%;
+    background: var(--carbon);
+    clip-path: polygon(9% 0, 91% 0, 100% 100%, 0 100%);
+}
+.etapas { list-style: none; display: grid; gap: 12px; }
+.etapa {
+    border: 1px solid var(--linea);
+    border-left-width: 5px;
+    border-radius: var(--r-sm);
+    padding: 16px 18px;
+    background: var(--superficie);
+}
+.etapa-1 { border-left-color: var(--carbon); }
+.etapa-2 { border-left-color: var(--tartan); }
+.etapa-3 { border-left-color: var(--tartan-2); }
+.etapa .marca-etapa { font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--tartan); }
+.etapa h3 { font-size: 17px; margin: 3px 0 5px; }
+.etapa p { font-size: 14.5px; color: var(--gris); line-height: 1.55; }
+
+/* --- Horarios y costos --- */
 .plan {
     border: 1px solid var(--linea);
     border-radius: var(--r);
     padding: 22px 20px;
     background: var(--superficie);
+    display: flex;
+    flex-direction: column;
 }
 .plan.destacado { border-color: var(--tartan); box-shadow: 0 0 0 3px var(--tartan-tint); }
 .plan .nivel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--tartan); }
-.plan .horario { font-family: var(--display); font-size: 27px; line-height: 1.1; margin: 6px 0 10px; }
-.plan ul { list-style: none; }
-.plan li {
-    font-size: 14px;
+.plan .edades { font-family: var(--display); font-size: 24px; line-height: 1.1; margin-top: 4px; }
+.plan .turnos { margin-top: 14px; display: grid; gap: 12px; }
+.plan .dias { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+.plan .franja {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    align-items: baseline;
+    font-size: 13.5px;
     color: var(--gris);
-    padding: 5px 0 5px 22px;
-    position: relative;
-    line-height: 1.45;
+    padding: 4px 0;
+    line-height: 1.4;
 }
-.plan li::before {
-    content: "";
-    position: absolute;
-    left: 2px;
-    top: 11px;
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: var(--tartan-tint);
-    border: 2px solid var(--tartan);
+.plan .franja b { font-family: var(--display); font-size: 18px; color: var(--tinta); white-space: nowrap; }
+.plan .costos {
+    list-style: none;
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px dashed var(--linea-fuerte);
+    display: grid;
+    gap: 6px;
 }
+.plan .costos li { display: flex; gap: 10px; align-items: baseline; font-size: 13.5px; color: var(--gris); }
+.plan .costos b { font-family: var(--display); font-size: 24px; color: var(--tartan); white-space: nowrap; }
+.prueba-gratis {
+    margin-top: 18px;
+    border-radius: var(--r);
+    background: var(--carbon);
+    color: #fff;
+    padding: 22px 20px;
+    display: grid;
+    gap: 16px;
+}
+.prueba-gratis .antetitulo { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--tartan-2); display: block; margin-bottom: 6px; }
+.prueba-gratis h3 { font-family: var(--display); font-size: 26px; text-transform: uppercase; line-height: 1.05; }
+.prueba-gratis p { color: rgba(255,255,255,.72); margin-top: 8px; line-height: 1.55; font-size: 15px; }
+.prueba-gratis .btn-primario { background: var(--tartan-2); border-color: var(--tartan-2); justify-self: start; }
 
 .contacto-item {
     display: flex;
@@ -976,6 +1098,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     .nav-publica .enlaces a:hover { color: var(--tartan); }
     .grilla-3 { grid-template-columns: repeat(3, 1fr); }
     .grilla-4 { grid-template-columns: repeat(4, 1fr); }
+    .staff { max-width: 720px; }
+    .piramide-bloque { grid-template-columns: 2fr 3fr; gap: 32px; align-items: center; }
+    .piramide { margin-bottom: 0; }
+    .prueba-gratis { grid-template-columns: 1fr auto; align-items: center; padding: 26px 30px; }
     .hero h1 { font-size: 76px; }
     .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
     .split-3-2 { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; align-items: start; }

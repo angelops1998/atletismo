@@ -12,8 +12,10 @@ from app.services import pruebas
 
 
 class TestSentidoDeLaPrueba:
-    @pytest.mark.parametrize("clave", ["60m", "100m", "400m", "1500m", "10000m",
-                                       "110vallas", "400vallas"])
+    @pytest.mark.parametrize("clave", ["60m", "80m", "100m", "150m", "300m", "400m",
+                                       "600m", "1500m", "10000m", "80vallas",
+                                       "110vallas", "400vallas", "3000obs",
+                                       "5000marcha", "21kmarcha"])
     def test_en_las_carreras_menos_es_mejor(self, clave):
         assert pruebas.menor_es_mejor(clave) is True
 
@@ -21,6 +23,11 @@ class TestSentidoDeLaPrueba:
                                        "bala", "disco", "jabalina", "martillo"])
     def test_en_saltos_y_lanzamientos_mas_es_mejor(self, clave):
         assert pruebas.menor_es_mejor(clave) is False
+
+    @pytest.mark.parametrize("clave", ["heptatlon", "decatlon", "pentatlon", "hexatlon"])
+    def test_en_las_combinadas_mas_puntos_es_mejor(self, clave):
+        assert pruebas.menor_es_mejor(clave) is False
+        assert pruebas.unidad(clave) == "pts"
 
     def test_mejor_marca_en_carrera_es_la_mas_baja(self):
         assert pruebas.mejor("100m", [Decimal("12.40"), Decimal("12.10"),
@@ -60,6 +67,16 @@ class TestFormato:
     def test_metros(self):
         assert pruebas.formatear("largo", Decimal("5.87")) == "5.87 m"
 
+    def test_la_marcha_larga_se_muestra_con_horas(self):
+        assert pruebas.formatear("21kmarcha", Decimal("6330")) == "1:45:30"
+        assert pruebas.formatear("21kmarcha", Decimal("3605")) == "1:00:05"
+
+    def test_la_marcha_corta_sigue_en_minutos(self):
+        assert pruebas.formatear("5000marcha", Decimal("1385.40")) == "23:05.40"
+
+    def test_los_puntos_de_las_combinadas(self):
+        assert pruebas.formatear("decatlon", Decimal("6850")) == "6.850 pts"
+
     def test_sin_valor(self):
         assert pruebas.formatear("100m", None) == "—"
 
@@ -80,3 +97,45 @@ class TestCatalogo:
     def test_los_grupos_cubren_todo_el_catalogo(self):
         cuantas = sum(len(v) for v in pruebas.grupos().values())
         assert cuantas == len(pruebas.PRUEBAS)
+
+    def test_las_claves_no_se_repiten(self):
+        claves = [p[0] for p in pruebas.PRUEBAS]
+        assert len(claves) == len(set(claves))
+
+    def test_toda_prueba_tiene_al_menos_una_categoria(self):
+        assert all(p[6] for p in pruebas.PRUEBAS)
+
+
+class TestPlanillasPorCategoria:
+    """Las pruebas de la planilla que mandó el club para Mayores tienen que
+    estar todas, y las de Menores no pueden mezclarse con las de Mayores."""
+
+    PLANILLA_MAYORES = ["100m", "200m", "400m", "800m", "1500m", "3000m", "5000m",
+                        "10000m", "100vallas", "110vallas", "400vallas", "2000obs",
+                        "3000obs", "5000marcha", "10000marcha", "21kmarcha",
+                        "largo", "alto", "triple", "garrocha", "bala", "disco",
+                        "jabalina", "martillo", "heptatlon", "decatlon"]
+
+    def test_la_planilla_de_mayores_esta_completa(self):
+        claves = {c for lista in pruebas.grupos(pruebas.MAYORES).values()
+                  for c, _n, _cats in lista}
+        assert set(self.PLANILLA_MAYORES) <= claves
+
+    def test_menores_no_ve_las_pruebas_solo_de_mayores(self):
+        claves = {c for lista in pruebas.grupos(pruebas.MENORES).values()
+                  for c, _n, _cats in lista}
+        assert "400vallas" not in claves and "decatlon" not in claves
+        assert "80m" in claves and "largo" in claves
+
+    def test_mayores_no_ve_las_pruebas_solo_de_menores(self):
+        claves = {c for lista in pruebas.grupos(pruebas.MAYORES).values()
+                  for c, _n, _cats in lista}
+        assert "80m" not in claves and "600m" not in claves
+
+    @pytest.mark.parametrize("texto,esperado", [
+        ("Menores (10 a 13)", "menores"), ("Menores", "menores"),
+        ("Pequeños (5 a 8)", "menores"), ("Juveniles", "mayores"),
+        ("Mayores", "mayores"), ("Máster", "mayores"), ("", None), (None, None),
+    ])
+    def test_la_categoria_de_la_ficha_elige_la_planilla(self, texto, esperado):
+        assert pruebas.categoria_de(texto) == esperado

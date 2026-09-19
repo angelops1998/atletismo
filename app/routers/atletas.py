@@ -330,7 +330,7 @@ async def ficha(atleta_id: int, request: Request, db: Session = Depends(get_db))
         "alertas": alertas.del_atleta(db, atleta, serie),
         "acwr": alertas.acwr(serie),
         "grafico_bienestar": grafico.linea([f["bienestar"] for f in serie],
-                                           minimo=5, maximo=25, alto=150),
+                                           minimo=bienestar.MINIMO, maximo=bienestar.MAXIMO, alto=150),
         "grafico_carga": grafico.barras([f["carga"] for f in serie], alto=130),
         "grafico_sueno": grafico.linea([f["sueno"] for f in serie], alto=130),
         "grafico_peso": grafico.linea([f["peso"] for f in serie], alto=130),

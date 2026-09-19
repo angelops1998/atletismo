@@ -42,7 +42,7 @@
 <div class="card">
     <div class="card-body">
         <div style="display:flex; align-items:center; gap:14px">
-            <div class="avatar avatar-grande avatar-{{ 'ok' if bienestar_total > 17 else ('atencion' if bienestar_total > 12 else 'mal') }}">
+            <div class="avatar avatar-grande avatar-{{ color_bienestar(bienestar_total) }}">
                 {{ bienestar_total }}
             </div>
             <div style="flex:1; min-width:0">
