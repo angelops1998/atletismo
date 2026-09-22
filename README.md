@@ -61,8 +61,11 @@ Para levantarlo en desarrollo (puerto 8002):
 .venv/bin/python run.py
 ```
 
-En producción va detrás de nginx con HTTPS, y en el `.env` **tiene que quedar**
-`HTTPS_ONLY=true` para que las cookies de sesión no viajen por HTTP.
+En producción corre en **Render** con la base en **Supabase**, y las variables
+salen del panel de Render, no de un `.env` (`HTTPS_ONLY=true` entre ellas, para
+que las cookies de sesión no viajen por HTTP). Todo el procedimiento está en
+[`DEPLOY.md`](DEPLOY.md); el despliegue lo describe [`render.yaml`](render.yaml)
+y un `git push origin main` alcanza para publicar.
 
 ## Datos de ejemplo
 
@@ -150,6 +153,8 @@ primero se vería siempre en rojo aunque no haya cambiado nada.
 
 ## Qué falta / qué habría que cambiar al ponerlo en producción
 
+- El plan free de Render duerme el servicio a los 15 minutos sin visitas: la
+  primera del día tarda ~50 s en abrir. Se saca pasando a Starter (US$7/mes).
 - La zona horaria está fijada en `app/tiempo.py` (`America/La_Paz`).
   Si el club no está en Bolivia, es lo único que hay que tocar.
 - El staff y los atletas destacados de la página pública están escritos en

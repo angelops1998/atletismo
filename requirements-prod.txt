@@ -25,3 +25,9 @@ python-dotenv==1.2.2
 python-jose==3.5.0
 bcrypt==5.0.0
 email-validator==2.3.0
+
+# --- Zonas horarias ---
+# app/tiempo.py hace ZoneInfo("America/La_Paz"). En el contenedor de Render la
+# base de datos de zonas del sistema puede no estar: sin esto la app no arranca
+# y el error (ZoneInfoNotFoundError) no dice que falta un paquete.
+tzdata==2026.4

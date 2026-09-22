@@ -27,7 +27,7 @@ SEMANAS_FICHA = 16
 
 # La contraseña provisoria se le muestra al profesor una sola vez, en la ficha,
 # para que se la dicte. Viaja en una cookie de vida corta y NO en la URL: el query
-# string queda escrito en el log de acceso de gunicorn y de nginx y en el historial
+# string queda escrito en el log de acceso de gunicorn y del proxy y en el historial
 # del navegador, y ahí una contraseña en claro no vence nunca. La cookie va acotada
 # a la ficha de ese atleta y se borra apenas se muestra.
 _COOKIE_PASSWORD = "password_provisoria"

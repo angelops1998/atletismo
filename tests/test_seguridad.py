@@ -180,6 +180,34 @@ class TestFuerzaBruta:
                                              "password": "mal", "csrf_token": token})
         assert r.status_code == 401
 
+    def test_el_header_de_ip_no_lo_elige_el_atacante(self, client, atleta):
+        """Render no descarta el X-Forwarded-For que venga de afuera: le agrega la
+        suya al final. Si el freno leyera la primera entrada, rotar ese header
+        daría intentos infinitos y no serviría de nada."""
+        from app.routers import auth as router_auth
+        token = con_csrf(client)
+        codigos = []
+        for i in range(router_auth.INTENTOS_MAX + 2):
+            r = client.post("/auth/login",
+                            data={"identificador": "atleta1", "password": "mal",
+                                  "csrf_token": token},
+                            headers={"X-Forwarded-For": f"10.0.0.{i}, 172.16.0.1"})
+            codigos.append(r.status_code)
+        assert codigos[-1] == 429, "cambiando el header se saltea el freno"
+
+    def test_separa_por_la_ip_que_puso_el_proxy(self, client, atleta):
+        """La última entrada sí la pone el proxy: dos personas distintas detrás de
+        él tienen que contar por separado."""
+        from app.routers import auth as router_auth
+        token = con_csrf(client)
+        datos = {"identificador": "atleta1", "password": "mal", "csrf_token": token}
+        for _ in range(router_auth.INTENTOS_MAX + 1):
+            client.post("/auth/login", data=datos,
+                        headers={"X-Forwarded-For": "172.16.0.1"})
+        r = client.post("/auth/login", data=datos,
+                        headers={"X-Forwarded-For": "172.16.0.2"})
+        assert r.status_code == 401
+
 
 class TestCabeceras:
     def test_manda_las_cabeceras_de_seguridad(self, client):

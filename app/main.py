@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.datastructures import MutableHeaders
+from pathlib import Path
 import secrets
 import re
 
@@ -185,7 +186,10 @@ async def error_interno(request: Request, exc: Exception):
     return _templates.TemplateResponse(request, "500.html", {}, status_code=500)
 
 
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+# Ruta absoluta: el directorio de trabajo lo fija el proceso que arranca la app
+# (gunicorn en Render, uvicorn en run.py) y no tiene por qué ser la raíz del repo.
+app.mount("/static", StaticFiles(directory=Path(__file__).resolve().parent / "static"),
+          name="static")
 
 app.include_router(publico.router)
 app.include_router(auth_router.router)

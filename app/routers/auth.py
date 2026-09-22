@@ -28,15 +28,33 @@ _MAX_CLAVES = 2000            # tope del diccionario, por si alguien rota usuari
 _fallos: dict[str, list] = {}
 
 
+def _ip_del_cliente(request: Request) -> str:
+    """La IP de quien hace el pedido, sin dejar que la elija él mismo.
+
+    En Render la app está detrás de un proxy, así que `request.client.host` es
+    siempre la misma IP (la del proxy) y el freno dejaría de distinguir entre
+    personas. La IP real viaja en X-Forwarded-For, pero **Render no descarta el
+    header que venga de afuera: le agrega la suya al final**. O sea que las
+    entradas de la izquierda las puede escribir el atacante, y si se leyera la
+    primera —que es lo que hace uvicorn con `--forwarded-allow-ips=*`— bastaría
+    con rotar ese header para tener intentos infinitos.
+
+    Por eso se lee la **última**, que es la que agregó el proxy: puede ser la del
+    cliente o la de un proxy intermedio, pero nunca una inventada. En el peor
+    caso queda constante y el freno cuenta por usuario, que es como se comportaba
+    antes; en el mejor separa por persona.
+    """
+    reenviadas = request.headers.get("x-forwarded-for", "")
+    if reenviadas:
+        return reenviadas.rsplit(",", 1)[-1].strip()
+    return request.client.host if request.client else "?"
+
+
 def _clave(request: Request, identificador: str) -> str:
     """IP + usuario. Se cuenta por par y no solo por usuario a propósito: contando
     solo por usuario, cualquiera podría dejar al profesor afuera de su propio
     sistema tirándole contraseñas mal a propósito."""
-    # request.client.host es el par directo. Cuando entre nginx adelante habrá que
-    # leer X-Forwarded-For, pero SOLO ahí: si se lee ahora, con la app expuesta
-    # directo, el atacante cambia el header y el freno no sirve para nada.
-    ip = request.client.host if request.client else "?"
-    return f"{ip}|{identificador.strip().lower()}"
+    return f"{_ip_del_cliente(request)}|{identificador.strip().lower()}"
 
 
 def _recientes(clave: str) -> list:

@@ -1,0 +1,76 @@
+# Blueprint de Render. Con este archivo en la raíz del repo, en Render se hace
+# New → Blueprint, se elige este repo, y queda todo creado (ver DEPLOY.md).
+#
+# La base de datos NO está acá: es el Postgres de Supabase, y su cadena de
+# conexión se pega a mano en el panel de Render (DATABASE_URL, `sync: false`)
+# porque lleva la contraseña y no puede quedar en el repo.
+services:
+  - type: web
+    name: atletismo
+    runtime: python
+    # Free: el servicio se duerme a los 15 minutos sin visitas y la siguiente
+    # tarda ~50 s en despertar. Para pasar a Starter (US$7/mes, sin siestas)
+    # se cambia esta línea por `plan: starter`, o se cambia desde el panel.
+    plan: free
+    # Virginia (us-east) es lo más cerca de Bolivia que hay en el plan free.
+    # Lo que más importa es que la base de Supabase esté en la MISMA región:
+    # cada pantalla hace varias consultas y el viaje de ida y vuelta se nota.
+    region: virginia
+    branch: main
+
+    # Las migraciones corren en el build y no al arrancar: si una falla, el
+    # deploy se cae antes de reemplazar la versión que está andando, en vez de
+    # dejar la app arriba contra un esquema a medio migrar.
+    buildCommand: pip install -r requirements-prod.txt && alembic upgrade head
+    startCommand: >-
+      gunicorn app.main:app
+      --worker-class uvicorn.workers.UvicornWorker
+      --workers 2
+      --bind 0.0.0.0:$PORT
+      --timeout 120
+      --access-logfile -
+      --error-logfile -
+
+    # La landing es pública: responde 200 sin cookie ni login.
+    healthCheckPath: /
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.13"
+
+      # Cadena de conexión de Supabase. sync: false = la cargás vos en el panel
+      # y Render no la toca nunca más. Tiene que ser la del **Session pooler**
+      # (ver DEPLOY.md): la conexión directa es solo IPv6 y Render no la alcanza.
+      - key: DATABASE_URL
+        sync: false
+
+      # La genera Render y no la ve nadie. Si se cambia, todas las sesiones
+      # abiertas se caen y cada uno tiene que entrar de nuevo.
+      - key: SECRET_KEY
+        generateValue: true
+
+      # Render sirve HTTPS: las cookies de sesión van con el flag Secure.
+      - key: HTTPS_ONLY
+        value: "true"
+
+      # 60 días. La sesión es deslizante: es cuánto puede estar SIN entrar un
+      # atleta antes de que le vuelva a pedir la contraseña.
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "86400"
+
+      # Datos del club que se muestran en la página pública. Se completan en el
+      # panel de Render (Environment) para no tenerlos en el repo.
+      - key: CLUB_NOMBRE
+        sync: false
+      - key: CLUB_TELEFONO
+        sync: false
+      - key: CLUB_WHATSAPP
+        sync: false
+      - key: CLUB_EMAIL
+        sync: false
+      - key: CLUB_DIRECCION
+        sync: false
+      - key: CLUB_INSTAGRAM
+        sync: false
+      - key: CLUB_FACEBOOK
+        sync: false

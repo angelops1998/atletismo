@@ -8,9 +8,11 @@ from .tiempo import ahora, hoy
 from .config import get_settings
 from .services.bienestar import color_total
 
-templates = Jinja2Templates(directory="app/templates")
+_RAIZ = Path(__file__).resolve().parent
 
-_STATIC = Path(__file__).resolve().parent / "static"
+templates = Jinja2Templates(directory=_RAIZ / "templates")
+
+_STATIC = _RAIZ / "static"
 
 MESES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
          "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
@@ -19,9 +21,9 @@ MESES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
 def _static(ruta: str) -> str:
     """URL de un estático con la fecha del archivo pegada (/static/css/main.css?v=175…).
 
-    En producción nginx manda los estáticos con caché larga: sin esto, un arreglo
-    de CSS no se ve hasta que al usuario se le vence la caché o hace Ctrl+F5, y en
-    el celular eso puede tardar días.
+    El navegador cachea los estáticos: sin esto, un arreglo de CSS no se ve hasta
+    que al usuario se le vence la caché o hace Ctrl+F5, y en el celular eso puede
+    tardar días.
     """
     try:
         version = int((_STATIC / ruta).stat().st_mtime)

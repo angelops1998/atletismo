@@ -1,4 +1,4 @@
-from pydantic import ValidationError
+from pydantic import ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
@@ -26,6 +26,20 @@ class Settings(BaseSettings):
     club_facebook: str = ""
 
     model_config = SettingsConfigDict(env_file=".env")
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalizar_url(cls, valor: str) -> str:
+        """Acepta el `postgres://` que copian y pegan algunos paneles.
+
+        Supabase y Render muestran la cadena de conexión de las dos formas según
+        la pantalla. SQLAlchemy 2.0 solo entiende `postgresql://` y con la otra
+        corta con un "Can't load plugin" que no se parece en nada al problema
+        real, que es un prefijo.
+        """
+        if valor.startswith("postgres://"):
+            return "postgresql://" + valor[len("postgres://"):]
+        return valor
 
 
 @lru_cache()
