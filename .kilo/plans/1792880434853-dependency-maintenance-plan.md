@@ -38,9 +38,13 @@ Prepare minimal dependency-management plan for `atletismo` without implementing 
 
 ## Validation plan
 1. Manifest consistency and dependency resolution after changes.
+   - `pip check` in `.venv`; expected: no conflicts.
 2. Timezone behavior on Windows via importing `app.tiempo`.
+   - `python -c "from app.tiempo import TZ, hoy; print(TZ, hoy())"`; expected: resolves `America/La_Paz` and current date.
 3. TestClient warning reproduction/elimination on relevant tests.
+   - `pytest -q tests/test_*.py` or full suite; expected: identify whether `StarletteDeprecationWarning` remains.
 4. Full suite comparison against historical baseline.
+   - `pytest -q`; compare with historical `328 passed, 1 StarletteDeprecationWarning`.
 - Render-environment verification remains UNVERIFIED locally.
 
 ## Uncertainties
