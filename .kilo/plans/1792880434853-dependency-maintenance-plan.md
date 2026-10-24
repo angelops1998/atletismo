@@ -49,7 +49,14 @@ Current:
 - `httpx==0.28.1`
 No change to these pins. Add `httpx2>=2.0.0` only if the warning remediation is approved, because Starlette 1.2.1 explicitly prefers `httpx2` and falls back to `httpx` with a deprecation warning.
 
-## Compatibility evidence
+## `httpx2` compatibility evidence
+- Candidate version to evaluate: `httpx2 2.16.0` (latest PyPI release as of 2026-10-21).
+- Source: https://pypi.org/project/httpx2/
+- Starlette 1.2.1 prefers `httpx2` and falls back to `httpx` with a `StarletteDeprecationWarning`.
+- Starlette docs state `httpx2` is the TestClient backend and plain `httpx` is deprecated.
+- `httpx2` is a fork of `httpx 0.28.1` with the same public API; both can coexist.
+- Starlette `[full]` includes `httpx2>=2.0.0`.
+- Runtime compatibility with this project's `TestClient` usage is UNVERIFIED until installed and tested (not done in this plan).
 - FastAPI 0.136.3 metadata: `Requires-Dist: starlette>=0.46.0`; Python `>=3.10`.
   Source: installed `fastapi-0.136.3.dist-info/METADATA`.
 - Starlette 1.2.1 metadata: Python `>=3.10`; optional dependency `httpx2>=2.0.0` under `[full]`; `httpx<0.29.0,>=0.27.0` also listed for compatibility.
