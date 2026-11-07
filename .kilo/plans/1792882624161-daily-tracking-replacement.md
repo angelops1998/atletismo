@@ -1,301 +1,297 @@
 # Plan: Replace Weekly Athlete Reports with a Daily Tracking System
 
-## 0. Verification Status (READ-ONLY, refreshed for this plan revision)
+## 0. Verification Status (READ-ONLY, refreshed for this refinement)
 - **Repository**: `C:\Archivos.Diego\atletismoWeb\atletismo` (git repo) — PASS.
-- **Branch/HEAD**: `Baruc+Kilo` @ `01a676d` (`kilo markdown: S-0007_plan_session-ses_e8fd.md y plan: 1792882624161-daily-tracking-replacement.md`), up to date with `origin/Baruc+Kilo` — PASS.
+- **Branch/HEAD**: `Baruc+Kilo` @ `74e4368` (`kilo markdown: S-0008_plan_session-ses_e8fd.md y plan: 1792882624161-daily-tracking-replacement.md`), up to date with `origin/Baruc+Kilo` — PASS.
 - **Working tree**: clean (`nothing to commit, working tree clean`) — PASS. No existing user changes to preserve.
-- **Previous session**: `.kilo/kiloSesions/S-0006_ask_session-ses_e8fd.md` (`ses_e8fd`) — FOUND; investigation reused and revalidated against current tree. Session artifacts `S-0007_*` present on branch.
-- **Code changes made by this plan task**: **only this plan file updated** (authorized planning document). No source/config/DB/migration/test/app-state changes — PASS.
+- **Previous session**: `ses_e8fd` available — `.kilo/kiloSesions/S-0006_ask_session-ses_e8fd.md` and `S-0008_plan_session-ses_e8fd.md` present; investigation reused and revalidated against current tree.
+- **Repo evidence inspected (this refinement)**: `app/database.py` (`SessionLocal`/`get_db`, no `for_update`/`begin_nested` usage found), `app/csrf.py` (HMAC-SHA256 signing via `settings.secret_key`), `app/routers/atletas.py` & `app/routers/pagos.py` (`IntegrityError` → `db.rollback()` + user response), `alembic/env.py`, `render.yaml` (build runs `alembic upgrade head`), `DEPLOY.md`/`README.md` (manual `alembic upgrade head`), `app/services/alertas.py` (current `acwr`/thresholds), `app/routers/parte.py` (weekly form/upsert), `tests/conftest.py` (SQLite in-memory; `pool_static`).
+- **Discrepancy from prior plan state**: HEAD/plan revision changed since last plan write (`01a676d`→`74e4368`, plus session file) — **no material product/architecture discrepancy**; plan updated accordingly.
+- **Code changes made by this plan task**: **only this plan file updated** (authorized). No source/config/DB/migration/test/app-state changes — PASS.
 
 ## 1. Previous Audit Findings (ses_e8fd) — Reused / Superseded
 ### Reused (still valid)
 - Weekly flow is centered on `app/routers/parte.py` (`GET/POST /parte`), `app/models/parte.py` (`ParteSemanal`, table `partes_semanales`, `uq_parte_atleta_semana (atleta_id, semana)`), `app/services/bienestar.py`, `app/services/alertas.py`.
 - `semana` = Monday via `app/tiempo.lunes_de/lunes_actual`; TZ `America/La_Paz` in `app/tiempo.py` and DB session (`app/database.py` sets `timezone`).
-- Upsert-by-week behavior (edit existing row, not duplicate) and `SEMANAS_EDITABLES=1`.
-- Calculations mostly derived at runtime in `bienestar.py`; consumers: `panel.py`, `atletas.py`, `estadisticas.py`, `cuenta.py`, templates, tests, `scripts/seed*.py`.
-- Tests: `tests/test_parte.py`, `tests/test_bienestar.py`, `tests/test_alertas.py`, `tests/test_consultas.py`, `tests/conftest.py` helpers (`crear_parte`, `ParteSemanal`).
-
-### Superseded by this objective
-- ses_e8fd recommended **Option B (complementary daily entity, keep weekly)** as least disruptive for “independent daily reports while preserving historical weekly records”.
-- **This task’s objective explicitly requires replacement and complete removal of functional dependencies on the old weekly model**, with weekly summaries derived from daily records and old table removed only after references replaced. The plan follows the **current objective** (replacement) while preserving **unrelated data** and never fabricating daily records from historical weekly data.
+- Upsert-by-week behavior and `SEMANAS_EDITABLES=1`.
+- Consumers: `panel.py`, `atletas.py`, `estadisticas.py`, `cuenta.py`, templates, tests, `scripts/seed*.py`. Tests: `tests/test_parte.py`, `test_bienestar.py`, `test_alertas.py`, `test_consultas.py`, `conftest.py` (`crear_parte`).
+### Superseded
+- ses_e8fd Option B (keep weekly) superseded: objective requires **replacement and complete removal of functional dependencies** on the weekly model; weekly summaries derived from daily records; old table removed only after refs replaced; unrelated data preserved; never fabricate daily from historic weekly.
 
 ## 2. Current Weekly Architecture (verified)
 | Layer | Files | Responsibility |
 |---|---|---|
-| Routes | `app/routers/parte.py` | `/parte` GET/POST; role athlete-only; week selection `_semana_pedida`; form parse/validate; upsert `ParteSemanal` by `(atleta_id, semana)`; redirect `/inicio?parte=1`. |
-| Model | `app/models/parte.py` | `ParteSemanal` (`partes_semanales`): wellness 1-5 (`sueno_calidad,dolor_muscular,estres,animo`), `fatiga` legacy nullable, sleep/nutrition/body optional, `sesiones/minutos_totales/rpe` (RPE 1-10), `molestias/muestra_zona/dolor 0-10`, `comentarios`, timestamps. |
-| Services | `app/services/bienestar.py` | `ITEMS/ETIQUETAS/RPE_ESCALA`; `bienestar_total/pct/semaforo/color_total`; `carga_ua` (`rpe*minutos_totales`); `parte_de_semana/partes_de/series_*`; `serie_grupo`; `promedio_items_grupo`; `cruce_con_marcas` (joins on `lunes_de(marca.fecha)`). |
-| Services | `app/services/alertas.py` | `sin_parte`, `bienestar_bajo/item_minimo/caida_bienestar`, `molestia`, `sueno_insuficiente`, `carga` (ACWR via `serie.carga`), `peso`, `pago_vencido`; `del_atleta/del_club`. |
-| UI | `app/templates/atleta/parte.html`, `_campos.html` macros | Weekly form, CSRF, conditional molestia block. |
-| Consumers | `app/routers/panel.py`, `atletas.py`, `estadisticas.py`, `cuenta.py`; `app/templates/atleta/inicio.html`, `mis_datos.html`, `panel/*`; `app/main.py` nav wiring (`parte_pendiente` flags) | “Parte pendiente”, weekly series/charts, alert cards, athlete evolution. |
-| DB | `alembic/versions/d61e48816ec5_*`, `a3f1c9e27b04_*` | Create `partes_semanales`; make `fatiga` nullable. |
-| Tests/fixtures | `tests/test_parte.py`, `test_bienestar.py`, `test_alertas.py`, `test_consultas.py`, `conftest.py` | Weekly rules, RPE, ACWR/alerts, query patterns, helpers. |
-| Scripts | `scripts/seed.py`, `seed_5_atletas.py` | Generate `ParteSemanal` data. |
+| Routes | `app/routers/parte.py` | `/parte` GET/POST; athlete-only; `_semana_pedida`; parse/validate; upsert `ParteSemanal` by `(atleta_id, semana)`. |
+| Model | `app/models/parte.py` | `ParteSemanal` (`partes_semanales`): wellness 1-5, legacy `fatiga`, aggregate `sesiones/minutos_totales/rpe`, molestias 0-10, timestamps; unique `(atleta_id, semana)`. |
+| Services | `app/services/bienestar.py` | `ITEMS/ETIQUETAS/RPE_ESCALA`; `bienestar_total/pct/semaforo/color_total`; `carga_ua=rpe*minutos_totales`; weekly series; `cruce_con_marcas` on `lunes_de`. |
+| Services | `app/services/alertas.py` | `sin_parte`, bienestar/molestia/sueño/carga/peso/pago alerts; `acwr` (acute=last weekly carga / chronic=mean prior 4, needs >=2 prior weeks). |
+| UI | `app/templates/atleta/parte.html`, `_campos.html` | Weekly form, CSRF, conditional molestia. |
+| Consumers | `app/routers/panel.py,atletas.py,estadisticas.py,cuenta.py`; `app/templates/*`; `app/main.py` | `parte_pendiente`, weekly series/charts, alert cards. |
+| DB/migrations | `alembic/versions/d61e48816ec5_*`, `a3f1c9e27b04_*`; `alembic/env.py` | Create `partes_semanales`; `fatiga` nullable. |
+| Tests/fixtures/scripts | `tests/conftest.py,test_parte.py,test_bienestar.py,test_alertas.py,test_consultas.py`; `scripts/seed*.py` | Weekly rules/helpers. |
 
 ## 3. Complete Dependency Inventory (weekly → daily replacement)
-> For each: current behavior / why weekly / required change / affected components / order & risk.
+> For each: current behavior / why weekly / required change / affected components / order & risk. (Paths verified.)
 
-1. **`app/models/parte.py` (`ParteSemanal`, `partes_semanales`)** — Core weekly entity, unique `(atleta_id, semana)`. *Change*: replace with daily model + sessions (see §4); remove weekly model/table only after all refs replaced. *Affects*: every consumer below. *Order*: Phase 1-2 (model/migration) but deletion is **last**. *Risk*: HIGH.
-2. **`app/models/__init__.py`** — exports `ParteSemanal`. *Change*: export new daily models; drop `ParteSemanal` at end. *Risk*: LOW.
-3. **`app/routers/parte.py`** — `/parte` GET/POST, week params, athlete edits current/previous week logic, `SEMANAS_EDITABLES`, upsert by week. *Change*: daily UX/API (server date = `tiempo.hoy()` in `America/La_Paz`), athlete may create/update **today only** (no date picker), upsert by `(atleta_id, fecha=hoy)`, multi-session payload, transactional save, explicit discard-sessions confirmation. *Affects*: templates, tests, nav pending flag. *Order*: Phase 3. *Risk*: HIGH.
-4. **`app/services/bienestar.py`** — weekly `ITEMS` (4x1-5) + `fatiga` legacy; `carga_ua=rpe*minutos_totales`; all series keyed by `semana`; `cruce_con_marcas` joins on `lunes_de`. *Change*: **major refactor/rename of domain logic** to daily tracking: new scales 1-10, fatigue independent, daily load = `sum(session.duracion_min*session.rpe)`, derive weekly summaries from daily rows for charts/stats where needed, redefine `parte_pendiente` as “has today’s record?”, adapt `cruce_con_marcas` to join daily records by `fecha`. Keep API shape stable where possible for templates or update callers coherently. *Affects*: alerts, panel, atletas, estadisticas, cuenta, charts. *Order*: Phase 2 (core services) before/with routers. *Risk*: HIGH.
-5. **`app/services/alertas.py`** — “sin_parte esta semana”, uses `serie[-1]` weekly, thresholds `BIENESTAR_BAJO` over 20 (`MAXIMO=len(ITEMS)*5`), sleep/carga/ACWR on weekly series. *Change*: redefine to daily semantics (e.g., missing today / recent days — **decision point, see §11**), recalc thresholds for 1-10 scales and daily/derived-weekly load; `afecta_entrenamiento` can inform severity (use carefully, not diagnosis). *Risk*: HIGH (behavioral).
-6. **`app/services/grafico.py`** — doc/comments reference weekly gaps; functions generic. *Change*: minimal; update labels/comments and any weekly assumptions in callers. *Risk*: LOW.
-7. **`app/routers/panel.py`, `atletas.py`, `estadisticas.py`, `cuenta.py`** — import `ParteSemanal`/`bienestar.parte_de_semana` weekly series, “partes cargados esta semana”, `maximo/bienestar_total` display. *Change*: switch to daily queries/derived summaries, update KPIs (“registros hoy / esta semana derivados”), keep coach workflows intact. *Risk*: MEDIUM-HIGH.
-8. **`app/templates/atleta/parte.html`, `_campos.html`, `atleta/inicio.html`, `mis_datos.html`, `panel/*`, `base.html/_nav/_tabbar`** — weekly copy, 1-5 scales, RPE/sessions as aggregate fields, “parte pendiente”. *Change*: full daily form (5 categories A-E, 1-10 scales + labels, conditional illness/discomfort, `entreno_hoy`, dynamic sessions CRUD UI, load previews, preserve values on error); update dashboard copy/metrics. *Risk*: MEDIUM (UX) but must preserve CSRF/project conventions.
-9. **`tests/conftest.py`, `test_parte.py`, `test_bienestar.py`, `test_alertas.py`, `test_consultas.py`** — fixtures/helpers create `ParteSemanal`. *Change*: new fixtures for daily+sessions; replace/adapt tests per §8; remove weekly-only tests after coverage parity. *Risk*: MEDIUM.
-10. **`scripts/seed.py`, `scripts/seed_5_atletas.py`** — create `ParteSemanal`. *Change*: generate daily records + sessions; never backfill from historic weekly. *Risk*: LOW.
-11. **`alembic/versions/*` (existing)** — historical; **do not edit**. *Change*: add new forward migration(s); final migration drops `partes_semanales` only after app deps removed. *Risk*: HIGH.
-12. **Docs/config text** (`README.md`, `DEPLOY.md`, any in-app text) — mention `partes_semanales`/weekly. *Change*: update in implementation (documentation edits allowed in implementation phase; **not done now**). *Risk*: LOW.
+1. **`app/models/parte.py` (`ParteSemanal`, `partes_semanales`)** — weekly core, unique `(atleta_id,semana)`. *Change*: replace with daily+sessions; **remove model/table only after all refs replaced and hard gates pass**. *Order*: Phase 1 add; Phase 7 drop last. *Risk*: HIGH.
+2. **`app/models/__init__.py`** — exports `ParteSemanal`. *Change*: export daily models; drop weekly at end. *Risk*: LOW.
+3. **`app/routers/parte.py`** — week params, `_semana_pedida`, `SEMANAS_EDITABLES`, upsert by week. *Change*: server `hoy()` authority, athlete create/update **today only**, multi-session transactional save, locked+stale-proof discard confirmation, explicit session-ID operations, `IntegrityError` recovery. *Risk*: HIGH.
+4. **`app/services/bienestar.py`** — 1-5 `ITEMS`/`MAXIMO`, `carga_ua`, weekly series, `cruce_con_marcas` on `lunes_de`. *Change*: daily 1-10 metrics, `carga_sesion/daily/weekly` contracts, derived weekly summaries over **reported days only** (missing ≠ 0), redefine pending as “registro de hoy”; adapt crosses. *Risk*: HIGH.
+5. **`app/services/alertas.py`** — `sin_parte` weekly, thresholds 1-5/20, `acwr` weekly (verified). *Change*: split into implementable-now rules vs ACWR/ambiguous thresholds **deferred** (§9). *Risk*: HIGH.
+6. **`app/services/grafico.py`** — generic; weekly comments. *Change*: minimal labels/caller alignment. *Risk*: LOW.
+7. **`app/routers/panel.py,atletas.py,estadisticas.py,cuenta.py`** — `ParteSemanal`/weekly series/KPIs. *Change*: daily+derived summaries; keep coach workflows. *Risk*: MEDIUM-HIGH.
+8. **Templates** (`atleta/parte.html,_campos.html,inicio.html,mis_datos.html`, `panel/*`, nav/tabbar) — weekly copy/1-5/RPE aggregate. *Change*: daily A–E form, 1-10 visuals, conditional illness/discomfort+`otro`, `entreno_hoy`, dynamic sessions w/ stable IDs & explicit remove, discard confirm UX backed by server, previews, error repopulation. *Risk*: MEDIUM.
+9. **Tests/fixtures** (`tests/*`, `conftest.py` SQLite) — weekly helpers. *Change*: daily fixtures, rewrite/adapt; add PG-disposable migration/locking/concurrency validation path. *Risk*: MEDIUM.
+10. **`scripts/seed.py`, `seed_5_atletas.py`** — `ParteSemanal`. *Change*: daily records+sessions. *Risk*: LOW.
+11. **`alembic/versions/*` existing** — immutable history. *Change*: new forward revisions only; **drop revision kept separate and excluded from automatic deployment execution** (§7). *Risk*: HIGH.
+12. **Deploy/docs refs** (`render.yaml` build `alembic upgrade head`; `DEPLOY.md`/`README.md`) — operational coupling to `upgrade head`. *Change*: update as part of safe deployment strategy (§7) in implementation PRs touching ops; **no changes now**. *Risk*: MEDIUM (ops) — documented.
 
-**Indirect deps to grep during implementation** (must be zero before drop-table migration): `ParteSemanal`, `partes_semanales`, `parte_de_semana`, `partes_de`, `semana=` in tracking context, `bienestar.ITEMS/MAXIMO/UMBRAL_*` weekly semantics, `/parte?semana`, `SEMANAS_EDITABLES`, `carga_ua` weekly fields, `serie_grupo` weekly, `sin_parte`.
+**Grep gate (before any drop):** zero **functional** refs to `ParteSemanal|partes_semanales|parte_de_semana|partes_de|SEMANAS_EDITABLES|carga_ua` weekly helpers|`/parte?semana`|`sin_parte` in `app/`, `tests/`, `scripts/`. Exclude historical alembic migration filenames/content for `d61e48816ec5*` and `a3f1c9e27b04*` (they remain immutable history).
 
 ## 4. Proposed Daily Data Architecture (SQLAlchemy 2 + PostgreSQL)
 
-### 4.1 Daily record table — `registros_diarios` (`RegistroDiario`) **(recommended naming; keep `/parte` route/UX naming independent if desired)**
-- `id` PK.
-- `atleta_id` FK → `users.id` `ondelete=CASCADE`, indexed, NOT NULL.
-- `fecha` `Date` NOT NULL — **server-only authority**: set from `tiempo.hoy()` (`America/La_Paz`). Athlete GET/POST **must ignore/reject any client-supplied date** for create/update; coaches may query by date.
-- **Uniqueness (DB-level, required):** `UniqueConstraint('atleta_id','fecha', name='uq_registro_diario_atleta_fecha')` + supporting index `(atleta_id, fecha desc)` / `fecha`.
-- Wellness (required unless noted): `sueno_calidad` Int `CHECK 1-10`; `horas_sueno` `Numeric(4,1)` `CHECK 0-24`; `fatiga, dolor_muscular, estres, animo` Int `CHECK 1-10`. **Fatigue and session RPE remain independent variables** (different entities/meanings).
-- `hay_molestia` Boolean NOT NULL default false.
-- `molestia_zona` **PG `ARRAY(String)`** nullable/empty when no molestia. **Backend whitelist (canonical keys):** `cuello,hombros,espalda,cadera,gluteos,muslos,rodillas,pantorrillas,tobillos,pies,brazos,otro`. (Alt: normalized join table — higher complexity; ARRAY + whitelist recommended for PG target/fixed set.)
-- `molestia_zona_otra` `String(120)`/`Text` nullable — **required iff `otro` selected**; ignored/cleared otherwise (backend authoritative). *(Resolves `otro`.)*
-- `molestia_dolor` Int `CHECK 1-10`, nullable — required iff `hay_molestia`.
-- `afecta_entrenamiento` Int `CHECK 0-3`, nullable — required iff `hay_molestia`.
-- `sintomas_enfermedad` Boolean NOT NULL default false.
-- `detalle_sintomas` Text nullable — required iff `sintomas_enfermedad`; cleared otherwise.
-- `comentarios` Text nullable.
-- `entreno_hoy` Boolean NOT NULL.
-- `sesiones_descartadas_en`/token mechanism **not stored as a mutable security flag alone** — see §5 (stale-proof confirmation). No freely-editable hidden boolean is sufficient as sole authority.
-- `enviado/actualizado` `DateTime(timezone=True)`, `server_default now()`, `onupdate=now()`.
+### 4.1 Daily record — `registros_diarios` (`RegistroDiario`) *(recommended naming)*
+- `id` PK; `atleta_id` FK→`users.id` `ondelete=CASCADE`, indexed, NOT NULL.
+- `fecha` `Date` NOT NULL — **server-only** `tiempo.hoy()` (`America/La_Paz`); athlete ignores/rejects client date.
+- **Unique** `('atleta_id','fecha')` `uq_registro_diario_atleta_fecha` + indexes `(atleta_id, fecha desc)`, `fecha`.
+- Wellness (required): `sueno_calidad, fatiga, dolor_muscular, estres, animo` Int `CHECK 1-10`; `horas_sueno` `Numeric(4,1)` `CHECK 0-24`. **Fatigue ≠ session RPE**.
+- `hay_molestia` Bool NOT NULL default false. `molestia_zona` **PG `ARRAY(String)`** nullable (whitelist: `cuello,hombros,espalda,cadera,gluteos,muslos,rodillas,pantorrillas,tobillos,pies,brazos,otro`). `molestia_zona_otra` `String(120)` nullable — **required iff `otro` selected; cleared otherwise** (backend). `molestia_dolor` Int `CHECK 1-10` nullable (required iff `hay_molestia`). `afecta_entrenamiento` Int `CHECK 0-3` nullable (required iff `hay_molestia`).
+- `sintomas_enfermedad` Bool NOT NULL default false. `detalle_sintomas` Text nullable — **optional, displayed/accepted conditionally when `sintomas_enfermedad=true`; cleared when false; NOT mandatory without explicit PO approval** (preserves original requirement).
+- `comentarios` Text nullable. `entreno_hoy` Bool NOT NULL.
+- `enviado/actualizado` `DateTime(timezone=True)` `server_default now()`, `onupdate`.
+- No mutable security-flag field for discard; confirmation uses signed token + DB-verified state (§5.3).
 
 ### 4.2 Training sessions — `sesiones_entrenamiento` (`SesionEntrenamiento`)
-- `id` PK.
-- `registro_diario_id` FK → `registros_diarios.id` `ondelete=CASCADE`, indexed, NOT NULL.
-- `orden` Int/SmallInt NOT NULL (stable UI/order).
-- `tipo_entrenamiento` String NOT NULL, whitelist: `velocidad_sprint,resistencia,fuerza,tecnica_coordinacion,movilidad_recuperacion,competencia,entrenamiento_mixto,otro`.
-- `duracion_min` Int NOT NULL `CHECK (duracion_min > 0)`.
-- `rpe` Int NOT NULL `CHECK 1-10`.
-- `carga_sesion` Int NOT NULL — **computed authoritatively by backend** as `duracion_min * rpe` on every write (never trust client). Optional DB `CHECK (carga_sesion = duracion_min * rpe)` for defense in depth.
+- `id` PK (**stable identifier, required**). `registro_diario_id` FK→`registros_diarios.id` `ondelete=CASCADE`, indexed, NOT NULL.
+- `orden` Int NOT NULL. `tipo_entrenamiento` String whitelist `velocidad_sprint,resistencia,fuerza,tecnica_coordinacion,movilidad_recuperacion,competencia,entrenamiento_mixto,otro`.
+- `duracion_min` Int NOT NULL `CHECK > 0`; `rpe` Int NOT NULL `CHECK 1-10`.
+- `carga_sesion` Int NOT NULL — **backend recomputed** `duracion_min*rpe` (never trust client); optional DB check.
 - `comentarios_entrenamiento` Text nullable.
-- **Relationship**: `RegistroDiario.sesiones` 1:N, `cascade='all, delete-orphan'`, `passive_deletes` aligned with DB cascade, `order_by=orden,id`. **Replacement/deletion happens only via transactional service logic** (never silent).
+- ORM: `RegistroDiario.sesiones` 1:N, `cascade='all, delete-orphan'`, `order_by=orden,id`. DB cascade `ON DELETE CASCADE` is consistent; ORM orphan handling used only inside explicit transactional operations.
 
 ### 4.3 Load & aggregation contracts (authoritative)
-- **Individual session load** = `duracion_min × rpe` (integer AU).
-- **Daily load** = `sum(carga_sesion)` over sessions of that `RegistroDiario` for `fecha`; if no sessions (valid only when `entreno_hoy=false`), daily load is `0` **for that submitted record**. **Persist `carga_sesion` per row; derive daily load by sum in service/query** (recommended — avoids drift).
-- **Weekly load** = `sum(daily_load)` for days in the week (Mon–Sun via `lunes_de`) **where a daily record exists**.
-- **Missing daily reports MUST NOT be interpreted as zero training load** in aggregates, trends, ACWR, or averages: exclude missing days from denominators/sums that represent “observed load”; represent absence explicitly (`None`/missing count). (A submitted `entreno_hoy=false` record is an observation with `0` load; a missing record is unknown.)
-- No physiological validity claimed for thresholds; monitoring indicators only.
+- `carga_sesion = duracion_min × rpe`. `carga_diaria = Σ carga_sesion` for the record (`0` only for a **submitted** `entreno_hoy=false` record with no sessions).
+- `carga_semanal = Σ carga_diaria` over Mon–Sun (`lunes_de`) **counting only existing daily records**.
+- **Missing daily reports ≠ 0 load** (unknown). Aggregates/trends/averages/ACWR exclude missing days from observed sums/denominators; expose `dias_reportados` and missing counts. `entreno_hoy=false` is an observation; missing row is not.
+- No physiological validity claimed.
 
-### 4.4 Indexes/constraints & cascade consistency
-- `uq_registro_diario_atleta_fecha` (critical, concurrency safety).
-- Indexes `(atleta_id, fecha desc)`, `fecha`; `sesiones_entrenamiento(registro_diario_id)`.
-- DB FK `ondelete=CASCADE` from sessions → registro; ORM `delete-orphan` for in-app replacement. **Consistency rule**: session add/edit/remove/replace occurs only inside the same transaction as record update and only after authorization + confirmation checks.
+### 4.4 Indexes/constraints
+- `uq_registro_diario_atleta_fecha`; date/athlete-date indexes; session FK index. Defense-in-depth checks as feasible.
 
 ## 5. Business Rules, Validation & Integrity (frontend + backend + DB)
 
 ### 5.1 Core record rules
-1. **One record/athlete/local date**: DB unique + find-or-create on `(atleta_id, hoy())`; concurrent submits → handle `IntegrityError` and retry update once in-request/transaction-safe pattern; never duplicate.
-2. **Date authority**: `tiempo.hoy()` (`America/La_Paz`) is the sole date for athlete create/update. No athlete date picker; ignore/reject client date overrides.
-3. **Create/update today**: GET loads today if exists; POST upserts `(user.id, hoy())` and applies full validated state atomically.
-4. **Athlete ownership**: scope all reads/writes to `user.id`; 403/404 as per project conventions. Coaches/profs read-only per existing auth.
-5. **Transactions**: **all record + session mutations in a single DB transaction**; rollback on any validation/integrity error.
+1. **Unique** `(atleta_id, hoy())` via DB constraint + app logic. Concurrent create → `IntegrityError` recovery (§5.5).
+2. **Server date authority**: `tiempo.hoy()` only for athlete create/update; no client date.
+3. **Today upsert**: GET loads today; POST applies validated full state atomically to `(user.id,hoy())`.
+4. **Ownership**: athlete mutations/reads scoped to `user.id`; 403/404 per conventions.
+5. **Transactions**: all record+session mutations in a single DB transaction; rollback on error. **CSRF required** (reuse `app/csrf.py`/project patterns).
 
-### 5.2 Training / `entreno_hoy` (resolved)
-6. **`entreno_hoy=true` ⇒ require >= 1 valid session** (recommended & specified). Frontend and backend must agree: backend returns 422 with clear error if true and session list empty after parsing/validation.
-7. **`entreno_hoy=false` ⇒ zero sessions persisted/displayed**. Backend rejects submitted session rows when false (or discards them only via the explicit confirmed discard flow below when replacing existing sessions).
-8. **Session validity**: `duracion_min > 0` integer, `rpe` 1-10, `tipo` in whitelist, `carga_sesion` recomputed server-side.
+### 5.2 `entreno_hoy` and sessions (resolved)
+6. **`entreno_hoy=true` ⇒ >= 1 valid session required** (frontend+backend; 422 if empty after validation).
+7. **`entreno_hoy=false` ⇒ zero sessions persisted/displayed**. No silent deletion — changing true→false with existing sessions uses **only** §5.3 discard protocol.
+8. **Validation**: `duracion_min>0`, `rpe` 1-10, `tipo` whitelisted, `carga_sesion` recomputed server-side.
 
-### 5.3 Secure two-step discard confirmation for Yes→No (resolves A) — **authoritative, stale-proof, transactional**
-**Required behavior**: existing persisted sessions never deleted silently; changing Yes→No requires explicit confirmation; cancel preserves all; backend authoritative; **not** a freely-editable boolean hidden field alone.
+### 5.3 Yes→No discard — stale-proof, locked, transactional (authoritative)
+**Never** delete sessions silently; never rely on a freely-editable hidden boolean; never rely on JS-only confirmation. Cancel/invalid/stale ⇒ preserve all sessions.
 
-**Design (two-step, bound to exact state):**
-- **Step 1 (intent / GET-or-POST preview state, server-rendered):** When the current persisted record has `entreno_hoy=true` and `count(sesiones)>0`, and user submits/changes `entreno_hoy=false`, backend **does not delete**. It returns the form (422/200 validation-response pattern consistent with project — prefer 422 “confirmation required”) with: `discard_confirmation_required=true`, `sesiones_a_descartar` count/summary, and a server-generated **`discard_token`**.
-- **`discard_token`** = HMAC-signed payload (reuse project secret/CSRF-signing approach, e.g. `itsdangerous`/HMAC like CSRF if available, or equivalent) containing: `atleta_id`, `fecha` (`hoy()`), `registro_id` (if exists), **`session_state_hash`** (hash of ordered persisted session ids + `(orden,tipo,duracion_min,rpe,carga_sesion,comentarios)` or stable fingerprint), and short expiry (e.g. 15 min). Token is **opaque to trust except signature+payload checks**; it is not “freely editable” authority because tampering breaks signature and mismatched state breaks verification.
-- **UI step 2**: shows explicit message, requires deliberate user action (checkbox “Confirmo descartar N sesiones” + submit button, and/or modal confirm). JS improves UX but is not relied upon. On submit, includes `confirmar_descartar_sesiones=on` (or explicit value) **and** the hidden `discard_token` echoed back.
-- **Backend verification (must pass before any deletion)** inside the **same transaction**:
-  1. Load current `RegistroDiario` for `(user.id, hoy())` with sessions (lock row as appropriate for update if project uses `SELECT FOR UPDATE` patterns; otherwise rely on transaction + recheck).
-  2. Recompute current `session_state_hash` from persisted sessions.
-  3. Validate `discard_token` signature, expiry, `atleta_id==user.id`, `fecha==hoy()`, `registro_id` matches (or consistent), and **`session_state_hash` matches current**. 
-  4. If **any check fails** (stale token, sessions changed/added/removed after confirmation initiated, wrong user/date) → **reject (422), do not delete**, re-render requiring fresh confirmation with a new token.
-  5. Only if valid: set `entreno_hoy=false`, **delete sessions** (delete-orphan/explicit), clear session-related aggregates as derived, commit atomically.
-- **Cancel**: no valid confirmed POST occurs → sessions preserved. Submitting without valid token+confirm when discard needed → 422, preserved.
-- **Idempotent**: if no persisted sessions exist, no confirmation required.
+**Stable session state + token binding**
+- Compute `session_state_fingerprint` from **persisted** sessions in canonical order (`orden,id`): include `id,orden,tipo_entrenamiento,duracion_min,rpe,carga_sesion,comentarios_entrenamiento` (stable serialization + hash/HMAC). Fingerprint represents the exact discardable set.
+- `discard_token` is **server-signed** (reuse HMAC pattern aligned with `app/csrf.py` / `settings.secret_key`; short expiry, e.g. 15 min) containing: `purpose=discard_sessions`, `atleta_id`, `fecha_iso`, `registro_id`, `session_state_fingerprint`, `exp`. Tampering fails signature; state change fails fingerprint match.
 
-### 5.4 Conditional fields (backend normalizes; frontend mirrors)
-9. `hay_molestia=false` ⇒ clear/ignore `molestia_zona`, `molestia_zona_otra`, `molestia_dolor`, `afecta_entrenamiento`.
-10. `hay_molestia=true` ⇒ require `molestia_zona` non-empty subset of whitelist, `molestia_dolor` 1-10, `afecta_entrenamiento` 0-3. If `otro` in `molestia_zona` ⇒ require non-empty `molestia_zona_otra` (trimmed, max length); if `otro` absent ⇒ clear `molestia_zona_otra`.
-11. `sintomas_enfermedad=false` ⇒ clear/ignore `detalle_sintomas`. `true` ⇒ require `detalle_sintomas` (trimmed, non-empty) unless PO relaxes — **recommend required for clinical usefulness**.
+**Two-step flow**
+- **Step 1 (intent, no deletion):** client requests `entreno_hoy=false` while persisted record has sessions. Server: acquire parent-record lock (§5.4), load record+sessions, recompute fingerprint, **do not delete**, render 422/confirmation-required response with count/summary, fresh `discard_token`, and form state preserved.
+- **Step 2 (explicit confirm):** UI requires deliberate action (checkbox “Confirmo descartar N sesiones” + submit; optional modal). POST includes `discard_token` + explicit confirm flag. **Backend, in one transaction with lock held:**
+  1. Lock `RegistroDiario` row for `(user.id,hoy())` (parent-record lock).
+  2. Reload current sessions; recompute current fingerprint.
+  3. Verify token signature/expiry/purpose/`atleta_id`/`fecha`/`registro_id` **and** `token.fingerprint == current_fingerprint`.
+  4. If any check fails (stale/changed/wrong/missing) → **reject 422, delete nothing**, issue new token for current state.
+  5. Only if valid → set `entreno_hoy=false`, remove sessions (delete-orphan/explicit) and commit **same transaction**.
+- **Cancellation**: no confirmed valid POST → sessions preserved.
 
-### 5.5 Validation, concurrency, security
-12. Backend authoritative for all ranges/whitelists/conditionals/load math. CSRF required (project `csrf_input`/validation). 
-13. Concurrency: unique `(atleta_id,fecha)` + transaction; stale discard token prevents cross-state deletion.
+### 5.4 Concurrency, locking, and transaction conventions (evidence-based)
+**Project evidence (verified):** `app/database.py` uses `SessionLocal(autocommit=False, autoflush=False)` + `get_db()` yield/finally close; **no `with_for_update`/`begin_nested` patterns found** in `app/`. Routers commit via `db.commit()` and handle `IntegrityError` with `db.rollback()` then user-facing response (`app/routers/atletas.py`, `pagos.py`).
+
+**Required implementation details (PostgreSQL authoritative):**
+- **Parent-record lock protocol (applies to every operation that modifies sessions or discards them):** lock the `RegistroDiario` row first, then validate token/fingerprint, then mutate sessions/record, then commit — all in the same request transaction. **PostgreSQL authoritative mechanism:** `SELECT ... FOR UPDATE` on the `RegistroDiario` row (`session.execute(select(RegistroDiario).where(...).with_for_update())` or equivalent). This serializes concurrent mutators for the same `(atleta,fecha)`.
+- **SQLite/test caveat:** `SELECT FOR UPDATE` is **not** equivalent across databases and is effectively a no-op/unsupported semantics in SQLite (project tests use SQLite in-memory — `tests/conftest.py`). Therefore: **do not claim row-lock concurrency is validated under SQLite**. Specify **PostgreSQL disposable-DB tests** as authoritative for: discard race, concurrent session modification vs stale token, and concurrent create. Unit/functional logic tests may still run on SQLite; concurrency/locking acceptance is PG-only.
+- **Session-state recheck after lock:** mandatory (prevents token validated against stale pre-lock snapshot).
+
+### 5.5 Concurrent daily-record creation — correct SA recovery (required)
+Unique `(atleta_id, fecha)` can raise `IntegrityError` on concurrent inserts. Plan must use a safe recovery compatible with project `IntegrityError` handling:
+1. Perform find-or-create attempt in a transaction (optionally `SELECT FOR UPDATE` if row exists to stabilize update path).
+2. On `IntegrityError` (likely unique violation): **`db.rollback()`** to clear failed transaction state (required with SQLAlchemy/Session after DB error).
+3. Start/use a clean transaction scope and **reload** existing `RegistroDiario` for `(atleta_id, hoy())` (with lock if mutating sessions).
+4. Reapply **already-validated** form data and session operations (respecting §5.3/§5.6) and `db.commit()`.
+5. **No duplicate records, no partial session persistence**: never commit sessions against a rolled-back/ambiguous parent; all mutations only after valid parent state established.
+- If reload fails unexpectedly, return controlled 409/422 error (not partial write). Log/handle per project norms.
+
+### 5.6 Explicit session deletion/update semantics (required)
+- **Stable IDs**: every persisted session has `id`. Forms/APIs that modify existing sessions submit `session_id` (hidden) per row; new rows have no id.
+- **Ownership/record binding check**: backend verifies each submitted `session_id` belongs to the locked `RegistroDiario` for `(user.id,hoy())`. Reject unknown/foreign ids (422/403) — no cross-record mutation.
+- **No implicit delete by omission (default safe rule):** omitting a session id from a generic payload **must not** delete it. **Individual session deletion is explicit and intentional** (e.g., a dedicated “remove session” action/flag with `session_id` processed transactionally, or an explicit `delete_session_ids[]` set). **Exception — explicit, validated complete replacement operation:** allowed **only** when the request is unambiguously marked as a full replacement (e.g., `session_update_mode=replace`), the server has locked the record, validated the full submitted set, and confirmed any discard implications; even then, deletions are the explicit result of that validated operation — not an accidental omission. Prefer explicit remove actions for UI simplicity/safety.
+- **`entreno_hoy` true→false**: never uses implicit omission; uses §5.3 discard protocol only.
+- Cancel/invalid confirmation preserves sessions. Avoid unnecessary new endpoints if form architecture supports (e.g., POST with action/mode + explicit ids).
+
+### 5.7 Conditional fields (backend normalizes)
+- `hay_molestia=false` ⇒ clear `molestia_zona`, `molestia_zona_otra`, `molestia_dolor`, `afecta_entrenamiento`.
+- `hay_molestia=true` ⇒ require non-empty whitelisted `molestia_zona`, `molestia_dolor` 1-10, `afecta_entrenamiento` 0-3; if `otro` selected require trimmed non-empty `molestia_zona_otra` (max 120), else clear it.
+- `sintomas_enfermedad=false` ⇒ clear `detalle_sintomas`. `true` ⇒ accept/display **optional** `detalle_sintomas` (trimmed) — **not mandatory without PO approval**.
 
 ## 6. Frontend Plan (responsive, reuse project conventions)
-**Files**: keep `/parte` route; redesign `app/templates/atleta/parte.html`; extend `app/templates/_campos.html` (1-10 scale macro w/ labels+guidance, multi-select regions + conditional `otro` text). Minimal progressive JS in existing static pattern if present (verify `app/static/`) for dynamic session rows & discard modal/step — **no new deps**.
+- Keep `/parte` route; redesign `app/templates/atleta/parte.html`; extend `_campos.html` (1-10 scale+guidance, multi-region select, conditional `otro` text). Progressive JS only if patterned in `app/static/` — no new deps.
+- **5 categories A–E** per requirements (sleep/hours; fatigue/dolor muscular; estrés/ánimo; molestias conditional + `afecta_entrenamiento`; síntomas/`detalle_sintomas` optional conditional + comentarios).
+- `entreno_hoy` toggle: hide training when No; when Yes dynamic session rows with **stable `session_id`**, explicit remove control, add/edit, per-session and daily load previews (server authoritative).
+- Discard UX: explicit confirm step bound to server token/state; on 422 preserve values/sessions and show fresh confirmation state. CSRF preserved. Repopulate on errors.
 
-- **5 categories**: (A) Descanso/sueño `sueno_calidad` 1-10, `horas_sueno`. (B) Fatiga/recuperación `fatiga` 1-10, `dolor_muscular` 1-10. (C) Psicológico `estres` 1-10, `animo` 1-10. (D) Condición/molestias `hay_molestia` → multi `molestia_zona` + `molestia_zona_otra` (shown/required iff `otro`), `molestia_dolor`, `afecta_entrenamiento`. (E) Salud/observaciones `sintomas_enfermedad` → `detalle_sintomas`, `comentarios`.
-- `entreno_hoy` after wellness: hide training when No; when Yes show dynamic session list (add/edit/remove), per-session load preview and daily total (JS) — server recomputes.
-- Yes→No with existing sessions: UI requires explicit step; posts `discard_token` + confirm flag; if backend returns confirmation-required, preserve visible state and show warning/count.
-- Repopulate all submitted values/sessions on 422; update today without duplication.
+## 7. Migration & Historical Data Strategy (safe, ops-aware)
+**Established:** no fabrication from weekly; weekly model fully replaced; `partes_semanales` table+data dropped **only after all functional refs replaced**; unrelated data intact. Never execute prod migrations in this task.
 
-## 7. Migration & Historical Data Strategy
-**Established (not a product decision):** weekly records **will not** be converted to daily; weekly model completely replaced; `partes_semanales` table+data removed **only after all functional references replaced**; unrelated data intact (`users, atletas, marcas, pagos, asistencias`, etc.). **Never fabricate daily records from historical weekly data. Never execute production migrations.**
+### Alembic (forward-only; never modify `d61e48816ec5`, `a3f1c9e27b04`)
+1. **Expand**: `<new>_add_registros_diarios_sesiones.py` — create new tables/constraints/indexes/checks only.
+2. **Application replacement** (code/tests/scripts/templates/docs refs) until grep gate zero.
+3. **Contract (separate, controlled)**: `<new>_drop_partes_semanales.py` — drops weekly table **only** under hard gates.
 
-### Alembic (forward-only; never modify historical revisions `d61e48816ec5`, `a3f1c9e27b04`)
-1. **`add_registros_diarios_sesiones`** (expand): create new tables/constraints/indexes/FKs/checks. No data copy.
-2. **Application replacement** (code/tests/scripts/templates) until grep gate is zero.
-3. **`drop_partes_semanales`** (contract, separate migration): drop table/indexes **only when** repo-wide functional refs are zero and full tests pass.
+### Critical deployment safety (corrects auto-`upgrade head` risk)
+**Evidence (verified):** `render.yaml` build command runs `alembic upgrade head`; `DEPLOY.md`/`README.md` instruct `alembic upgrade head`. **Separate Alembic revisions do NOT prevent execution if deploy tooling runs `upgrade head` to latest.**
 
-### Safety & validation
-- **Destructive migration explicitly controlled**: Phase 7 gated; production execution requires **verified backup/snapshot + explicit approval + maintenance window** (not performed here).
-- Validate on **disposable PostgreSQL**: `alembic upgrade head` on empty and seeded-like disposable DB; run test suite against disposable PG config. Existing `tests/conftest.py` uses SQLite in-memory for speed — **add/plan PG migration validation path** (separate job/script) because ARRAY/check behavior differs.
-- **Historical impact**: all `partes_semanales` rows become unavailable after drop (historic weekly trends/alerts/cruces on that data lost unless exported externally). Unrelated modules unaffected.
+**Required safe operational sequence:**
+1. Create expand revision and **merge/deploy it such that automatic deployment runs only up to expand** — implementation must use a **controlled mechanism** (choose one, document in impl): e.g. keep drop revision out of deployed branch until authorized; or temporarily set Alembic target/branching so production upgrades stop at expand (e.g. deploy only expand commit; add drop in later authorized change); or change `render.yaml`/release process to `alembic upgrade <expand_revision>` for the deploy that must not drop, then a separately authorized job runs `alembic upgrade <drop_revision>`/`head`. **The plan requires the drop revision to be excluded from automatic deployment execution.**
+2. Deploy app code that no longer depends on weekly model (can follow expand).
+3. Verify: grep gate zero, full tests green, PG-disposable migration validation green, runtime smoke checks.
+4. **Only then**, via **separately controlled, explicitly authorized operation** (not normal auto-deploy): take **verified backup/snapshot**, approved maintenance window, execute drop migration on production. Never in this task.
+5. Rollback readiness: backup restore path; app rollback compatible with schema state.
+
+**Historical impact:** `partes_semanales` rows become unavailable after drop (not migrated/fabricated). Unrelated modules/data unaffected.
 
 ## 8. Statistics, Load & Wellness Aggregation Contracts
+- **Load**: `carga_sesion=duracion*rpe` (backend), `carga_diaria=Σ carga_sesion`, `carga_semanal=Σ carga_diaria` (Mon–Sun) over **reported days only**. Missing ≠ 0.
+- **Wellness (1–10) + `horas_sueno`**: daily = stored observation. Weekly average = mean over **reported days only**; if `dias_reportados==0` → `None` (never 0). Report `dias_reportados` + context counts (`dias_con_entreno`, `dias_con_molestia`, `dias_con_sintomas`). Missing row ≠ low/zero value — always distinguish in data/UI.
+- Charts/crosses: daily or derived-weekly from daily rows; `cruce_con_marcas` adapted to `fecha`/derived week. `grafico.py` generic.
 
-### 8.1 Load (specified)
-- `carga_sesion = duracion_min × rpe` (per session, backend-computed).
-- `carga_diaria = Σ carga_sesion` for the daily record (0 when `entreno_hoy=false` and no sessions).
-- `carga_semanal = Σ carga_diaria` over calendar/training week (Mon–Sun, `lunes_de`) **counting only days with an existing daily record**. Missing reports contribute **no value** (not 0) to load evidence; weekly aggregates must also expose `dias_reportados`/missing counts.
+### 8.3 ACWR — verified current state + deferred finalization (do not block core)
+**Verified (repo evidence):** `app/services/alertas.py::acwr(serie)` uses `serie[-1]['carga']` as acute / mean of up to 4 prior weekly `carga` values as chronic; returns `None` if no last carga, <2 prior cargas, or zero chronic. Weekly `carga` from `bienestar.carga_ua = rpe * minutos_totales` (single aggregate per weekly report). Thresholds `ACWR_ALTO=1.5`, `ACWR_BAJO=0.8` (monitoring labels only).
 
-### 8.2 Wellness aggregation (1–10), missing vs low (specified)
-For each 1–10 metric (`sueno_calidad,fatiga,dolor_muscular,estres,animo`) and `horas_sueno`:
-- **Daily value**: the stored observation for that date (or null only if field truly optional — target model requires core wellness fields).
-- **Weekly average**: arithmetic mean over **reported days only** in the week; if `dias_reportados==0` → `None` (never 0). Report `dias_reportados` and `dias_esperados/posibles` context where useful.
-- **Missing observations**: absence of a `RegistroDiario` row — **never imputed as 0 and never treated as “low wellness”**.
-- **Counts**: `dias_reportados`, `dias_con_entreno`, `dias_con_molestia`, `dias_con_sintomas`, etc., derived from existing daily rows.
-- Distinguish explicitly in services/templates: `sin dato`/missing vs `valor bajo`.
+**Viable technical candidates (to evaluate, not approve as final):** (A) keep weekly buckets derived from daily sums (acute=last complete week sum, chronic=mean prior 3–4 week sums) — closest continuity; (B) rolling 7-day acute / 28-day chronic ÷4 — common variant but **not validated here**. **Missing reports** must reduce observed coverage and can force `None`; never treat missing as 0.
 
-### 8.3 ACWR — adaptation required (evidence-based, no invented validity)
-**Current (verified):** `app/services/alertas.py::acwr` computes acute = `serie[-1]["carga"]` (last week) / chronic = mean of up to previous 4 weekly `carga` values; needs >=2 prior weeks. Weekly `carga` comes from `bienestar.carga_ua` (`rpe*minutos_totales`) — one aggregate per weekly report.
+**Minimum-data/coverage rules required (specify in impl design, validate on PG/data):** minimum observed days or minimum prior weekly buckets; explicit `None` when sparse. Exact windows, divisors, and coverage thresholds **require product-owner approval + calibration evidence**.
 
-**Required change (specify, finalize numbers with care):**
-- Build **daily load series** from daily records (missing day = unknown, not 0). Derive **weekly load sums** over reported days for comparability, **or** (recommended for daily system) use rolling windows: e.g. **acute = sum(load) over last 7 days** (or last N reported/eligible days — define explicitly), **chronic = average weekly load over prior 3–4 weeks = (sum(load) over prior 21–28 days) / (3 or 4)**, computed only when sufficient observed coverage. **Exact window and minimum-data rules are a technical recommendation requiring implementation-time validation/tests; do not claim injury-prediction validity.**
-- Exclude missing days from sums; if coverage is too sparse (e.g. < X reported days in chronic window — define threshold), return `None`.
-- Keep `ACWR_ALTO/BAJO` as **reassessed initial monitoring thresholds** (see §9) — do not assume weekly semantics unchanged.
+**Plan decision:** **isolate ACWR from the first implementation phase**. Phase 2/3 deliver core daily records, sessions, load/wellness contracts, and implementable alerts (§9.1) **without** reintroducing fixed ACWR business rules. ACWR adaptation ships only after approved formula/windows/coverage (deferred work item).
 
-### 8.4 Charts & crosses
-- Daily or derived-weekly series from daily rows; `cruce_con_marcas` joins on `fecha`/derived week. `grafico.py` remains generic.
+## 9. Alerts — separated by readiness (no mechanical transfer, no medical claims)
 
-## 9. Alerts — Concrete Daily Semantics & Reassessed Thresholds
-
-**Principles:** monitoring tools, not medical diagnoses/injury predictions. Compare athlete to self where meaningful (preserve current philosophy). Missing ≠ low/zero.
-
-### 9.1 Alert types (proposed concrete semantics)
-| Tipo (proposed key) | Meaning | Trigger (initial rule, reassess) | Severity (initial) |
+### 9.1 Implementable with established requirements (Phase 5, initial delivery)
+| Key | Trigger (evidence-based on new data) | Missing-data behavior | Severity |
 |---|---|---|---|
-| `sin_registro_hoy` (replaces `sin_parte`) | Missing **wellness/report** for today | No `RegistroDiario` for `(atleta, hoy())` after local cutoff/context used by UI — **define**: show as “pendiente hoy” in dashboards; alert severity `media`/`baja` configurable. **Distinguish from “no training today”.** | media (recommended) |
-| `sin_registro_reciente` (optional) | Repeated missing reports | No record for last `N` days (recommend N=2–3) — **requires PO approval**. | baja/media |
-| `sin_entreno_registrado_hoy` (if needed) | Has today record but `entreno_hoy=false` | Informational only, **not** a risk alert; may appear in summary, not “problem” list. | info/none |
-| `carga_alta_dia` | High/unusual **daily** load | `carga_diaria >= UMBRAL_CARGA_DIA` (absolute, initial placeholder) **or** > `P%` of athlete’s recent personal daily/weekly-derived norm — requires calibration. | media/alta |
-| `salto_de_carga` (ACWR/adapted) | Acute/chronic spike | Recomputed ACWR >= `ACWR_ALTO` with sufficient coverage. | alta (keep concept) |
-| `caida_de_carga` | Underload | ACWR <= `ACWR_BAJO` with sufficient coverage. | baja |
-| `bienestar_bajo` | Low wellness (daily or derived) | Composite/index on 1-10 (e.g. mean of 5 scales <= threshold, or >=K scales <=2) — **must be rebaselined from 1-5/20**. | alta/media |
-| `item_minimo` / `bienestar_item_critico` | Any critical item | Any core wellness item == 1 (on 1-10) — stronger signal; confirm. | alta |
-| `caida_bienestar` | Drop vs self baseline | % drop vs prior `M` reported days/weeks average, min observations required. | alta/media |
-| `molestia_reportada` | Discomfort | `hay_molestia` true; severity by `molestia_dolor` and/or `afecta_entrenamiento`. | media/alta |
-| `sintomas_enfermedad` | Illness symptoms | `sintomas_enfermedad` true (inform coach; not diagnosis). | media/alta (configurable) |
-| `sueno_insuficiente` | Sleep low | `horas_sueno < SUENO_MINIMO` over `K` **reported** days (ignore missing). | media |
-| `pago_vencido` | Billing | Unchanged. | as today |
+| `sin_registro_hoy` (replaces `sin_parte`) | No `RegistroDiario` for `(atleta, hoy())` | N/A (absence is the signal); distinct from “no training” | **PO approval** (suggest media) |
+| `no_entreno_hoy` (informational) | Today record exists and `entreno_hoy=false` | Only if record exists | **informational, not a risk alert** (exclude from “problem” escalation) |
+| `molestia_reportada` | `hay_molestia=true` | Missing report ⇒ no alert; report severity uses `molestia_dolor`/`afecta_entrenamiento` | **PO approval** |
+| `sintomas_enfermedad` | `sintomas_enfermedad=true` | Missing ⇒ no alert; `detalle_sintomas` optional display | **PO approval** |
+| `pago_vencido` | existing billing logic | unchanged | unchanged |
 
-### 9.2 Thresholds — reassessment (no mechanical transfer)
-- **Do not copy** `BIENESTAR_BAJO=UMBRAL_MAL` (20-scale weekly), 1-5 item logic, or weekly-only sleep windows without redefining for daily 1-10 + missing data.
-- **Recommended initial starting points (product-owner approval required; calibrate after data):** `SUENO_MINIMO` keep 7.0h concept but apply to reported days; `DOLOR_ALTO` keep 5/10 concept if retained (now `molestia_dolor` 1-10 daily — aligns); `ACWR_ALTO/BLO` 1.5/0.8 as monitoring defaults pending recalibration; define new `BIENESTAR_*` on 1-10 composite with explicit formula.
-- All alert copy must avoid definitive medical/injury claims.
+### 9.2 Requires explicit product-owner approval (defer fixed rules)
+- `sin_registro_reciente` (enable? N days/window).
+- `bienestar_bajo` / `item_minimo` / `caida_bienestar` on 1-10 — **no transfer** of 1-5/20 thresholds; composite formula, cutoffs, windows, and min observations need PO approval.
+- `sueno_insuficiente` daily window/K over reported days.
+- `carga_alta_dia` / unusual load absolute or personal-norm rule.
+- Exact severities/copy for coach UX.
+- ACWR thresholds/enablement post-adaptation.
+
+### 9.3 Requires sufficient historical observations / calibration (defer)
+- Personal-baseline alerts (drop/load norms), ACWR calibration, any relative percentile rules — implement only after data coverage policy + PO approval.
+
+**Rule:** do not ship ambiguous thresholds as fixed business rules. Present monitoring indicators only, never medical diagnosis/injury prediction.
 
 ## 10. Security & Data Integrity
-- Reuse `get_current_user`/role guards, CSRF (`app/csrf.py`/`csrf_input`), SQLAlchemy sessions. 
-- Ownership: athlete routes scope to `user.id` only. 
-- Server date = `tiempo.hoy()`; loads recomputed server-side; conditional normalization server-side.
-- Discard protection: signed+state-bound `discard_token`, verified in-transaction; rejects stale mutations.
-- Concurrency: unique `(atleta_id,fecha)` + integrity handling; transactional session replacement.
+- Reuse `get_current_user`/role guards, CSRF (`app/csrf.py`), `get_db()`/SQLAlchemy session patterns. Ownership enforced on every query/mutation.
+- Server date + server recompute + backend normalization. Signed discard token + lock + fingerprint recheck. Unique constraint + `IntegrityError` rollback/reload recovery. PG is authoritative for locking/concurrency validation.
 
 ## 11. Testing Strategy (plan; NOT RUN now)
-1. Create daily record (athlete, server date). 2. Update today no duplicate. 3. Unique `(atleta,fecha)` incl. concurrent/integrity path. 4. `America/La_Paz` `hoy()` authority; client date ignored/rejected. 5. `entreno_hoy=false` saves no sessions. 6. One session: `carga_sesion` + daily total correct. 7. Multiple sessions add/edit/remove; totals. 8. Reject invalid `duracion_min<=0`, `rpe` out of 1-10, wellness 1-10 out of range. 9. Conditionals: molestia/síntomas/`otro`+`molestia_zona_otra`. 10. **Yes→No discard**: no token/confirm → 422, sessions preserved; stale token (sessions changed) → 422, preserved; valid token+confirm → sessions deleted in transaction. 11. `entreno_hoy=true` + 0 sessions → 422. 12. Cross-athlete blocked. 13. Aggregations treat missing as missing (not zero). 14. Alerts/derived weekly stats. 15. Alembic on **disposable PostgreSQL** (`upgrade head`, new migrations). 16. Full `pytest` regression — NOT RUN.
+**SQLite (existing fast path, `tests/conftest.py`) — logic/validation:** create/update today; unique handling path (where feasible); `hoy()` authority; `entreno_hoy=false` no sessions; 1/multi sessions + load math; invalid ranges/types; conditional `molestia`/`otro`/`molestia_zona_otra`; `sintomas_enfermedad` with optional `detalle_sintomas`; `entreno_hoy=true`+0 sessions → 422; cross-athlete blocked; aggregations missing≠0; non-ACWR alerts per approved subset.
 
-**Modify/replace**: `tests/conftest.py` helpers (`crear_registro_diario`+sessions), `test_parte.py` rewrite, `test_bienestar.py`, `test_alertas.py`, `test_consultas.py`; keep unrelated modules green.
+**PostgreSQL disposable DB (authoritative) — migrations/concurrency/locking:** `alembic upgrade head` (expand path), `SELECT FOR UPDATE` discard/modify protocol, stale-token rejection under concurrent change, concurrent create `IntegrityError` recovery, drop-migration dry-run in disposable env, ARRAY/check behavior. **Do not treat SQLite as proof of PG row-lock behavior.**
+
+Full `pytest` regression — NOT RUN. Modify/replace: `conftest.py`, `test_parte.py` (rewrite), `test_bienestar.py`, `test_alertas.py`, `test_consultas.py`; keep unrelated green.
 
 ## 12. Implementation Phases (refined, dependency-ordered)
 
 ### Phase 0 — Prep & guardrails
-- **Files**: refs only + inventory checklist. **Acceptance**: grep baseline for `ParteSemanal|partes_semanales|parte_de_semana|/parte\\?semana|SEMANAS_EDITABLES|carga_ua|sin_parte` documented.
+- Inventory grep baseline; confirm test/PG-disposable strategy. **Acceptance**: baseline documented.
 
 ### Phase 1 — New schema (expand, forward-only)
-- **Files**: `app/models/registro_diario.py`, `app/models/sesion_entrenamiento.py` (or per style), `app/models/__init__.py` (add exports), `alembic/versions/<new>_add_registros_diarios_sesiones.py`. **No edits to historical migrations.**
-- **Acceptance**: models import; migration applies on disposable PG; unrelated tables untouched.
+- **Files**: `app/models/registro_diario.py`, `sesion_entrenamiento.py` (or project style), `app/models/__init__.py`, `alembic/versions/<new>_add_registros_diarios_sesiones.py`. No historical migration edits.
+- **Acceptance**: imports OK; applies on disposable PG; unrelated tables intact.
 
-### Phase 2 — Core domain services
-- **Files**: `app/services/bienestar.py` (evolve carefully) or new `seguimiento_diario.py` + migrate callers; `app/services/alertas.py`; `app/services/grafico.py` (minimal).
-- **Acceptance**: unit-testable pure calcs for load/aggregation/missing handling/ACWR adaptation; thresholds isolated/constants documented.
+### Phase 2 — Core domain services (no ACWR business rule)
+- **Files**: `app/services/bienestar.py` (careful evolution) and/or focused service module, `alertas.py` (implementable subset only), `grafico.py` minimal.
+- **Acceptance**: load/wellness/aggregation contracts + missing≠0; ACWR isolated/deferred (no fixed new threshold behavior shipped without approval).
 
-### Phase 3 — Router/workflow (transactional, secure discard)
-- **Files**: `app/routers/parte.py`, shared validation/helpers (and signed discard-token helper aligned with `app/csrf.py`/`config` secret).
-- **Acceptance**: tests 1–12 pass for router rules; server date/ownership/CSRF enforced.
+### Phase 3 — Router/workflow (transactional, locked discard, explicit session ops, IntegrityError recovery)
+- **Files**: `app/routers/parte.py`, discard-token helper aligned with `app/csrf.py`/secret patterns.
+- **Acceptance**: server date/ownership/CSRF; `entreno_hoy` rules; explicit session IDs/remove; stale-proof discard w/ PG-authoritative lock protocol; correct `IntegrityError` rollback/reload/reapply.
 
 ### Phase 4 — UI/templates
-- **Files**: `app/templates/atleta/parte.html`, `_campos.html`, nav/pending in `atleta/inicio.html`, `mis_datos.html`, `panel/*`, `_nav/_tabbar`, minimal static JS/CSS if patterned.
-- **Acceptance**: responsive A–E form, conditional fields, dynamic sessions, discard confirmation UX backed by server flow, error repopulation.
+- **Files**: `app/templates/atleta/parte.html`, `_campos.html`, athlete/panel/nav templates, minimal static JS/CSS if patterned.
+- **Acceptance**: A–E form, 1-10 visuals, `otro`+`molestia_zona_otra`, optional conditional `detalle_sintomas`, dynamic sessions (stable IDs/explicit remove), discard confirm UX, previews, repopulation.
 
-### Phase 5 — Consumers & de-weekly-fy
-- **Files**: `app/routers/panel.py,atletas.py,estadisticas.py,cuenta.py`, templates, any remaining refs (including `scripts/` except final removal handled carefully).
-- **Acceptance**: **zero functional runtime refs** to weekly model in app/tests (allow only migration history? historical alembic files retain table names by definition — exclude `alembic/versions/d61e48816ec5*`, `a3f1c9e27b04*` from “functional ref” gate; app code/tests/scripts must be zero). Dashboards coherent.
+### Phase 5 — Consumers & de-weekly-fy (excluding deferred alerts)
+- **Files**: `app/routers/panel.py,atletas.py,estadisticas.py,cuenta.py`, templates, `scripts/seed*.py`.
+- **Acceptance**: zero functional weekly refs in `app/tests/scripts` (historical alembic excluded); dashboards coherent; deferred alerts/ACWR not falsely enabled.
 
-### Phase 6 — Tests, seeds, full regression
-- **Files**: `tests/*` per §11, `scripts/seed.py`, `seed_5_atletas.py`, `conftest.py`.
-- **Acceptance**: full `pytest` green on project test setup; PG migration validation completed on disposable DB.
+### Phase 6 — Tests, seeds, regression, PG validation
+- **Files**: `tests/*`, `conftest.py`, seeds.
+- **Acceptance**: `pytest` green (SQLite path) + PG-disposable validations for migrations/locking/concurrency/`IntegrityError` recovery.
 
-### Phase 7 — Contract migration: remove weekly (last)
-- **Files**: remove `ParteSemanal` from `app/models/parte.py`/`__init__` and all imports/usages; `alembic/versions/<new>_drop_partes_semanales.py`; `README.md`, `DEPLOY.md` text.
-- **Preconditions (hard gates)**: Phase 6 green; grep gate = zero functional refs; **verified backup/snapshot before any production run**; explicit approval. **Never run in prod here.**
-- **Acceptance**: disposable PG `upgrade head` drops table; tests still green.
+### Phase 7 — Remove weekly (last, controlled ops)
+- **Files**: remove `ParteSemanal`/imports; `alembic/versions/<new>_drop_partes_semanales.py`; `README.md`,`DEPLOY.md`,`render.yaml` deployment mechanism adjusted so **drop is not auto-executed**.
+- **Hard gates**: Phase 6 green; grep gate zero; **verified backup/snapshot + explicit approval + maintenance window**; separately controlled execution only. **Never run in prod here.**
 
-## 13. Decisions — Established / Recommended / Resolved / Needs Approval
+## 13. Decisions — Established / Resolved / Technical (repo-safe) / Needs PO Approval
 
-**Established (requirements):** daily per athlete+local date unique; server `America/La_Paz` date; athlete create/update today only; no duplicates; multi-sessions; session/daily/weekly load formulas as §8.1; fatigue independent of session RPE; `entreno_hoy` + secure explicit discard (never silent, never JS-only, backend authoritative, cancel preserves); conditional validation/cleanup; transactional + concurrent-safe; stats from daily, weekly derived from daily; no fabrication of daily from historic weekly; replace/remove weekly deps; drop old table+data after refs replaced; preserve unrelated data; no prod migration execution.
+**Established (requirements):** daily unique per athlete+local date; server `America/La_Paz`; athlete today-only; multi-sessions; load formulas `duracion*RPE`, daily sum, weekly sum over reported days; fatigue independent of RPE; `entreno_hoy` rules + secure explicit discard (no silent/JS-only, cancel preserves); conditional validation/cleanup; transactional+concurrent-safe; stats from daily, weekly derived; missing ≠ 0; no fabrication from weekly; replace deps; drop old table+data after refs replaced (controlled); preserve unrelated data; no prod migration execution.
 
-**Resolved in this plan (technical decisions):**
-- **A**. Stale-proof signed `discard_token` bound to `(atleta,fecha,registro,session_state_hash,expiry)`; verified in-transaction; not a freely-editable boolean.
-- **B**. `entreno_hoy=true` ⇒ **>=1 valid session** required (frontend+backend).
-- **C**. Load contracts + missing ≠ 0 + ACWR adaptation direction (rolling/derived windows, coverage guards) — exact window constants finalized in impl with tests.
-- **D**. Wellness aggregation over reported days only; counts; missing ≠ low.
-- **E**. Concrete daily alert catalog + reassessment rule (no mechanical transfer); initial severity proposals.
-- **F**. `molestia_zona_otra` required iff `otro`; cleared otherwise; backend-validated.
-- **G**. Historic weekly data: **no longer unresolved** — will not convert, table+data dropped post-ref replacement; destructive migration controlled w/ verified backup pre-prod; not executed.
+**Resolved (this plan):** stale-proof signed `discard_token` bound to locked state fingerprint; discard verified in-transaction after lock; all session-mutating ops use parent-record lock protocol (PG authoritative); `entreno_hoy=true` ⇒ >=1 session; stable session IDs + explicit delete (no implicit omission except explicit validated full-replacement mode); `IntegrityError` rollback→reload→reapply; `molestia_zona_otra` conditional; `detalle_sintomas` **optional** when symptoms true (not mandatory w/o PO); ACWR isolated from Phase 1 core; safe deployment sequence excluding drop from auto `upgrade head`.
 
-**Recommended (confirm or override):** `registros_diarios`/`sesiones_entrenamiento` naming; `molestia_zona` PG `ARRAY(String)` + whitelist; persist `carga_sesion`, derive daily total; replace-session-set per transaction; keep `/parte` route; indexed session form fields.
+**Technical choices resolvable from repo conventions (no PO approval needed):** reuse HMAC signing pattern (`app/csrf.py`/secret), `get_db`/`db.commit()`/`db.rollback()` flow, FastAPI+Jinja+CSRF patterns, indexed form fields, keep `/parte` route, Alembic forward-only workflow, PG-disposable validation for PG-specific behavior.
 
-**Still requires user/product-owner approval:**
-1. **Exact ACWR windows & minimum coverage** (e.g. 7d acute / 28d chronic ÷4, min reported days) and final numeric thresholds after rebaseline.
-2. **Final 1-10 wellness composite formula** and numeric cutoffs (`bienestar_bajo`, `item_minimo` on 1-10).
-3. **`sin_registro_reciente`** (N days) — enable? N?
-4. **`sintomas_enfermedad=true` requires `detalle_sintomas`** — confirm (recommended yes).
-5. **1-10 UI labels/guidance copy** per scale (product text) — I can draft defaults on request.
-6. **Severity levels** for illness/molestia/sin_registro_hoy in coach UX.
-7. Naming confirmation if you prefer `partes_diarias` over `registros_diarios`.
+**Requires product-owner approval (behavior/rules/copy):**
+1. ACWR windows, coverage/min-data rules, and thresholds (or confirm deferral).
+2. 1-10 wellness composite formula/cutoffs and `item_minimo` semantics.
+3. `sin_registro_reciente` enablement/N.
+4. Alert severities and coach-facing copy (including `sin_registro_hoy`, molestia, síntomas).
+5. 1-10 UI labels/guidance text.
+6. `carga_alta_dia` / `sueno_insuficiente` / drop-baseline rules.
+7. Optional naming preference `registros_diarios` vs `partes_diarias`.
 
 ## 14. Dependency Map (text)
-`tiempo.hoy(America/La_Paz)` → `routers/parte.py` (auth+CSRF+server date+ownership) → validate/normalize (conditionals, loads recompute, `entreno_hoy` rules, discard token verify) → **single transaction** → `RegistroDiario` upsert `(atleta,fecha)` + replace `SesionEntrenamiento` set → `services/*` (daily series, derived weekly sums/means over reported days, ACWR, alerts) → `routers/panel,atletas,estadisticas,cuenta` → templates. `alembic` expand → code replace → `alembic` drop `partes_semanales` **last**.
+`tiempo.hoy` → `routers/parte` (auth+CSRF+ownership+server date) → validate/normalize → **lock parent record (PG)** → (discard: verify signed token+fingerprint) → **single transaction** → upsert `RegistroDiario` `(atleta,fecha)` + explicit `SesionEntrenamiento` mutations → `services` (loads, reported-day aggregations, implementable alerts; ACWR deferred) → `routers/panel,atletas,estadisticas,cuenta` → templates. `alembic expand` → code/tests/scripts → controlled `alembic drop` last (excluded from auto-deploy).
 
-## 15. Safest Migration & Deployment Sequence (do not execute)
-1. Resolve §13 approvals. 2. Implement Phases 1–6; validate migrations + tests on disposable PG. 3. Deploy expand migration + new code (no weekly read/write). 4. Verify prod (today record, sessions, discard flow, dashboards, alerts). 5. Confirm zero functional weekly refs. 6. **Verified backup/snapshot + explicit approval** → run drop migration in controlled window (ack weekly data loss). 7. Monitor; rollback plan ready.
+## 15. Migration & Deployment Safety Conditions (hard)
+- Never modify historical Alembic revisions. Expand and drop in **separate** forward revisions.
+- **Drop migration never auto-executed** despite `upgrade head` tooling — enforce via controlled deployment/revision targeting.
+- Drop only after: zero functional weekly refs, Phase 6 green, disposable-PG validation, **verified backup/snapshot**, explicit authorization, maintenance window.
+- Preserve unrelated modules/data. No prod execution in this task.
 
-## 16. Risks, Assumptions, Unresolved
-- **Risks**: alert/ACWR behavior change; ARRAY/PG-specific features require PG validation (SQLite tests may not cover all); discard-token UX complexity; coach confusion over missing≠0.
-- **Assumptions**: Postgres production; FastAPI `Form` (no dominant Pydantic form layer found); reuse `tiempo.lunes_de` for week grouping.
-- **Resolved**: A–G from task (discard stale-proof, `entreno_hoy>=1`, load/agg contracts, alerts catalog, `otro` field, historic weekly drop established).
-- **Remaining (needs approval)**: §13 items 1–7 (ACWR windows/thresholds, wellness composite/cutoffs, recent-missing alert, `detalle_sintomas` required, 1-10 copy, severities, naming).
+## 16. Components Ready for First Implementation Phase (scoped)
+**Ready (after this plan approval):** Phase 1 schema; Phase 2 load/wellness/missing-aggregation contracts and **non-ambiguous** plumbing; Phase 3 core daily create/update, `entreno_hoy` rules, explicit session IDs/remove, locked discard protocol, `IntegrityError` recovery; Phase 4 form/UI structure (with placeholder-approved copy if PO defers text); Phase 5 consumer migration for core tracking; Phase 6 tests/PG validation for core.
 
-## 17. Applicable Verification Results
+**Explicitly deferred:** ACWR final formula/windows/thresholds; `bienestar_bajo/item_minimo/caida_bienestar` composites/cutoffs; `sin_registro_reciente`; `carga_alta_dia`/`sueno_insuficiente` fixed rules; any calibrated personal-baseline alerts; final PO copy/severities beyond safe informational defaults.
+
+## 17. Risks Remaining
+- PG-vs-SQLite behavior (locking, ARRAY, checks) — mitigated by PG-disposable validation.
+- Deployment misconfiguration could run drop if `upgrade head` not controlled — mitigated by §7/§15 hard gates.
+- Alert/UX behavior change; missing≠0 interpretation requires clear UI.
+- Discard-token/fingerprint complexity — needs careful tests.
+- Unapproved thresholds remain deferred (prevents unsafe business rules).
+
+## 18. Applicable Verification Results
 | Check | Result |
 |---|---|
-| Repo/branch/HEAD/clean tree verified (refreshed) | PASS |
-| ses_e8fd located and reused | PASS |
-| Only authorized planning doc updated | PASS |
-| Source/config/DB/migrations/tests modified | **NO** (PASS) |
-| Migrations/tests/prod ops executed | NOT RUN (prohibited) |
+| Repo/branch/HEAD/clean tree (refreshed) | PASS |
+| ses_e8fd context available | PASS |
+| Evidence inspected (`database.py,csrf.py,routers,alembic,render.yaml,DEPLOY,alertas,parte,conftest`) | PASS |
+| Only authorized plan file updated | PASS |
+| Source/DB/migrations/tests modified; migrations/tests executed | NO / NOT RUN (PASS) |
 
-## 18. Recommendation
-**Ready for implementation approval in Code mode**, contingent on resolving the **remaining §13 approval items (1–7)** — especially ACWR window/min-coverage, wellness composite cutoffs, and UI label/copy decisions. Core contradictions (discard confirmation, `entreno_hoy` zero sessions, load/wellness/missing semantics, `otro`, and historic weekly data handling) are now specified and consistent with project constraints (SQLAlchemy 2, PostgreSQL, Alembic forward-only, transactional integrity). Execute Phases 1→7 in order; do **not** drop `partes_semanales` before the zero-functional-ref gate and verified backup.
-
+## 19. Recommendation
+**Ready for scoped Code mode** for **Phases 1–6 core tracking** (daily records, multi-sessions with stable IDs/explicit deletes, secure locked discard, `IntegrityError` recovery, load/aggregation with missing≠0, UI, consumer migration, non-ambiguous alerts), **with ACWR and ambiguous alert thresholds explicitly deferred** until §13 PO approvals are provided. Do **not** execute or auto-deploy the drop migration; follow §7/§15.
