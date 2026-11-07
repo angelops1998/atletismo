@@ -266,9 +266,7 @@ Full `pytest` regression — NOT RUN. Modify/replace: `conftest.py`, `test_parte
 2. 1-10 wellness composite formula/cutoffs and `item_minimo` semantics.
 3. `sin_registro_reciente` enablement/N.
 4. Alert severities and coach-facing copy (including `sin_registro_hoy`, molestia, síntomas).
-5. 1-10 UI labels/guidance text.
-6. `carga_alta_dia` / `sueno_insuficiente` / drop-baseline rules.
-7. ~~Optional naming preference `registros_diarios` vs `partes_diarias`.~~ **Resolved (technical):** `partes_diarios` / `ParteDiaria` (parallel to `partes_semanales` / `ParteSemanal`, repo convention) — not a PO blocker.
+5. `carga_alta_dia` / `sueno_insuficiente` / drop-baseline rules.
 
 ## 14. Dependency Map (text)
 `tiempo.hoy` → `routers/parte` (auth+CSRF+ownership+server date) → validate/normalize → **lock parent record `ParteDiaria` (PG)** → (discard: verify signed token+fingerprint) → **single transaction** → upsert `ParteDiaria` `(atleta,fecha)` + explicit `SesionEntrenamiento` mutations → `services` (loads, reported-day aggregations, implementable alerts; ACWR deferred) → `routers/panel,atletas,estadisticas,cuenta` → templates. `alembic expand` → code/tests/scripts → controlled `alembic drop` last (excluded from auto-deploy).
