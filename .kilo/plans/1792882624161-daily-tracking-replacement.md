@@ -50,11 +50,18 @@
 
 ## 4. Proposed Daily Data Architecture (SQLAlchemy 2 + PostgreSQL)
 
-### 4.1 Daily record — `registros_diarios` (`RegistroDiario`) *(recommended naming)*
+### 4.1 Daily record — `partes_diarios` (`ParteDiaria`) *(resolved — technical naming)*
+> **Naming (resolved, not a PO blocker):** uses existing repo convention — `partes_semanales` / `ParteSemanal` → `partes_diarios` / `ParteDiaria` (direct daily parallel; consistent table/model naming across the reporting domain).
 - `id` PK; `atleta_id` FK→`users.id` `ondelete=CASCADE`, indexed, NOT NULL.
 - `fecha` `Date` NOT NULL — **server-only** `tiempo.hoy()` (`America/La_Paz`); athlete ignores/rejects client date.
-- **Unique** `('atleta_id','fecha')` `uq_registro_diario_atleta_fecha` + indexes `(atleta_id, fecha desc)`, `fecha`.
+- **Unique** `('atleta_id','fecha')` `uq_parte_diaria_atleta_fecha` + indexes `(atleta_id, fecha desc)`, `fecha`.
 - Wellness (required): `sueno_calidad, fatiga, dolor_muscular, estres, animo` Int `CHECK 1-10`; `horas_sueno` `Numeric(4,1)` `CHECK 0-24`. **Fatigue ≠ session RPE**.
+
+**Wellness 1–10 scale definitions (established — not PO-pending):**
+- **Sleep (`sueno_calidad`)**: 1–3 = *Deficient*; 4–6 = *Regular*; 7–10 = *Good*.
+- **Fatigue (`fatiga`), muscular pain (`dolor_muscular`), stress (`estres`)**: 1–3 = *Low*; 4–6 = *Moderate*; 7–8 = *Elevated*; 9–10 = *Extreme*.
+- **Mood (`animo`)**: 1–2 = *Very discouraged*; 3–4 = *Discouraged*; 5–6 = *Regular*; 7–8 = *Good*; 9–10 = *Excellent*.
+UI labels/guidance must reflect these exact ranges and meanings (§6). Alert composite/cutoff rules built on these scales remain PO-pending where noted (§9.2, §13).
 - `hay_molestia` Bool NOT NULL default false. `molestia_zona` **PG `ARRAY(String)`** nullable (whitelist: `cuello,hombros,espalda,cadera,gluteos,muslos,rodillas,pantorrillas,tobillos,pies,brazos,otro`). `molestia_zona_otra` `String(120)` nullable — **required iff `otro` selected; cleared otherwise** (backend). `molestia_dolor` Int `CHECK 1-10` nullable (required iff `hay_molestia`). `afecta_entrenamiento` Int `CHECK 0-3` nullable (required iff `hay_molestia`).
 - `sintomas_enfermedad` Bool NOT NULL default false. `detalle_sintomas` Text nullable — **optional, displayed/accepted conditionally when `sintomas_enfermedad=true`; cleared when false; NOT mandatory without explicit PO approval** (preserves original requirement).
 - `comentarios` Text nullable. `entreno_hoy` Bool NOT NULL.
@@ -62,12 +69,12 @@
 - No mutable security-flag field for discard; confirmation uses signed token + DB-verified state (§5.3).
 
 ### 4.2 Training sessions — `sesiones_entrenamiento` (`SesionEntrenamiento`)
-- `id` PK (**stable identifier, required**). `registro_diario_id` FK→`registros_diarios.id` `ondelete=CASCADE`, indexed, NOT NULL.
+- `id` PK (**stable identifier, required**). `parte_diaria_id` FK→`partes_diarios.id` `ondelete=CASCADE`, indexed, NOT NULL.
 - `orden` Int NOT NULL. `tipo_entrenamiento` String whitelist `velocidad_sprint,resistencia,fuerza,tecnica_coordinacion,movilidad_recuperacion,competencia,entrenamiento_mixto,otro`.
 - `duracion_min` Int NOT NULL `CHECK > 0`; `rpe` Int NOT NULL `CHECK 1-10`.
 - `carga_sesion` Int NOT NULL — **backend recomputed** `duracion_min*rpe` (never trust client); optional DB check.
 - `comentarios_entrenamiento` Text nullable.
-- ORM: `RegistroDiario.sesiones` 1:N, `cascade='all, delete-orphan'`, `order_by=orden,id`. DB cascade `ON DELETE CASCADE` is consistent; ORM orphan handling used only inside explicit transactional operations.
+- ORM: `ParteDiaria.sesiones` 1:N, `cascade='all, delete-orphan'`, `order_by=orden,id`. DB cascade `ON DELETE CASCADE` is consistent; ORM orphan handling used only inside explicit transactional operations.
 
 ### 4.3 Load & aggregation contracts (authoritative)
 - `carga_sesion = duracion_min × rpe`. `carga_diaria = Σ carga_sesion` for the record (`0` only for a **submitted** `entreno_hoy=false` record with no sessions).
@@ -76,7 +83,7 @@
 - No physiological validity claimed.
 
 ### 4.4 Indexes/constraints
-- `uq_registro_diario_atleta_fecha`; date/athlete-date indexes; session FK index. Defense-in-depth checks as feasible.
+- `uq_parte_diaria_atleta_fecha`; date/athlete-date indexes; session FK index. Defense-in-depth checks as feasible.
 
 ## 5. Business Rules, Validation & Integrity (frontend + backend + DB)
 
@@ -102,7 +109,7 @@
 **Two-step flow**
 - **Step 1 (intent, no deletion):** client requests `entreno_hoy=false` while persisted record has sessions. Server: acquire parent-record lock (§5.4), load record+sessions, recompute fingerprint, **do not delete**, render 422/confirmation-required response with count/summary, fresh `discard_token`, and form state preserved.
 - **Step 2 (explicit confirm):** UI requires deliberate action (checkbox “Confirmo descartar N sesiones” + submit; optional modal). POST includes `discard_token` + explicit confirm flag. **Backend, in one transaction with lock held:**
-  1. Lock `RegistroDiario` row for `(user.id,hoy())` (parent-record lock).
+  1. Lock `ParteDiaria` row for `(user.id,hoy())` (parent-record lock).
   2. Reload current sessions; recompute current fingerprint.
   3. Verify token signature/expiry/purpose/`atleta_id`/`fecha`/`registro_id` **and** `token.fingerprint == current_fingerprint`.
   4. If any check fails (stale/changed/wrong/missing) → **reject 422, delete nothing**, issue new token for current state.
@@ -113,7 +120,7 @@
 **Project evidence (verified):** `app/database.py` uses `SessionLocal(autocommit=False, autoflush=False)` + `get_db()` yield/finally close; **no `with_for_update`/`begin_nested` patterns found** in `app/`. Routers commit via `db.commit()` and handle `IntegrityError` with `db.rollback()` then user-facing response (`app/routers/atletas.py`, `pagos.py`).
 
 **Required implementation details (PostgreSQL authoritative):**
-- **Parent-record lock protocol (applies to every operation that modifies sessions or discards them):** lock the `RegistroDiario` row first, then validate token/fingerprint, then mutate sessions/record, then commit — all in the same request transaction. **PostgreSQL authoritative mechanism:** `SELECT ... FOR UPDATE` on the `RegistroDiario` row (`session.execute(select(RegistroDiario).where(...).with_for_update())` or equivalent). This serializes concurrent mutators for the same `(atleta,fecha)`.
+- **Parent-record lock protocol (applies to every operation that modifies sessions or discards them):** lock the `ParteDiaria` row first, then validate token/fingerprint, then mutate sessions/record, then commit — all in the same request transaction. **PostgreSQL authoritative mechanism:** `SELECT ... FOR UPDATE` on the `ParteDiaria` row (`session.execute(select(ParteDiaria).where(...).with_for_update())` or equivalent). This serializes concurrent mutators for the same `(atleta,fecha)`.
 - **SQLite/test caveat:** `SELECT FOR UPDATE` is **not** equivalent across databases and is effectively a no-op/unsupported semantics in SQLite (project tests use SQLite in-memory — `tests/conftest.py`). Therefore: **do not claim row-lock concurrency is validated under SQLite**. Specify **PostgreSQL disposable-DB tests** as authoritative for: discard race, concurrent session modification vs stale token, and concurrent create. Unit/functional logic tests may still run on SQLite; concurrency/locking acceptance is PG-only.
 - **Session-state recheck after lock:** mandatory (prevents token validated against stale pre-lock snapshot).
 
@@ -121,14 +128,14 @@
 Unique `(atleta_id, fecha)` can raise `IntegrityError` on concurrent inserts. Plan must use a safe recovery compatible with project `IntegrityError` handling:
 1. Perform find-or-create attempt in a transaction (optionally `SELECT FOR UPDATE` if row exists to stabilize update path).
 2. On `IntegrityError` (likely unique violation): **`db.rollback()`** to clear failed transaction state (required with SQLAlchemy/Session after DB error).
-3. Start/use a clean transaction scope and **reload** existing `RegistroDiario` for `(atleta_id, hoy())` (with lock if mutating sessions).
+3. Start/use a clean transaction scope and **reload** existing `ParteDiaria` for `(atleta_id, hoy())` (with lock if mutating sessions).
 4. Reapply **already-validated** form data and session operations (respecting §5.3/§5.6) and `db.commit()`.
 5. **No duplicate records, no partial session persistence**: never commit sessions against a rolled-back/ambiguous parent; all mutations only after valid parent state established.
 - If reload fails unexpectedly, return controlled 409/422 error (not partial write). Log/handle per project norms.
 
 ### 5.6 Explicit session deletion/update semantics (required)
 - **Stable IDs**: every persisted session has `id`. Forms/APIs that modify existing sessions submit `session_id` (hidden) per row; new rows have no id.
-- **Ownership/record binding check**: backend verifies each submitted `session_id` belongs to the locked `RegistroDiario` for `(user.id,hoy())`. Reject unknown/foreign ids (422/403) — no cross-record mutation.
+- **Ownership/record binding check**: backend verifies each submitted `session_id` belongs to the locked `ParteDiaria` for `(user.id,hoy())`. Reject unknown/foreign ids (422/403) — no cross-record mutation.
 - **No implicit delete by omission (default safe rule):** omitting a session id from a generic payload **must not** delete it. **Individual session deletion is explicit and intentional** (e.g., a dedicated “remove session” action/flag with `session_id` processed transactionally, or an explicit `delete_session_ids[]` set). **Exception — explicit, validated complete replacement operation:** allowed **only** when the request is unambiguously marked as a full replacement (e.g., `session_update_mode=replace`), the server has locked the record, validated the full submitted set, and confirmed any discard implications; even then, deletions are the explicit result of that validated operation — not an accidental omission. Prefer explicit remove actions for UI simplicity/safety.
 - **`entreno_hoy` true→false**: never uses implicit omission; uses §5.3 discard protocol only.
 - Cancel/invalid confirmation preserves sessions. Avoid unnecessary new endpoints if form architecture supports (e.g., POST with action/mode + explicit ids).
@@ -139,7 +146,7 @@ Unique `(atleta_id, fecha)` can raise `IntegrityError` on concurrent inserts. Pl
 - `sintomas_enfermedad=false` ⇒ clear `detalle_sintomas`. `true` ⇒ accept/display **optional** `detalle_sintomas` (trimmed) — **not mandatory without PO approval**.
 
 ## 6. Frontend Plan (responsive, reuse project conventions)
-- Keep `/parte` route; redesign `app/templates/atleta/parte.html`; extend `_campos.html` (1-10 scale+guidance, multi-region select, conditional `otro` text). Progressive JS only if patterned in `app/static/` — no new deps.
+- Keep `/parte` route; redesign `app/templates/atleta/parte.html`; extend `_campos.html` (1-10 scale+guidance reflecting exact wellness definitions in §4.1: Sleep 1–3 Deficient/4–6 Regular/7–10 Good; Fatigue/Muscular pain/Stress 1–3 Low/4–6 Moderate/7–8 Elevated/9–10 Extreme; Mood 1–2 Very discouraged/3–4 Discouraged/5–6 Regular/7–8 Good/9–10 Excellent; multi-region select, conditional `otro` text). Progressive JS only if patterned in `app/static/` — no new deps.
 - **5 categories A–E** per requirements (sleep/hours; fatigue/dolor muscular; estrés/ánimo; molestias conditional + `afecta_entrenamiento`; síntomas/`detalle_sintomas` optional conditional + comentarios).
 - `entreno_hoy` toggle: hide training when No; when Yes dynamic session rows with **stable `session_id`**, explicit remove control, add/edit, per-session and daily load previews (server authoritative).
 - Discard UX: explicit confirm step bound to server token/state; on 422 preserve values/sessions and show fresh confirmation state. CSRF preserved. Repopulate on errors.
@@ -148,7 +155,7 @@ Unique `(atleta_id, fecha)` can raise `IntegrityError` on concurrent inserts. Pl
 **Established:** no fabrication from weekly; weekly model fully replaced; `partes_semanales` table+data dropped **only after all functional refs replaced**; unrelated data intact. Never execute prod migrations in this task.
 
 ### Alembic (forward-only; never modify `d61e48816ec5`, `a3f1c9e27b04`)
-1. **Expand**: `<new>_add_registros_diarios_sesiones.py` — create new tables/constraints/indexes/checks only.
+1. **Expand**: `<new>_add_partes_diarios_sesiones.py` — create new tables/constraints/indexes/checks only.
 2. **Application replacement** (code/tests/scripts/templates/docs refs) until grep gate zero.
 3. **Contract (separate, controlled)**: `<new>_drop_partes_semanales.py` — drops weekly table **only** under hard gates.
 
@@ -183,7 +190,7 @@ Unique `(atleta_id, fecha)` can raise `IntegrityError` on concurrent inserts. Pl
 ### 9.1 Implementable with established requirements (Phase 5, initial delivery)
 | Key | Trigger (evidence-based on new data) | Missing-data behavior | Severity |
 |---|---|---|---|
-| `sin_registro_hoy` (replaces `sin_parte`) | No `RegistroDiario` for `(atleta, hoy())` | N/A (absence is the signal); distinct from “no training” | **PO approval** (suggest media) |
+| `sin_registro_hoy` (replaces `sin_parte`) | No `ParteDiaria` for `(atleta, hoy())` | N/A (absence is the signal); distinct from “no training” | **PO approval** (suggest media) |
 | `no_entreno_hoy` (informational) | Today record exists and `entreno_hoy=false` | Only if record exists | **informational, not a risk alert** (exclude from “problem” escalation) |
 | `molestia_reportada` | `hay_molestia=true` | Missing report ⇒ no alert; report severity uses `molestia_dolor`/`afecta_entrenamiento` | **PO approval** |
 | `sintomas_enfermedad` | `sintomas_enfermedad=true` | Missing ⇒ no alert; `detalle_sintomas` optional display | **PO approval** |
@@ -219,7 +226,7 @@ Full `pytest` regression — NOT RUN. Modify/replace: `conftest.py`, `test_parte
 - Inventory grep baseline; confirm test/PG-disposable strategy. **Acceptance**: baseline documented.
 
 ### Phase 1 — New schema (expand, forward-only)
-- **Files**: `app/models/registro_diario.py`, `sesion_entrenamiento.py` (or project style), `app/models/__init__.py`, `alembic/versions/<new>_add_registros_diarios_sesiones.py`. No historical migration edits.
+- **Files**: `app/models/parte_diaria.py`, `sesion_entrenamiento.py` (or project style), `app/models/__init__.py`, `alembic/versions/<new>_add_partes_diarios_sesiones.py`. No historical migration edits.
 - **Acceptance**: imports OK; applies on disposable PG; unrelated tables intact.
 
 ### Phase 2 — Core domain services (no ACWR business rule)
@@ -261,10 +268,10 @@ Full `pytest` regression — NOT RUN. Modify/replace: `conftest.py`, `test_parte
 4. Alert severities and coach-facing copy (including `sin_registro_hoy`, molestia, síntomas).
 5. 1-10 UI labels/guidance text.
 6. `carga_alta_dia` / `sueno_insuficiente` / drop-baseline rules.
-7. Optional naming preference `registros_diarios` vs `partes_diarias`.
+7. ~~Optional naming preference `registros_diarios` vs `partes_diarias`.~~ **Resolved (technical):** `partes_diarios` / `ParteDiaria` (parallel to `partes_semanales` / `ParteSemanal`, repo convention) — not a PO blocker.
 
 ## 14. Dependency Map (text)
-`tiempo.hoy` → `routers/parte` (auth+CSRF+ownership+server date) → validate/normalize → **lock parent record (PG)** → (discard: verify signed token+fingerprint) → **single transaction** → upsert `RegistroDiario` `(atleta,fecha)` + explicit `SesionEntrenamiento` mutations → `services` (loads, reported-day aggregations, implementable alerts; ACWR deferred) → `routers/panel,atletas,estadisticas,cuenta` → templates. `alembic expand` → code/tests/scripts → controlled `alembic drop` last (excluded from auto-deploy).
+`tiempo.hoy` → `routers/parte` (auth+CSRF+ownership+server date) → validate/normalize → **lock parent record `ParteDiaria` (PG)** → (discard: verify signed token+fingerprint) → **single transaction** → upsert `ParteDiaria` `(atleta,fecha)` + explicit `SesionEntrenamiento` mutations → `services` (loads, reported-day aggregations, implementable alerts; ACWR deferred) → `routers/panel,atletas,estadisticas,cuenta` → templates. `alembic expand` → code/tests/scripts → controlled `alembic drop` last (excluded from auto-deploy).
 
 ## 15. Migration & Deployment Safety Conditions (hard)
 - Never modify historical Alembic revisions. Expand and drop in **separate** forward revisions.
