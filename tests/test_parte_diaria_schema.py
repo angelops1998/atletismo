@@ -12,6 +12,7 @@ from sqlalchemy import inspect
 from app.models import ParteDiaria, SesionEntrenamiento, ParteSemanal
 from app.models.parte_diaria import MOLESTIA_ZONAS
 from app.models.sesion_entrenamiento import TIPOS_ENTRENAMIENTO
+from conftest import crear_usuario
 
 
 def test_modelos_registrados_en_metadata():
@@ -75,7 +76,7 @@ def test_whitelists_dominio():
     assert "otro" in TIPOS_ENTRENAMIENTO
 
 
-def test_create_schema_sqlite_y_roundtrip_basico(db, crear_usuario):
+def test_create_schema_sqlite_y_roundtrip_basico(db):
     """create_all sobre SQLite (variante JSON para molestia_zona) — sanity check."""
     atleta = crear_usuario(db, username="a1")
     parte = ParteDiaria(
@@ -109,7 +110,7 @@ def test_create_schema_sqlite_y_roundtrip_basico(db, crear_usuario):
     assert parte.sesiones[0].parte_diaria_id == parte.id
 
 
-def test_parte_semanal_historica_sigue_intacta(db, crear_usuario):
+def test_parte_semanal_historica_sigue_intacta(db):
     """Fase 1 no altera modelo/tabla semanal histórica."""
     from app.models.parte import ParteSemanal
     from app.tiempo import lunes_actual
