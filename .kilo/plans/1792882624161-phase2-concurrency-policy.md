@@ -1,6 +1,15 @@
 # Phase 2 Concurrency Policy Resolution — Daily Tracking (`ses_e8fd`)
 
-**Status:** PROPOSED decision report for explicit review/approval **before Phase 2 Code mode**. Read-only investigation/planning only; no code/docs/migrations executed or modified (except this plan file). Preserves approved architecture (PG `SELECT FOR UPDATE` for session mutations, signed discard-confirmation protocol, `uq_parte_diaria_atleta_fecha`, request-scoped SA sessions, atomicity, stable session IDs, explicit session ops, missing≠0, CSRF/auth ownership) unless noted.
+## Decision Resolution (Policy A) — APPROVED / RESOLVED
+
+- **Decision:** **Policy A is APPROVED and RESOLVED.** The user explicitly approved Policy A (recorded in the `ses_e8fd` planning context and reflected in the authoritative implementation plan).
+- **Approval date/context (evidence-based):** approval is explicitly stated by the user in the `ses_e8fd` session context and is incorporated into the authoritative plan as refreshed **2026-11-08** (`.kilo/plans/1792882624161-daily-tracking-replacement.md`, §§0/5.3/5.5a/5.5/13: “Approved/resolved (fixed): **Policy A**”). No additional date/context is asserted beyond this project/session evidence.
+- **Authoritative implementation specification:** `.kilo/plans/1792882624161-daily-tracking-replacement.md` (this supporting document retains historical investigation/analysis; where they differ, the authoritative plan governs implementation details consistent with approved Policy A).
+- **Approved technical policy (fixed, not modified):** (1) signed edit-state token; (2) canonical record-and-session fingerprint; (3) verify submitted state **after** acquiring the PostgreSQL row lock and reloading the record; (4) return **HTTP 409** for stale updates; (5) handle create-race `IntegrityError` through rollback, reload, and conflict response; (6) no silent overwrites; (7) no blind retries; (8) preserve the existing signed discard-confirmation protocol.
+
+> **Historical note:** The sections below preserve the original investigation, technical analysis, alternatives, and reasoning as written when this was a PROPOSED report. Section 9’s former approval request is superseded by the decision above.
+
+**Document status (current):** Policy A **APPROVED/RESOLVED**; supporting analysis retained for traceability. Read-only investigation/planning record; no code/docs/migrations executed or modified by the original report except this plan file. Preserves approved architecture (PG `SELECT FOR UPDATE` for session mutations, signed discard-confirmation protocol, `uq_parte_diaria_atleta_fecha`, request-scoped SA sessions, atomicity, stable session IDs, explicit session ops, missing≠0, CSRF/auth ownership).
 
 ## 1. Evidence (approved plan & current implementation)
 | Source | VERIFIED evidence |
@@ -90,9 +99,9 @@
 - Request-scoped SA session/CSRF/ownership/server `hoy()`/load recompute authoritative.
 - **PG-disposable tests PASS** for cases in §7; SQLite not accepted as lock/race proof. ACWR/ambiguous thresholds still deferred.
 
-## 9. Open decision for explicit approval
-Both issues are resolvable from existing safety requirements (no silent overwrite, no dup, atomicity, existing signed-token/lock patterns) with **minimal amendments** above. I recommend: **signed edit-state fingerprint token (no schema change) + conflict-on-stale-update (409) + amend §5.5 to conflict-on-create-race (no blind reapply)**, preserving discard/lock/CSRF/atomicity/stable IDs/missing≠0.
+## 9. Decision status (superseded approval request) — Policy A APPROVED / RESOLVED
+Both issues were resolvable from existing safety requirements (no silent overwrite, no dup, atomicity, existing signed-token/lock patterns) with the minimal amendments described above. The recommendation became the approved decision: **signed edit-state fingerprint token (no schema change) + conflict-on-stale-update (HTTP 409) + §5.5 amended to conflict-on-create-race (no blind reapply)**, preserving discard/lock/CSRF/atomicity/stable IDs/missing≠0.
 
-**One targeted question (recommended answer first):** Do you approve these two policy amendments for Phase 2 — **(A, recommended)** stale updates and create-races return a **409 conflict with fresh current state/token (no silent overwrite, no blind reapply)** using a **signed edit-state fingerprint token (no DB schema change)**, preserving the existing discard token protocol; or **(B)** require a different conflict status/UX or a schema `version` column approach?
+**User approval (recorded):** The user explicitly approved **Policy A** (option A as recommended). See **Decision Resolution (Policy A)** at the top of this document and the authoritative implementation specification `.kilo/plans/1792882624161-daily-tracking-replacement.md`. The former targeted approval question and “awaiting explicit approval before Phase 2 Code mode” status are **superseded** by that approval.
 
-**Final restriction honored:** no implementation performed; awaiting explicit approval before Phase 2 Code mode.
+**Scope note (current):** no implementation performed by this document; Phase 2 implementation proceeds only under separate explicit authorization per project constraints.
