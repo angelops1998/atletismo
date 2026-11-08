@@ -657,6 +657,7 @@ def save_daily_record(
     # Test-only concurrency coordination (Phase 2.2). No effect in production.
     _test_after_create_observed_missing: Any = None,
     _test_before_create_insert: Any = None,
+    _test_on_create_integrity_error: Any = None,
 ) -> ServiceResult:
     """Create/update today's daily record transactionally with Policy A.
 
@@ -680,11 +681,13 @@ def save_daily_record(
             ok=False, status=STATUS_VALIDATION, message="Datos inválidos.", errors=e.errors
         )
 
+    create_attempted = False
     try:
         parte = load_today_for_update(db, atleta_id, target_fecha)
 
         if parte is None:
             # Create path
+            create_attempted = True
             if callable(_test_after_create_observed_missing):
                 _test_after_create_observed_missing(db, atleta_id, target_fecha)
             elif _test_after_create_observed_missing is not None and hasattr(_test_after_create_observed_missing, "wait"):
@@ -694,11 +697,6 @@ def save_daily_record(
             new = ParteDiaria(atleta_id=atleta_id, fecha=target_fecha)
             _apply_wellness(new, wellness)
             db.add(new)
-            db.flush()
-            if callable(_test_before_create_insert):
-                _test_before_create_insert(db, new)
-            elif _test_before_create_insert is not None and hasattr(_test_before_create_insert, "wait"):
-                _test_before_create_insert.wait(timeout=15)
             # Add sessions
             if sessions:
                 for ds in sessions:
@@ -712,16 +710,15 @@ def save_daily_record(
                             comentarios_entrenamiento=ds["comentarios_entrenamiento"],
                         )
                     )
-            try:
-                db.commit()
-            except IntegrityError:
-                return _conflict_result(
-                    db,
-                    atleta_id,
-                    target_fecha,
-                    "El registro de hoy fue creado o actualizado en otra solicitud. Recargá los datos actuales y volvé a intentarlo.",
-                    stale=True,
-                )
+            # This seam is deliberately before the flush that issues INSERT.
+            # Both service calls can therefore rendezvous after observing the
+            # missing row but before either reaches PostgreSQL's unique key.
+            if callable(_test_before_create_insert):
+                _test_before_create_insert(db, new)
+            elif _test_before_create_insert is not None and hasattr(_test_before_create_insert, "wait"):
+                _test_before_create_insert.wait(timeout=15)
+            db.flush()
+            db.commit()
             db.refresh(new)
             edit_tok, discard_tok2 = _fresh_tokens(new)
             return ServiceResult(
@@ -853,7 +850,9 @@ def save_daily_record(
         return ServiceResult(
             ok=False, status=STATUS_VALIDATION, message="Datos inválidos.", errors=e.errors
         )
-    except IntegrityError:
+    except IntegrityError as exc:
+        if create_attempted and callable(_test_on_create_integrity_error):
+            _test_on_create_integrity_error(db, atleta_id, target_fecha, exc)
         return _conflict_result(
             db,
             atleta_id,
