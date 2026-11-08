@@ -1,21 +1,19 @@
 {% extends "base.html" %}
 {% from "_campos.html" import escala, escala_num, escala_rpe, binario %}
 {% from "_iconos.html" import icono %}
-{% block title %}Mi parte semanal — {{ club.club_nombre }}{% endblock %}
+{% block title %}Mi parte diario — {{ club.club_nombre }}{% endblock %}
 
 {% macro dato(campo) -%}
-{#- El valor que va en el control: lo que se acaba de escribir (si el formulario
-    volvió con un error) tiene prioridad sobre lo que hay guardado. -#}
 {%- if form and form.get(campo) is not none -%}{{ form.get(campo) }}
-{%- elif parte -%}{{ parte|attr(campo) if parte|attr(campo) is not none else '' }}
+{%- elif parte -%}{% set v = parte|attr(campo) %}{% if v is not none %}{% if v is iterable and v is not string %}{{ v|join(', ') }}{% else %}{{ v }}{% endif %}{% endif %}
 {%- endif -%}
 {%- endmacro %}
 
 {% block barra %}
 <header class="barra">
     <div class="barra-izq">
-        <h1>Mi parte semanal</h1>
-        <div class="sub">{{ semana|semana|capitalize }}</div>
+        <h1>Mi parte diario</h1>
+        <div class="sub">{{ fecha|fecha_corta }}</div>
     </div>
 </header>
 {% endblock %}
@@ -27,99 +25,58 @@
 </div>
 {% endif %}
 
+{% if conflict %}
+<div class="aviso aviso-error" style="margin-bottom:14px">
+    <strong>{{ message or "Tu información está desactualizada." }}</strong>
+    <p style="margin:6px 0 0">Los datos que cargaste no se guardaron. El registro cambió mientras lo editabas. Recargá los datos actuales y volvé a intentarlo.</p>
+    {% if edit_state_token %}
+    <input type="hidden" name="edit_state_token" value="{{ edit_state_token }}">
+    {% endif %}
+    {% if discard_token %}
+    <input type="hidden" name="discard_token" value="{{ discard_token }}">
+    {% endif %}
+</div>
+{% endif %}
+
 {% if parte %}
 <div class="aviso aviso-info" style="margin-bottom:14px">
-    Ya cargaste esta semana. Si algo cambió, corregilo y volvé a guardar.
-</div>
-{% endif %}
-
-{% if falta_anterior %}
-<div class="aviso aviso-atencion" style="margin-bottom:14px">
-    Te quedó sin cargar la {{ semana_anterior|semana }}.
-    <a href="/parte?semana={{ semana_anterior }}"><strong>Cargala ahora</strong></a>.
-</div>
-{% endif %}
-
-{% if not es_semana_actual %}
-<div class="aviso aviso-atencion" style="margin-bottom:14px">
-    Estás completando la <strong>{{ semana|semana }}</strong>, que ya terminó.
-    <a href="/parte">Ir a la semana actual</a>.
+    Ya cargaste hoy. Si algo cambió, corregilo y volvé a guardar.
 </div>
 {% endif %}
 
 <form method="post" action="/parte">
     {{ csrf_input(request) }}
-    <input type="hidden" name="semana" value="{{ semana }}">
+    <input type="hidden" name="edit_state_token" value="{{ edit_state_token or '' }}">
+    {% if discard_token %}
+    <input type="hidden" name="discard_token" value="{{ discard_token }}">
+    {% endif %}
 
     <div class="card">
         <div class="card-head">
-            <h3>¿Cómo estuviste esta semana?</h3>
+            <h3>¿Cómo estuviste hoy?</h3>
         </div>
         <div class="card-body">
-            <p class="apunte">Contestá pensando en la semana entera, no solo en hoy.
-                No hay respuestas buenas ni malas: el profesor las usa para decidir
-                cuánto cargarte la semana que viene.</p>
+            <p class="apunte">Contestá pensando en hoy. No hay respuestas buenas ni malas: el profesor las usa para decidir cuánto cargarte la semana que viene.</p>
 
             {% for campo, etiqueta, pregunta in items %}
             <div class="campo">
                 <div class="lbl">{{ pregunta }}</div>
-                {{ escala(campo, dato(campo), etiquetas[campo]) }}
+                {{ escala_num(campo, dato(campo), 1, 10) }}
             </div>
             {% endfor %}
         </div>
     </div>
 
     <div class="card">
-        <div class="card-head"><h3>Sueño y alimentación</h3></div>
+        <div class="card-head"><h3>Sueño</h3></div>
         <div class="card-body">
             <div class="fila-2">
                 <div class="campo">
                     <label for="horas_sueno">Horas de sueño por noche</label>
                     <input type="number" id="horas_sueno" name="horas_sueno" step="0.5"
-                           min="0" max="24" inputmode="decimal"
+                           min="0" max="24" inputMode="decimal"
                            value="{{ dato('horas_sueno') }}" placeholder="7.5">
                 </div>
-                <div class="campo">
-                    <label for="hidratacion_litros">Litros de agua por día</label>
-                    <input type="number" id="hidratacion_litros" name="hidratacion_litros"
-                           step="0.5" min="0" max="15" inputmode="decimal"
-                           value="{{ dato('hidratacion_litros') }}" placeholder="2">
-                </div>
-            </div>
-
-            <div class="campo">
-                <div class="lbl">¿Cómo comiste esta semana?</div>
-                {{ escala('alimentacion_calidad', dato('alimentacion_calidad'),
-                          ['Muy mal', 'Mal', 'Normal', 'Bien', 'Muy bien'], false) }}
-            </div>
-
-            <div class="fila-2">
-                <div class="campo">
-                    <label for="comidas_dia">Comidas por día</label>
-                    <input type="number" id="comidas_dia" name="comidas_dia" min="0" max="10"
-                           inputmode="numeric" value="{{ dato('comidas_dia') }}" placeholder="4">
-                </div>
-                <div class="campo">
-                    <label for="peso_kg">Peso (kg)</label>
-                    <input type="number" id="peso_kg" name="peso_kg" step="0.1" min="20" max="250"
-                           inputmode="decimal" value="{{ dato('peso_kg') }}" placeholder="68.5">
-                </div>
-            </div>
-
-            <div class="campo">
-                <div class="lbl">¿Comiste algo antes de entrenar?</div>
-                {% set comer = form.get('come_antes_entrenar') if form
-                               else ('si' if parte and parte.come_antes_entrenar
-                                     else ('no' if parte and parte.come_antes_entrenar is not none else '')) %}
-                {{ binario('come_antes_entrenar', comer) }}
-                <div class="ayuda">Entrenar en ayunas explica la mayoría de los bajones
-                    en el entrenamiento de la tarde.</div>
-            </div>
-
-            <div class="campo">
-                <label for="suplementos">Suplementos o vitaminas (opcional)</label>
-                <input type="text" id="suplementos" name="suplementos" maxlength="200"
-                       value="{{ dato('suplementos') }}" placeholder="Hierro, magnesio…">
             </div>
         </div>
     </div>
@@ -127,24 +84,22 @@
     <div class="card">
         <div class="card-head"><h3>Entrenamiento</h3></div>
         <div class="card-body">
-            <div class="fila-2">
-                <div class="campo">
-                    <label for="sesiones">Entrenamientos que hiciste</label>
-                    <input type="number" id="sesiones" name="sesiones" min="0" max="21"
-                           inputmode="numeric" value="{{ dato('sesiones') }}" placeholder="4">
-                </div>
-                <div class="campo">
-                    <label for="minutos_totales">Minutos en total</label>
-                    <input type="number" id="minutos_totales" name="minutos_totales"
-                           min="0" max="3000" inputmode="numeric"
-                           value="{{ dato('minutos_totales') }}" placeholder="300">
-                </div>
-            </div>
             <div class="campo">
-                <div class="lbl">RPE: ¿qué tan duro te resultó entrenar esta semana?</div>
-                <div class="ayuda" style="margin:0 0 8px">Esfuerzo percibido del 1 al 10, pensando
-                    en cómo terminaste las sesiones: 1 es muy liviano y 10 es el máximo que podés dar.</div>
-                {{ escala_rpe('rpe', dato('rpe'), rpe_escala, rpe_franjas) }}
+                <div class="lbl">¿Entrenaste hoy?</div>
+                {{ binario('entreno_hoy', 'si' if (form and form.get('entreno_hoy') == '1') or (parte and parte.entreno_hoy) else 'no') }}
+            </div>
+
+            <div id="bloque-entrenamiento" class="condicional {{ 'abierto' if (form and form.get('entreno_hoy') == '1') or (parte and parte.entreno_hoy) }}">
+                <div class="campo">
+                    <label for="sessions">Sesiones (una por línea: tipo|minutos|rpe|comentarios)</label>
+                    <textarea id="sessions" name="sessions" rows="3"
+                              placeholder="resistencia|45|6|calentamiento">{{ sessions_form or '' }}</textarea>
+                </div>
+                <div class="campo">
+                    <label for="delete_session_ids">IDs de sesiones a eliminar (separados por coma, opcional)</label>
+                    <input type="text" id="delete_session_ids" name="delete_session_ids"
+                           value="{{ delete_form or '' }}" placeholder="12, 15">
+                </div>
             </div>
         </div>
     </div>
@@ -154,14 +109,14 @@
         <div class="card-body">
             <div class="campo">
                 <div class="lbl">¿Tenés alguna molestia o dolor?</div>
-                {% set tiene = form.get('molestias') if form else ('si' if parte and parte.molestias else ('no' if parte else '')) %}
-                {{ binario('molestias', tiene, abre='bloque-molestia') }}
+                {% set tiene = 'si' if (form and form.get('hay_molestia') == '1') or (parte and parte.hay_molestia) else 'no' %}
+                {{ binario('hay_molestia', tiene, abre='bloque-molestia') }}
             </div>
 
             <div id="bloque-molestia" class="condicional {{ 'abierto' if tiene == 'si' }}">
                 <div class="campo">
                     <label for="molestia_zona">¿En qué parte del cuerpo?</label>
-                    <input type="text" id="molestia_zona" name="molestia_zona" maxlength="80"
+                    <input type="text" id="molestia_zona" name="molestia_zona"
                            value="{{ dato('molestia_zona') }}"
                            placeholder="Isquiotibial derecho, tobillo izquierdo…">
                 </div>
