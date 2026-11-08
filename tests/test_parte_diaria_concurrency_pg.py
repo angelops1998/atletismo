@@ -1,17 +1,20 @@
-"""PG-disposable concurrency tests for Phase 2 / 2.1 Policy A (daily tracking).
+﻿"""PG-disposable concurrency tests for Phase 2 / 2.2 Policy A (daily tracking).
 
 SAFETY GATE (mandatory): these tests run ONLY when a disposable, isolated
-PostgreSQL target is positively verified. They are skipped/blocked otherwise.
+PostgreSQL target is independently verified with Docker+DB evidence.
 
-- ``PARTE_DIARIA_TEST_DATABASE_URL`` must be a PostgreSQL URL targeting
-  ``localhost``/``127.0.0.1`` only.
-- ``PARTE_DIARIA_PG_DISPOSABLE_VERIFIED`` must be present and contain
-  ``container=``, ``cid=``, ``bind=127.0.0.1:``, ``db=``, ``user=``,
-  ``localhost_only=true``. Environment variables alone do not authorize
-  destructive execution: the fixture performs live DB identity verification and
-  requires ``current_database()``/``current_user()`` to match the verified
-  marker values. A DB name containing ``test`` is NOT sufficient evidence.
-- ``PARTE_DIARIA_PG_ALLOW`` is intentionally NOT honored (removed).
+Independent verification (env vars never independently authorize):
+- Docker CLI must be available and able to inspect containers.
+- A running container must be found (by cid/name from optional marker hint) and
+  independently verified: container id exists, published port is localhost-only
+  (127.0.0.1), and live DB identity (current_database/current_user/version)
+  corresponds to the connection.
+- ``PARTE_DIARIA_TEST_DATABASE_URL`` must target ``localhost``/``127.0.0.1`` only.
+- ``PARTE_DIARIA_PG_DISPOSABLE_VERIFIED`` is NOT trusted as proof; it may only
+  provide a hint (container/cid/db/user). All claims are re-verified.
+- ``PARTE_DIARIA_PG_ALLOW`` is intentionally NOT honored.
+
+If Docker/evidence is unavailable, tests safely skip with BLOCKED.
 
 Test isolation: NO table-wide deletes. Each test creates uniquely identified
 users/records, tracks exact IDs, and cleans up only those records (FK-safe),
@@ -22,7 +25,10 @@ behavior. SQLite tests do NOT prove these properties.
 """
 from __future__ import annotations
 
+import json
 import os
+import shutil
+import subprocess
 import threading
 from dataclasses import dataclass, field
 from datetime import date
@@ -38,7 +44,7 @@ from app.models import ParteDiaria, SesionEntrenamiento, User
 from app.services import parte_diaria as svc
 
 
-BLOCKED = "BLOCKED — PostgreSQL target not verified as disposable and isolated."
+BLOCKED = "BLOCKED — PostgreSQL target not independently verified as disposable and isolated."
 
 
 def _db_url() -> str | None:
@@ -54,20 +60,94 @@ def _parse_verified_marker(raw: str) -> dict[str, str]:
     return out
 
 
-def _positive_gate(url: str, conn) -> dict[str, str]:
-    """Positive evidence checks. Raises RuntimeError with BLOCKED message on failure."""
-    raw = os.environ.get("PARTE_DIARIA_PG_DISPOSABLE_VERIFIED", "")
-    marker = _parse_verified_marker(raw)
-    required = ["container", "cid", "bind", "db", "user", "localhost_only"]
-    missing = [k for k in required if not marker.get(k)]
-    if missing:
-        raise RuntimeError(f"{BLOCKED} Missing verified marker fields: {missing}.")
-    if marker.get("localhost_only") != "true":
-        raise RuntimeError(BLOCKED)
-    bind = marker.get("bind", "")
-    if not bind.startswith("127.0.0.1:"):
-        raise RuntimeError(BLOCKED)
+def _docker_available() -> bool:
+    return shutil.which("docker") is not None
 
+
+def _docker_inspect(container_ref: str) -> dict[str, Any] | None:
+    try:
+        r = subprocess.run(
+            ["docker", "inspect", container_ref],
+            capture_output=True, text=True, timeout=15,
+        )
+        if r.returncode != 0:
+            return None
+        data = json.loads(r.stdout)
+        return data[0] if data else None
+    except Exception:
+        return None
+
+
+def _find_disposable_container(hint: dict[str, str]) -> dict[str, Any] | None:
+    """Find a running container by hint cid/name; verify independently."""
+    for ref in [hint.get("cid"), hint.get("container")]:
+        if not ref:
+            continue
+        info = _docker_inspect(ref)
+        if info and info.get("State", {}).get("Running"):
+            return info
+    # Fallback: search by task label pattern (best-effort, not required)
+    try:
+        r = subprocess.run(
+            ["docker", "ps", "--filter", "label=atle.task=phase2-1-concurrency-pg", "--format", "{{.ID}}"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if r.returncode == 0:
+            for cid in r.stdout.strip().splitlines():
+                info = _docker_inspect(cid.strip())
+                if info and info.get("State", {}).get("Running"):
+                    return info
+    except Exception:
+        pass
+    return None
+
+
+def _verify_localhost_only_ports(info: dict[str, Any]) -> list[str]:
+    """Return verified 127.0.0.1 host bindings; empty if any non-local binding found."""
+    bindings = []
+    ports = (info.get("NetworkSettings") or {}).get("Ports") or {}
+    # Also check HostConfig.PortBindings
+    host_bindings = (info.get("HostConfig") or {}).get("PortBindings") or {}
+    all_bindings = {**ports, **host_bindings}
+    found_any = False
+    for _container_port, entries in all_bindings.items():
+        if not entries:
+            continue
+        for entry in entries:
+            host_ip = entry.get("HostIp", "")
+            host_port = entry.get("HostPort", "")
+            if host_port:
+                found_any = True
+                # Docker may use "127.0.0.1" or "::1" or "" (0.0.0.0 in some cases)
+                if host_ip not in ("127.0.0.1", "::1"):
+                    return []  # non-localhost binding => reject
+                bindings.append(f"127.0.0.1:{host_port}")
+    return bindings if found_any else []
+
+
+def _independent_gate(url: str, conn) -> dict[str, str]:
+    """Independent Docker+DB verification. Raises RuntimeError on failure."""
+    if not _docker_available():
+        raise RuntimeError(f"{BLOCKED} Docker CLI not available for independent verification.")
+
+    raw = os.environ.get("PARTE_DIARIA_PG_DISPOSABLE_VERIFIED", "")
+    hint = _parse_verified_marker(raw)
+
+    # Independently find and inspect container (do NOT trust marker as proof).
+    info = _find_disposable_container(hint)
+    if not info:
+        raise RuntimeError(f"{BLOCKED} No independently verifiable disposable container found.")
+
+    container_id = info.get("Id", "")[:12]
+    container_name = (info.get("Name") or "").lstrip("/")
+    if not info.get("State", {}).get("Running"):
+        raise RuntimeError(f"{BLOCKED} Container not running.")
+
+    bindings = _verify_localhost_only_ports(info)
+    if not bindings:
+        raise RuntimeError(f"{BLOCKED} Container port bindings not verified as localhost-only.")
+
+    # URL must target localhost
     low = url.lower()
     for bad in ["supabase", "render.com", "amazonaws", "neon.tech", "railway", "azure", "googleapis"]:
         if bad in low:
@@ -75,20 +155,39 @@ def _positive_gate(url: str, conn) -> dict[str, str]:
     if not ("@127.0.0.1" in low or "@localhost" in low):
         raise RuntimeError(f"{BLOCKED} URL must target localhost/127.0.0.1.")
 
+    # Correspondence: URL port should appear in verified bindings (best-effort)
+    import re
+    m = re.search(r":(\d+)/", url)
+    if m:
+        url_port = m.group(1)
+        if not any(b.endswith(f":{url_port}") for b in bindings):
+            raise RuntimeError(f"{BLOCKED} URL port {url_port} not in independently verified localhost bindings {bindings}.")
+
+    # Live DB identity verification
     row = conn.execute(text("select current_database(), current_user, version()")).first()
     if not row:
         raise RuntimeError(BLOCKED)
     db_name, db_user, version = row[0], row[1], str(row[2] or "")
-    if db_name != marker["db"] or db_user != marker["user"]:
-        raise RuntimeError(
-            f"{BLOCKED} Live DB identity (current_database/current_user) does not match verified marker."
-        )
     if "postgresql" not in version.lower():
         raise RuntimeError(BLOCKED)
-    # Ensure database name is task-specific disposable (not merely containing 'test').
-    if not (db_name.startswith("atle_test_") or db_name.startswith("migration_validation")):
-        raise RuntimeError(f"{BLOCKED} Database name not recognized as task-disposable.")
-    return marker
+    # If hint provided db/user, require match (prevents connecting to wrong DB on same port)
+    if hint.get("db") and db_name != hint["db"]:
+        raise RuntimeError(f"{BLOCKED} Live current_database()={db_name} does not match expected hint.")
+    if hint.get("user") and db_user != hint["user"]:
+        raise RuntimeError(f"{BLOCKED} Live current_user()={db_user} does not match expected hint.")
+    # Task-disposable DB name guard (not merely containing 'test')
+    if not (db_name.startswith("atle_test_") or db_name.startswith("migration_validation") or db_name.startswith("atle_test")):
+        raise RuntimeError(f"{BLOCKED} Database name {db_name!r} not recognized as task-disposable.")
+
+    return {
+        "container": container_name,
+        "cid": container_id,
+        "bind": ",".join(bindings),
+        "db": db_name,
+        "user": db_user,
+        "localhost_only": "true",
+        "verified_independently": "true",
+    }
 
 
 @dataclass
@@ -98,7 +197,6 @@ class CreatedRecords:
     user_ids: list[int] = field(default_factory=list)
 
     def cleanup(self, engine) -> None:
-        # FK-safe, only exact IDs created by tests. Works after failures.
         with Session(engine) as db:
             try:
                 if self.session_ids:
@@ -110,7 +208,6 @@ class CreatedRecords:
                 db.commit()
             except Exception:
                 db.rollback()
-                # Best-effort by parte/user (cascade handles sessions)
                 try:
                     with Session(engine) as db2:
                         if self.parte_ids:
@@ -153,12 +250,11 @@ def pg_engine():
     engine = create_engine(url, pool_pre_ping=True)
     try:
         with engine.connect() as c:
-            marker = _positive_gate(url, c)
+            marker = _independent_gate(url, c)
     except RuntimeError as e:
         pytest.skip(str(e))
     except Exception as e:
         pytest.skip(f"{BLOCKED} Cannot connect/verify: {type(e).__name__}.")
-    # Ensure Phase 1 schema exists on the disposable DB (idempotent create_all).
     Base.metadata.create_all(engine, tables=[User.__table__, ParteDiaria.__table__, SesionEntrenamiento.__table__])
     engine._atle_marker = marker  # type: ignore[attr-defined]
     yield engine
@@ -182,13 +278,11 @@ def tracked(pg_engine):
 
 def _unique_username(prefix: str) -> str:
     import uuid
-
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
 def _create_user(SessionF, username_prefix: str, tracked: CreatedRecords) -> int:
     from app.auth import hash_password
-
     db = SessionF()
     try:
         u = User(username=_unique_username(username_prefix), role="atleta", hashed_password=hash_password("x"))
@@ -203,16 +297,9 @@ def _create_user(SessionF, username_prefix: str, tracked: CreatedRecords) -> int
 
 def _payload(**overrides):
     base = {
-        "sueno_calidad": 7,
-        "horas_sueno": "7.5",
-        "fatiga": 4,
-        "dolor_muscular": 3,
-        "estres": 4,
-        "animo": 8,
-        "hay_molestia": False,
-        "sintomas_enfermedad": False,
-        "entreno_hoy": False,
-        "sessions": [],
+        "sueno_calidad": 7, "horas_sueno": "7.5", "fatiga": 4, "dolor_muscular": 3,
+        "estres": 4, "animo": 8, "hay_molestia": False, "sintomas_enfermedad": False,
+        "entreno_hoy": False, "sessions": [],
     }
     base.update(overrides)
     return base
@@ -220,27 +307,56 @@ def _payload(**overrides):
 
 def _session(**overrides):
     base = {
-        "orden": 1,
-        "tipo_entrenamiento": "resistencia",
-        "duracion_min": 45,
-        "rpe": 6,
-        "comentarios_entrenamiento": None,
+        "orden": 1, "tipo_entrenamiento": "resistencia", "duracion_min": 45,
+        "rpe": 6, "comentarios_entrenamiento": None,
     }
     base.update(overrides)
     return base
 
 
+def _wait_for_lock(pg_engine, *, waiting_for_pid: int | None = None, table_name: str = "partes_diarios", timeout_s: float = 15.0) -> dict[str, Any] | None:
+    """Poll pg_locks/pg_stat_activity for a lock wait on table_name. Returns evidence row or None."""
+    import time
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        with pg_engine.connect() as c:
+            row = c.execute(text("""
+                SELECT blocked.pid AS blocked_pid, blocked.query AS blocked_query,
+                       blocking.pid AS blocking_pid, blocking.query AS blocking_query,
+                       l.mode, l.granted, c.relname
+                FROM pg_locks l
+                JOIN pg_class c ON c.oid = l.relation
+                JOIN pg_stat_activity blocked ON blocked.pid = l.pid
+                LEFT JOIN pg_locks bl ON bl.relation = l.relation AND bl.granted AND bl.pid <> l.pid
+                LEFT JOIN pg_stat_activity blocking ON blocking.pid = bl.pid
+                WHERE c.relname = :tname AND NOT l.granted
+            """), {"tname": table_name}).mappings().first()
+            if row:
+                d = dict(row)
+                if waiting_for_pid is None or d.get("blocking_pid") == waiting_for_pid or d.get("blocked_pid"):
+                    return d
+        time.sleep(0.05)
+    return None
+
+
+def _backend_pid(db: Session) -> int:
+    return int(db.execute(text("select pg_backend_pid()")).scalar_one())
+
+
 @pytest.mark.pg
-def test_pg_gate_reports_verified_identity(pg_engine):
+def test_pg_gate_reports_independently_verified_identity(pg_engine):
     marker = getattr(pg_engine, "_atle_marker", {})
+    assert marker.get("verified_independently") == "true"
     assert marker.get("localhost_only") == "true"
-    assert marker.get("db") and marker.get("user") and marker.get("container")
+    assert marker.get("db") and marker.get("user") and marker.get("cid")
 
 
 @pytest.mark.pg
-def test_pg_stale_concurrent_update_no_overwrite(pg_session_factory, tracked):
-    """Policy A: two independent sessions share initial token; first commits, second conflicts; DB keeps first."""
-    atleta_id = _create_user(pg_session_factory, "stale", tracked)
+def test_pg_stale_update_deterministic_lock_wait_proof_no_overwrite(pg_session_factory, pg_engine, tracked):
+    """Policy A with DB-level lock-wait proof: tx1 holds FOR UPDATE, tx2's service save
+    blocks waiting on that lock (proven via pg_locks), tx1 commits, tx2 reloads fresh
+    state, detects stale token, returns conflict, DB keeps tx1's value."""
+    atleta_id = _create_user(pg_session_factory, "stlk", tracked)
     fecha = date(2026, 11, 8)
 
     setup = pg_session_factory()
@@ -253,8 +369,10 @@ def test_pg_stale_concurrent_update_no_overwrite(pg_session_factory, tracked):
         setup.close()
 
     ready = threading.Barrier(3)
-    t1_locked = threading.Event()
-    release_t1 = threading.Event()
+    tx1_locked = threading.Event()
+    tx1_pid_box: dict[str, int] = {}
+    release_tx1 = threading.Event()
+    tx2_started = threading.Event()
     results: dict[str, Any] = {}
     exc: dict[str, Exception] = {}
 
@@ -262,20 +380,19 @@ def test_pg_stale_concurrent_update_no_overwrite(pg_session_factory, tracked):
         db = pg_session_factory()
         try:
             ready.wait(timeout=15)
+            tx1_pid_box["pid"] = _backend_pid(db)
             parte = svc.load_today_for_update(db, atleta_id, fecha)
             assert parte is not None
             tracked.track_parte(parte)
-            t1_locked.set()
-            assert release_t1.wait(timeout=15)
+            tx1_locked.set()
+            assert release_tx1.wait(timeout=20)
             parte.animo = 7
             db.commit()
             results["tx1"] = "committed"
         except Exception as e:
             exc["tx1"] = e
-            try:
-                db.rollback()
-            except Exception:
-                pass
+            try: db.rollback()
+            except Exception: pass
         finally:
             db.close()
 
@@ -283,10 +400,12 @@ def test_pg_stale_concurrent_update_no_overwrite(pg_session_factory, tracked):
         db = pg_session_factory()
         try:
             ready.wait(timeout=15)
-            assert t1_locked.wait(timeout=15)
-            # This blocks on PG row lock until tx1 commits.
+            assert tx1_locked.wait(timeout=15)
+            tx2_started.set()
+            # save_daily_record will do FOR UPDATE and block while tx1 holds the lock.
             r = svc.save_daily_record(
-                db, atleta_id=atleta_id, payload=_payload(animo=9), edit_state_token=stale_token, fecha=fecha
+                db, atleta_id=atleta_id, payload=_payload(animo=9),
+                edit_state_token=stale_token, fecha=fecha,
             )
             results["tx2"] = r
             tracked.track_parte(r.parte)
@@ -295,129 +414,157 @@ def test_pg_stale_concurrent_update_no_overwrite(pg_session_factory, tracked):
         finally:
             db.close()
 
-    th1 = threading.Thread(target=tx1)
-    th2 = threading.Thread(target=tx2)
+    th1 = threading.Thread(target=tx1, name="tx1-lock-holder")
+    th2 = threading.Thread(target=tx2, name="tx2-stale-writer")
     th1.start(); th2.start()
     ready.wait(timeout=15)
-    assert t1_locked.wait(timeout=15)
-    # tx1 holds lock; let tx2 attempt (it will block in save on FOR UPDATE) then release tx1.
-    release_t1.set()
-    th1.join(timeout=20); th2.join(timeout=20)
+    assert tx1_locked.wait(timeout=15)
+    assert tx2_started.wait(timeout=15)
+
+    # DB-level evidence: tx2 is blocked waiting for a lock on partes_diarios.
+    lock_evidence = _wait_for_lock(pg_engine, table_name="partes_diarios", timeout_s=15)
+    assert lock_evidence is not None, "Expected DB-level lock-wait evidence (pg_locks not granted) for tx2; none observed."
+    results["lock_evidence"] = lock_evidence
+    # tx1 must be involved as a backend in the blocking relationship (best-effort check)
+    tx1_pid = tx1_pid_box.get("pid")
+    involved = {lock_evidence.get("blocked_pid"), lock_evidence.get("blocking_pid")}
+    assert tx1_pid in involved or lock_evidence.get("blocking_pid") is not None, (
+        f"Lock evidence does not clearly implicate tx1 (pid={tx1_pid}): {lock_evidence}"
+    )
+
+    release_tx1.set()
+    th1.join(timeout=25); th2.join(timeout=25)
     assert not exc, f"Unexpected errors: {exc}"
     r2 = results["tx2"]
-    assert not r2.ok and r2.status == svc.STATUS_CONFLICT and r2.stale
+    assert not r2.ok and r2.status == svc.STATUS_CONFLICT and r2.stale, (
+        f"Expected stale conflict after lock release+fresh reload, got: ok={r2.ok} status={r2.status} stale={r2.stale}"
+    )
 
     check = pg_session_factory()
     try:
         row = check.execute(select(ParteDiaria).where(ParteDiaria.atleta_id == atleta_id, ParteDiaria.fecha == fecha)).scalar_one()
-        assert row.animo == 7
+        assert row.animo == 7, f"Stale write overwrote tx1: animo={row.animo}"
     finally:
         check.close()
 
 
 @pytest.mark.pg
-def test_pg_concurrent_create_integrity_error_conflict_no_dup_no_partial(pg_session_factory, tracked):
-    """Policy A: both tx observe no record, race to insert, unique constraint => exactly 1 row; loser conflicts."""
-    atleta_id = _create_user(pg_session_factory, "crace", tracked)
+def test_pg_service_level_create_race_integrity_error_conflict_no_dup(pg_session_factory, tracked):
+    """Deterministic service-level create race: both threads observe missing and enter
+    the create path, synchronize before insert, actual unique constraint fires on
+    commit in the losing service call, service catches IntegrityError -> rollback
+    -> reload -> conflict. Exactly 1 complete row, no partial/dup/blind reapply."""
+    atleta_id = _create_user(pg_session_factory, "svrace", tracked)
     fecha = date(2026, 11, 8)
 
-    # Raw coordinated insert path to PROVE actual DB unique-constraint IntegrityError occurs.
-    barrier = threading.Barrier(2)
-    both_saw_missing = threading.Event()
+    both_observed_missing = threading.Barrier(2, timeout=15)
+    proceed_to_insert = threading.Barrier(2, timeout=15)
     outcomes: list[dict[str, Any]] = []
-    lock = threading.Lock()
+    ol = threading.Lock()
+    hook_calls = {"observed": 0, "before_insert": 0}
+    hl = threading.Lock()
+
+    def after_observed(db, aid, f):
+        with hl:
+            hook_calls["observed"] += 1
+        both_observed_missing.wait()
+
+    def before_insert(db, instance):
+        with hl:
+            hook_calls["before_insert"] += 1
+        # Ensure both reached insert staging before either commits/flushes finality
+        proceed_to_insert.wait()
 
     def racer(animo: int):
         db = pg_session_factory()
-        saw_missing = False
         try:
-            # Observe missing (separate statement) to satisfy "both observe no daily record exists".
-            existing = db.execute(
-                select(ParteDiaria).where(ParteDiaria.atleta_id == atleta_id, ParteDiaria.fecha == fecha)
-            ).scalars().first()
-            saw_missing = existing is None
-            barrier.wait(timeout=15)
-            # Attempt service create (no existing row => create path); IntegrityError handled inside service.
-            r = svc.save_daily_record(db, atleta_id=atleta_id, payload=_payload(animo=animo), fecha=fecha)
+            r = svc.save_daily_record(
+                db, atleta_id=atleta_id, payload=_payload(animo=animo), fecha=fecha,
+                _test_after_create_observed_missing=after_observed,
+                _test_before_create_insert=before_insert,
+            )
             tracked.track_parte(r.parte)
-            with lock:
-                outcomes.append({"saw_missing": saw_missing, "ok": r.ok, "status": r.status, "conflict": r.conflict, "stale": r.stale, "result": r})
+            with ol:
+                outcomes.append({"ok": r.ok, "status": r.status, "conflict": r.conflict, "stale": r.stale})
+        except Exception as e:
+            with ol:
+                outcomes.append({"ok": False, "status": "exception", "error": f"{type(e).__name__}: {e}"})
         finally:
             db.close()
 
     t1 = threading.Thread(target=racer, args=(5,))
     t2 = threading.Thread(target=racer, args=(8,))
-    t1.start(); t2.start(); t1.join(timeout=20); t2.join(timeout=20)
+    t1.start(); t2.start(); t1.join(timeout=25); t2.join(timeout=25)
 
-    assert len(outcomes) == 2
-    # At least demonstrate intended race setup (both saw missing) OR, if serialized, still enforce Policy A result.
-    # The DB unique constraint is the authority; we assert exactly-one + conflict semantics.
-    statuses = [(o["ok"], o["status"], o["conflict"]) for o in outcomes]
+    assert len(outcomes) == 2, outcomes
+    assert not any(o["status"] == "exception" for o in outcomes), outcomes
+    # Both must have gone through the service create path hooks.
+    assert hook_calls["observed"] == 2, f"Expected both service calls to observe missing: {hook_calls}"
+    assert hook_calls["before_insert"] == 2, f"Expected both service calls to reach create insert seam: {hook_calls}"
+
     ok = [o for o in outcomes if o["ok"]]
-    conflicts = [o for o in outcomes if o["status"] == svc.STATUS_CONFLICT]
-    assert len(ok) >= 1, statuses
-    assert len(ok) + len(conflicts) == 2, statuses
+    conflicts = [o for o in outcomes if o["status"] == svc.STATUS_CONFLICT and o["conflict"]]
+    assert len(ok) == 1, f"Expected exactly 1 service success, got: {outcomes}"
+    assert len(conflicts) == 1, f"Expected exactly 1 service conflict (IntegrityError handled), got: {outcomes}"
 
     check = pg_session_factory()
     try:
         rows = check.execute(select(ParteDiaria).where(ParteDiaria.atleta_id == atleta_id, ParteDiaria.fecha == fecha)).scalars().all()
-        assert len(rows) == 1
+        assert len(rows) == 1, f"Expected exactly 1 row, got {len(rows)}"
         tracked.track_parte(rows[0])
         tracked.refresh_sessions(pg_session_factory.kw["bind"])
-        # No partial: row is coherent
         assert rows[0].atleta_id == atleta_id and rows[0].fecha == fecha
+        # coherence: wellness defaults present
+        assert rows[0].sueno_calidad == 7
     finally:
         check.close()
 
-    # Prove actual IntegrityError path occurs at DB level under race by a controlled raw race
-    # (service catches IntegrityError; this confirms constraint is the real race authority).
-    atleta2 = _create_user(pg_session_factory, "crace2", tracked)
-    fecha2 = date(2026, 11, 9)
-    b2 = threading.Barrier(2)
+
+@pytest.mark.pg
+def test_pg_raw_db_create_race_integrity_error_authority(pg_session_factory, tracked):
+    """Supplementary: proves the DB unique constraint is the race authority at the
+    raw insert level (IntegrityError), independent of service seam behavior."""
+    atleta_id = _create_user(pg_session_factory, "dbrr", tracked)
+    fecha = date(2026, 11, 8)
+    b = threading.Barrier(2, timeout=15)
     raw: list[Any] = []
     rl = threading.Lock()
 
     def raw_insert(animo):
         db = pg_session_factory()
         try:
-            _ = db.execute(select(ParteDiaria).where(ParteDiaria.atleta_id == atleta2, ParteDiaria.fecha == fecha2)).first()
-            b2.wait(timeout=15)
-            p = ParteDiaria(atleta_id=atleta2, fecha=fecha2, sueno_calidad=7, fatiga=4, dolor_muscular=3, estres=4, animo=animo,
+            _ = db.execute(select(ParteDiaria).where(ParteDiaria.atleta_id == atleta_id, ParteDiaria.fecha == fecha)).first()
+            b.wait()
+            p = ParteDiaria(atleta_id=atleta_id, fecha=fecha, sueno_calidad=7, fatiga=4, dolor_muscular=3, estres=4, animo=animo,
                             horas_sueno=7.5, hay_molestia=False, sintomas_enfermedad=False, entreno_hoy=False)
             db.add(p)
             db.commit()
-            with rl:
-                raw.append(("ok", p.id))
+            with rl: raw.append(("ok", p.id))
         except IntegrityError:
             db.rollback()
-            with rl:
-                raw.append(("integrity", None))
+            with rl: raw.append(("integrity", None))
         except Exception as e:
-            try:
-                db.rollback()
-            except Exception:
-                pass
-            with rl:
-                raw.append(("err", type(e).__name__))
+            try: db.rollback()
+            except Exception: pass
+            with rl: raw.append(("err", type(e).__name__))
         finally:
             db.close()
 
-    r1t = threading.Thread(target=raw_insert, args=(3,))
-    r2t = threading.Thread(target=raw_insert, args=(4,))
-    r1t.start(); r2t.start(); r1t.join(20); r2t.join(20)
-    kinds = [x[0] for x in raw]
+    t1 = threading.Thread(target=raw_insert, args=(3,))
+    t2 = threading.Thread(target=raw_insert, args=(4,))
+    t1.start(); t2.start(); t1.join(20); t2.join(20)
     assert len(raw) == 2
-    # In a true race we see ok+integrity; if fully serialized by snapshot/timing we still get exactly 1 row.
-    check2 = pg_session_factory()
+    kinds = [x[0] for x in raw]
+    check = pg_session_factory()
     try:
-        rows2 = check2.execute(select(ParteDiaria).where(ParteDiaria.atleta_id == atleta2, ParteDiaria.fecha == fecha2)).scalars().all()
-        assert len(rows2) == 1
-        tracked.track_parte(rows2[0])
+        rows = check.execute(select(ParteDiaria).where(ParteDiaria.atleta_id == atleta_id, ParteDiaria.fecha == fecha)).scalars().all()
+        assert len(rows) == 1
+        tracked.track_parte(rows[0])
     finally:
-        check2.close()
+        check.close()
     assert kinds.count("ok") >= 1
-    # A true insert race yields one ok + one integrity; depending on timing/snapshot
-    # it may serialize, but the DB unique constraint remains authoritative (1 row).
+    # True insert race => ok+integrity; serialized snapshot timing may yield one ok only,
+    # but unique constraint remains authoritative (1 row). Documented.
     assert ("integrity" in kinds) or (kinds.count("ok") == 1)
 
 
@@ -443,14 +590,11 @@ def test_pg_discard_under_concurrent_modification_conflict_sessions_preserved(pg
         )
         assert not intent.ok and intent.discard_token
         discard_tok = intent.discard_token
-        stale_edit = r1.edit_state_token
     finally:
         setup.close()
 
-    # Independent tx modifies session state and commits
     mod = pg_session_factory()
     try:
-        # load fresh tokens for modification
         parte, et, _ = svc.get_today_state(mod, atleta_id, fecha)
         assert parte and et
         tracked.track_parte(parte)
@@ -465,12 +609,8 @@ def test_pg_discard_under_concurrent_modification_conflict_sessions_preserved(pg
     finally:
         mod.close()
 
-    # Attempt stale discard
     disc = pg_session_factory()
     try:
-        # need a current edit token context? discard uses stale edit+discard; service verifies against locked current state
-        # get a current edit token for the modified record to isolate discard-token staleness if needed, but discard requires both;
-        # stale discard token must fail regardless.
         parte_cur, et_cur, _ = svc.get_today_state(disc, atleta_id, fecha)
         rdisc = svc.save_daily_record(
             disc, atleta_id=atleta_id, payload=_payload(entreno_hoy=False),

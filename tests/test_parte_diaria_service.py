@@ -9,6 +9,7 @@ stale-state detection and create-race conflict handling at service level
 PG ``FOR UPDATE``/real race serialization is NOT proven here (see PG tests).
 """
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import select, update
@@ -313,3 +314,20 @@ class TestAggregation:
         assert agg.cargas_diarias[date(2026, 11, 2).isoformat()] is None  # missing
         assert agg.cargas_diarias[date(2026, 11, 3).isoformat()] == 270
         assert agg.cargas_diarias[date(2026, 11, 4).isoformat()] == 0  # reported no training
+
+
+class TestNonFiniteDecimalValidation:
+    def test_horas_sueno_rejects_nan_inf(self, db):
+        atleta = crear_usuario(db, username="nf1")
+        for bad in ("NaN", "nan", "Infinity", "-Infinity", "inf", "-inf", "+Infinity"):
+            r = svc.save_daily_record(db, atleta_id=atleta.id, payload=_payload(horas_sueno=bad))
+            assert not r.ok and r.status == svc.STATUS_VALIDATION
+            assert any("horas_sueno" in e for e in r.errors)
+
+    def test_horas_sueno_boundary_per_record(self, db):
+        cases = [("0", Decimal("0.0")), ("24", Decimal("24.0")), ("23.9", Decimal("23.9")), ("0.0", Decimal("0.0"))]
+        for i, (ok_val, expected) in enumerate(cases):
+            atleta = crear_usuario(db, username=f"nf3{i}")
+            r = svc.save_daily_record(db, atleta_id=atleta.id, payload=_payload(horas_sueno=ok_val))
+            assert r.ok, (ok_val, r.errors)
+            assert r.parte.horas_sueno == expected

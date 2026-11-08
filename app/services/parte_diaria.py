@@ -144,6 +144,8 @@ def _to_decimal(value: Any, *, name: str, min_v: Decimal, max_v: Decimal, requir
         d = value if isinstance(value, Decimal) else Decimal(str(value).strip().replace(",", "."))
     except (InvalidOperation, TypeError, ValueError):
         raise DomainValidationError([f"{name} inválido."])
+    if not d.is_finite():
+        raise DomainValidationError([f"{name} inválido."])
     if d < min_v or d > max_v:
         raise DomainValidationError([f"{name} fuera de rango ({min_v}-{max_v})."])
     # Normalize to 1 decimal place for Numeric(4,1) compatibility.
@@ -652,6 +654,9 @@ def save_daily_record(
     explicit_delete_session_ids: Optional[Iterable[int]] = None,
     allow_full_session_replacement: bool = False,
     fecha: Optional[date] = None,
+    # Test-only concurrency coordination (Phase 2.2). No effect in production.
+    _test_after_create_observed_missing: Any = None,
+    _test_before_create_insert: Any = None,
 ) -> ServiceResult:
     """Create/update today's daily record transactionally with Policy A.
 
@@ -680,12 +685,20 @@ def save_daily_record(
 
         if parte is None:
             # Create path
+            if callable(_test_after_create_observed_missing):
+                _test_after_create_observed_missing(db, atleta_id, target_fecha)
+            elif _test_after_create_observed_missing is not None and hasattr(_test_after_create_observed_missing, "wait"):
+                _test_after_create_observed_missing.wait(timeout=15)
             if not wellness["entreno_hoy"]:
                 sessions = []
             new = ParteDiaria(atleta_id=atleta_id, fecha=target_fecha)
             _apply_wellness(new, wellness)
             db.add(new)
             db.flush()
+            if callable(_test_before_create_insert):
+                _test_before_create_insert(db, new)
+            elif _test_before_create_insert is not None and hasattr(_test_before_create_insert, "wait"):
+                _test_before_create_insert.wait(timeout=15)
             # Add sessions
             if sessions:
                 for ds in sessions:
