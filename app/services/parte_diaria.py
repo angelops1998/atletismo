@@ -19,7 +19,8 @@ from typing import Any, Iterable, Optional
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm.exc import StaleDataError
 
 from ..models.parte_diaria import MOLESTIA_ZONAS, ParteDiaria
 from ..models.sesion_entrenamiento import SesionEntrenamiento, TIPOS_ENTRENAMIENTO
@@ -40,6 +41,7 @@ STATUS_VALIDATION = 422
 STATUS_CONFLICT = 409
 STATUS_FORBIDDEN = 403
 STATUS_NOT_FOUND = 404
+STATUS_INTERNAL = 500
 
 MOLESTIA_ZONAS_SET = set(MOLESTIA_ZONAS)
 TIPOS_SET = set(TIPOS_ENTRENAMIENTO)
@@ -97,16 +99,36 @@ def _to_int(value: Any, *, name: str, min_v: int, max_v: int, required: bool) ->
         if required:
             raise DomainValidationError([f"{name} es requerido."])
         return None
-    try:
-        if isinstance(value, bool):
-            n = int(value)
-        elif isinstance(value, (int,)):
-            n = value
-        elif isinstance(value, float):
-            n = int(value)
-        else:
-            n = int(str(value).strip())
-    except (TypeError, ValueError):
+    if isinstance(value, bool):
+        raise DomainValidationError([f"{name} inválido."])
+    if isinstance(value, int):
+        n = value
+    elif isinstance(value, float):
+        if not value.is_integer():
+            raise DomainValidationError([f"{name} debe ser un número entero."])
+        n = int(value)
+    elif isinstance(value, str):
+        s = value.strip()
+        if not s:
+            if required:
+                raise DomainValidationError([f"{name} es requerido."])
+            return None
+        try:
+            # Accept integral representations (e.g. "6", "+6"); reject decimals.
+            n = int(s)
+        except (TypeError, ValueError):
+            try:
+                d = Decimal(s.replace(",", "."))
+            except (InvalidOperation, TypeError, ValueError):
+                raise DomainValidationError([f"{name} inválido."])
+            if d != d.to_integral_value():
+                raise DomainValidationError([f"{name} debe ser un número entero."])
+            n = int(d)
+    elif isinstance(value, Decimal):
+        if value != value.to_integral_value():
+            raise DomainValidationError([f"{name} debe ser un número entero."])
+        n = int(value)
+    else:
         raise DomainValidationError([f"{name} inválido."])
     if n < min_v or n > max_v:
         raise DomainValidationError([f"{name} fuera de rango ({min_v}-{max_v})."])
@@ -128,19 +150,28 @@ def _to_decimal(value: Any, *, name: str, min_v: Decimal, max_v: Decimal, requir
     return d.quantize(Decimal("0.1"))
 
 
-def _to_bool(value: Any, *, default: bool = False) -> bool:
+def _to_bool(value: Any, *, name: str = "valor", required: bool = False, default: bool = False) -> bool:
     if value is None or value == "":
+        if required:
+            raise DomainValidationError([f"{name} es requerido."])
         return default
     if isinstance(value, bool):
         return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    s = str(value).strip().lower()
-    if s in {"1", "true", "t", "yes", "y", "si", "sí"}:
-        return True
-    if s in {"0", "false", "f", "no", "n"}:
-        return False
-    return default
+    if isinstance(value, int) and not isinstance(value, bool):
+        if value in (0, 1):
+            return bool(value)
+        raise DomainValidationError([f"{name} inválido."])
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if not s:
+            if required:
+                raise DomainValidationError([f"{name} es requerido."])
+            return default
+        if s in {"1", "true", "t", "yes", "y", "si", "sí", "on"}:
+            return True
+        if s in {"0", "false", "f", "no", "n", "off"}:
+            return False
+    raise DomainValidationError([f"{name} inválido."])
 
 
 def _to_text(value: Any, *, max_len: Optional[int] = None) -> Optional[str]:
@@ -222,25 +253,46 @@ def current_session_fingerprint(parte: ParteDiaria) -> str:
 
 
 def _lock_today_query(db: Session, atleta_id: int, fecha: date):
-    stmt = select(ParteDiaria).where(
-        ParteDiaria.atleta_id == atleta_id, ParteDiaria.fecha == fecha
+    stmt = (
+        select(ParteDiaria)
+        .options(selectinload(ParteDiaria.sesiones))
+        .where(ParteDiaria.atleta_id == atleta_id, ParteDiaria.fecha == fecha)
     )
     if _supports_for_update(db):
-        stmt = stmt.with_for_update()
+        stmt = stmt.with_for_update(of=ParteDiaria)
     return stmt
 
 
+def _reload_fresh_after_lock(db: Session, atleta_id: int, fecha: date) -> Optional[ParteDiaria]:
+    """Re-query after lock acquisition to avoid stale identity-map scalars/collections.
+
+    Policy A requires fingerprints to reflect freshly loaded persisted state after
+    ``SELECT ... FOR UPDATE`` lock + reload.
+    """
+    stmt = _lock_today_query(db, atleta_id, fecha)
+    # populate_existing refreshes scalars for already-identity-mapped instances;
+    # selectinload ensures the session collection reflects current DB state.
+    stmt = stmt.execution_options(populate_existing=True)
+    return db.execute(stmt).scalars().first()
+
+
 def load_today_for_update(db: Session, atleta_id: int, fecha: Optional[date] = None) -> Optional[ParteDiaria]:
-    """Load today's ParteDiaria with PG row lock when supported."""
+    """Load today's ParteDiaria with PG row lock (when supported) and fresh state."""
     f = fecha or hoy()
-    return db.execute(_lock_today_query(db, atleta_id, f)).scalars().first()
+    return _reload_fresh_after_lock(db, atleta_id, f)
 
 
 def load_today(db: Session, atleta_id: int, fecha: Optional[date] = None) -> Optional[ParteDiaria]:
     f = fecha or hoy()
-    return db.execute(
-        select(ParteDiaria).where(ParteDiaria.atleta_id == atleta_id, ParteDiaria.fecha == f)
-    ).scalars().first()
+    return (
+        db.execute(
+            select(ParteDiaria)
+            .options(selectinload(ParteDiaria.sesiones))
+            .where(ParteDiaria.atleta_id == atleta_id, ParteDiaria.fecha == f)
+        )
+        .scalars()
+        .first()
+    )
 
 
 def get_today_state(db: Session, atleta_id: int, fecha: Optional[date] = None) -> tuple[Optional[ParteDiaria], Optional[str], Optional[str]]:
@@ -344,7 +396,7 @@ def validate_and_normalize_wellness(data: dict[str, Any]) -> dict[str, Any]:
     except DomainValidationError as e:
         errors.extend(e.errors)
 
-    hay_molestia = _to_bool(data.get("hay_molestia"), default=False)
+    hay_molestia = _to_bool(data.get("hay_molestia"), name="hay_molestia", default=False)
     out["hay_molestia"] = hay_molestia
     if hay_molestia:
         try:
@@ -384,13 +436,13 @@ def validate_and_normalize_wellness(data: dict[str, Any]) -> dict[str, Any]:
         out["molestia_dolor"] = None
         out["afecta_entrenamiento"] = None
 
-    sintomas = _to_bool(data.get("sintomas_enfermedad"), default=False)
+    sintomas = _to_bool(data.get("sintomas_enfermedad"), name="sintomas_enfermedad", default=False)
     out["sintomas_enfermedad"] = sintomas
     detalle = _to_text(data.get("detalle_sintomas"))
     out["detalle_sintomas"] = detalle if sintomas else None
 
     out["comentarios"] = _to_text(data.get("comentarios"))
-    out["entreno_hoy"] = _to_bool(data.get("entreno_hoy"), default=False)
+    out["entreno_hoy"] = _to_bool(data.get("entreno_hoy"), name="entreno_hoy", default=False)
 
     if errors:
         raise DomainValidationError(errors)
@@ -417,6 +469,9 @@ def validate_and_normalize_sessions(
             try:
                 sid_norm = int(sid)
             except (TypeError, ValueError):
+                errors.append(f"Sesión {idx + 1}: id inválido.")
+                continue
+            if isinstance(sid_norm, bool) or sid_norm < 1:
                 errors.append(f"Sesión {idx + 1}: id inválido.")
                 continue
         tipo = _to_text(raw.get("tipo_entrenamiento"))
@@ -793,13 +848,17 @@ def save_daily_record(
             "Conflicto al guardar el registro diario. Recargá los datos actuales y volvé a intentarlo.",
             stale=True,
         )
-    except Exception as e:
-        db.rollback()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        # Do not expose raw internal exception details to callers (Phase 3 safety).
         return ServiceResult(
             ok=False,
-            status=STATUS_VALIDATION,
+            status=500,
             message="No se pudo guardar el registro diario.",
-            errors=[str(e)],
+            errors=["Error interno al guardar el registro diario."],
         )
 
 
@@ -884,9 +943,17 @@ def discard_sessions(
         return _conflict_result(
             db, atleta_id, target_fecha, "Conflicto al descartar sesiones. Recargá e intentá de nuevo.", stale=True
         )
-    except Exception as e:
-        db.rollback()
-        return ServiceResult(ok=False, status=STATUS_VALIDATION, message="No se pudo descartar sesiones.", errors=[str(e)])
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return ServiceResult(
+            ok=False,
+            status=500,
+            message="No se pudo descartar sesiones.",
+            errors=["Error interno al descartar sesiones."],
+        )
 
 
 __all__ = [
@@ -897,6 +964,7 @@ __all__ = [
     "STATUS_CONFLICT",
     "STATUS_FORBIDDEN",
     "STATUS_NOT_FOUND",
+    "STATUS_INTERNAL",
     "load_today",
     "load_today_for_update",
     "get_today_state",

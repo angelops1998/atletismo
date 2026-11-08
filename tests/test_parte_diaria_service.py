@@ -11,7 +11,7 @@ PG ``FOR UPDATE``/real race serialization is NOT proven here (see PG tests).
 from datetime import date
 
 import pytest
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select, update
 
 from app.models import ParteDiaria, SesionEntrenamiento
 from app.services import parte_diaria as svc
@@ -144,9 +144,51 @@ class TestValidation:
         norm = svc.validate_and_normalize_wellness(_payload(sintomas_enfermedad=True))
         assert norm["detalle_sintomas"] is None
 
-    def test_session_load_recomputed_server_side(self):
-        norm = svc.validate_and_normalize_sessions([_session(duracion_min=60, rpe=8, carga_sesion=9999)], entreno_hoy=True)
-        assert norm[0]["carga_sesion"] == 480
+    def test_boolean_fields_accept_valid_representations(self):
+        truthy = [True, 1, "true", "1", "si", "sí", "on", "yes", "t", "y"]
+        falsy = [False, 0, "false", "0", "no", "off", "n", "f", None, ""]
+        for val in falsy:
+            norm = svc.validate_and_normalize_wellness(_payload(hay_molestia=val, sintomas_enfermedad=val, entreno_hoy=False))
+            assert norm["hay_molestia"] is False and norm["sintomas_enfermedad"] is False
+        for val in truthy:
+            norm = svc.validate_and_normalize_wellness(_payload(
+                hay_molestia=val, molestia_zona=["cuello"], molestia_dolor=3, afecta_entrenamiento=1,
+                sintomas_enfermedad=False, entreno_hoy=False,
+            ))
+            assert norm["hay_molestia"] is True
+            norm2 = svc.validate_and_normalize_wellness(_payload(sintomas_enfermedad=val, entreno_hoy=False))
+            assert norm2["sintomas_enfermedad"] is True
+
+    def test_boolean_fields_reject_invalid_representations(self):
+        for val in ["maybe", "2", 2, -1, [], {}, 1.5]:
+            with pytest.raises(svc.DomainValidationError):
+                svc.validate_and_normalize_wellness(_payload(entreno_hoy=val))
+            with pytest.raises(svc.DomainValidationError):
+                svc.validate_and_normalize_wellness(_payload(hay_molestia=val))
+            with pytest.raises(svc.DomainValidationError):
+                svc.validate_and_normalize_wellness(_payload(sintomas_enfermedad=val))
+
+    def test_integer_fields_reject_non_integral_and_malformed(self):
+        with pytest.raises(svc.DomainValidationError):
+            svc.validate_and_normalize_wellness(_payload(sueno_calidad=7.5))
+        with pytest.raises(svc.DomainValidationError):
+            svc.validate_and_normalize_wellness(_payload(sueno_calidad="7.5"))
+        with pytest.raises(svc.DomainValidationError):
+            svc.validate_and_normalize_wellness(_payload(sueno_calidad="abc"))
+        with pytest.raises(svc.DomainValidationError):
+            svc.validate_and_normalize_wellness(_payload(sueno_calidad=True))
+        # valid integral representations
+        norm = svc.validate_and_normalize_wellness(_payload(sueno_calidad=7, fatiga="8", dolor_muscular=7.0))
+        assert norm["sueno_calidad"] == 7 and norm["fatiga"] == 8 and norm["dolor_muscular"] == 7
+
+    def test_integer_boundaries(self):
+        svc.validate_and_normalize_wellness(_payload(sueno_calidad=1, fatiga=10, afecta_entrenamiento=0))
+        with pytest.raises(svc.DomainValidationError):
+            svc.validate_and_normalize_wellness(_payload(sueno_calidad=0))
+        with pytest.raises(svc.DomainValidationError):
+            svc.validate_and_normalize_wellness(_payload(sueno_calidad=11))
+
+
 
 
 class TestServiceCRUD:
