@@ -557,8 +557,11 @@ class TestInputParsing:
         }
         r = client.post("/parte", data=data)
         assert r.status_code == 422
-        # both submitted session lines preserved in form
-        assert "resistencia" in r.text and "fuerza" in r.text
+        # both submitted session lines preserved in form (rendered textarea)
+        assert line1 in r.text
+        assert line2 in r.text
+        assert line1 in r.text.split('name="sessions"', 1)[1]
+        assert line2 in r.text.split('name="sessions"', 1)[1]
         assert db.query(ParteDiaria).count() == 0
 
     def test_repeated_sessions_fields_crean_multiples(self, client, db, atleta):
@@ -575,6 +578,122 @@ class TestInputParsing:
         assert r.status_code == 302
         parte = db.query(ParteDiaria).one()
         assert len(parte.sesiones) == 2
+
+    def test_repeated_sessions_fields_surviven_409(self, client, db, atleta):
+        """Repeated sessions survive HTTP 409 conflict restoration."""
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client), follow_redirects=False)
+        parte = db.query(ParteDiaria).one()
+        r_get = client.get("/parte")
+        import re
+        m = re.search(r'name="edit_state_token" value="([^"]+)"', r_get.text)
+        edit_tok = m.group(1) if m else ""
+        # Make token stale
+        parte.animo = 5
+        db.commit()
+        csrf = con_csrf(client, "/parte")
+        line1 = "|1|resistencia|45|6|conflict-a"
+        line2 = "|2|fuerza|30|8|conflict-b"
+        datos = {
+            "csrf_token": csrf,
+            "edit_state_token": edit_tok,
+            "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
+            "dolor_muscular": "3", "estres": "4", "animo": "9",
+            "entreno_hoy": "si",
+            "sessions": [line1, line2],
+        }
+        r = client.post("/parte", data=datos)
+        assert r.status_code == 409
+        sessions_area = r.text.split('name="sessions"', 1)[1].split("</textarea>", 1)[0]
+        assert line1 in sessions_area
+        assert line2 in sessions_area
+        db.expire_all()
+        assert db.query(ParteDiaria).one().animo == 5
+
+    def test_newline_sessions_textarea_survives_422(self, client, db, atleta):
+        """Newline-separated textarea sessions retain prior behavior on 422."""
+        entrar(client, atleta)
+        csrf = con_csrf(client, "/parte")
+        line1 = "|1|resistencia|45|6|linea1"
+        line2 = "|2|fuerza|30|8|linea2"
+        datos = {
+            "csrf_token": csrf,
+            "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
+            "dolor_muscular": "3", "estres": "4", "animo": "abc",  # force 422
+            "entreno_hoy": "si",
+            "sessions": f"{line1}\n{line2}",
+        }
+        r = client.post("/parte", data=datos)
+        assert r.status_code == 422
+        sessions_area = r.text.split('name="sessions"', 1)[1].split("</textarea>", 1)[0]
+        assert line1 in sessions_area
+        assert line2 in sessions_area
+        assert db.query(ParteDiaria).count() == 0
+
+    def test_repeated_delete_ids_survive_422(self, client, db, atleta):
+        """Repeated delete_session_ids survive 422 and persisted state unchanged."""
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client, sessions=_session_str([
+            {"orden": 1, "tipo_entrenamiento": "resistencia", "duracion_min": 45, "rpe": 6},
+            {"orden": 2, "tipo_entrenamiento": "fuerza", "duracion_min": 30, "rpe": 8},
+        ])), follow_redirects=False)
+        parte = db.query(ParteDiaria).one()
+        ids = [s.id for s in parte.sesiones]
+        edit_token = _get_edit_token(client)
+        csrf = con_csrf(client, "/parte")
+        datos = {
+            "csrf_token": csrf,
+            "edit_state_token": edit_token,
+            "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
+            "dolor_muscular": "3", "estres": "4", "animo": "abc",  # force 422
+            "entreno_hoy": "si",
+            "sessions": _session_str([{"id": ids[0], "orden": 1, "tipo_entrenamiento": "resistencia",
+                                       "duracion_min": 45, "rpe": 6}]),
+            "delete_session_ids": [str(ids[0]), str(ids[1])],
+        }
+        r = client.post("/parte", data=datos)
+        assert r.status_code == 422
+        delete_area = r.text.split('name="delete_session_ids"', 1)[1].split(">", 1)[0]
+        assert str(ids[0]) in delete_area
+        assert str(ids[1]) in delete_area
+        db.expire_all()
+        assert {s.id for s in db.query(ParteDiaria).one().sesiones} == set(ids)
+
+    def test_repeated_delete_ids_survive_409(self, client, db, atleta):
+        """Repeated delete_session_ids survive 409 conflict restoration."""
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client, sessions=_session_str([
+            {"orden": 1, "tipo_entrenamiento": "resistencia", "duracion_min": 45, "rpe": 6},
+            {"orden": 2, "tipo_entrenamiento": "fuerza", "duracion_min": 30, "rpe": 8},
+        ])), follow_redirects=False)
+        parte = db.query(ParteDiaria).one()
+        ids = [s.id for s in parte.sesiones]
+        r_get = client.get("/parte")
+        import re
+        m = re.search(r'name="edit_state_token" value="([^"]+)"', r_get.text)
+        edit_tok = m.group(1) if m else ""
+        parte.animo = 5
+        db.commit()
+        csrf = con_csrf(client, "/parte")
+        datos = {
+            "csrf_token": csrf,
+            "edit_state_token": edit_tok,
+            "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
+            "dolor_muscular": "3", "estres": "4", "animo": "9",
+            "entreno_hoy": "si",
+            "sessions": _session_str([{"id": ids[0], "orden": 1, "tipo_entrenamiento": "resistencia",
+                                       "duracion_min": 45, "rpe": 6}]),
+            "delete_session_ids": [str(ids[0]), str(ids[1])],
+        }
+        r = client.post("/parte", data=datos)
+        assert r.status_code == 409
+        delete_area = r.text.split('name="delete_session_ids"', 1)[1].split(">", 1)[0]
+        assert str(ids[0]) in delete_area
+        assert str(ids[1]) in delete_area
+        db.expire_all()
+        persisted = db.query(ParteDiaria).one()
+        assert persisted.animo == 5
+        assert {s.id for s in persisted.sesiones} == set(ids)
 
     def test_parsing_failure_no_llama_service_ni_modifica(self, client, db, atleta):
         entrar(client, atleta)

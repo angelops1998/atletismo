@@ -212,10 +212,18 @@ def _render_form(request, user, db, *, parte=None, form=None, errors=None,
                  message=None, conflict=False, stale=False, created=False,
                  edit_state_token=None, discard_token=None, status_code=200):
     # Use submitted form data for sessions/delete_ids on validation/conflict errors
-    # to preserve user input; fall back to persisted parte data otherwise
+    # to preserve user input; fall back to persisted parte data otherwise.
+    # Multi-value retrieval preserves repeated form fields without discarding
+    # newline-separated textarea input or changing single-value behavior.
     if form is not None and (status_code in (422, 409) or errors):
-        sessions_form = form.get("sessions", "") or ""
-        delete_form = form.get("delete_session_ids", "") or ""
+        if hasattr(form, "getlist"):
+            sessions_items = [str(item) for item in form.getlist("sessions") if str(item).strip()]
+            delete_items = [str(item) for item in form.getlist("delete_session_ids") if str(item).strip()]
+            sessions_form = "\n".join(sessions_items)
+            delete_form = ",".join(delete_items)
+        else:
+            sessions_form = form.get("sessions", "") or ""
+            delete_form = form.get("delete_session_ids", "") or ""
     else:
         sessions_form = ""
         delete_form = ""
