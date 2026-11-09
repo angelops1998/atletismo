@@ -10,7 +10,7 @@ import pytest
 from app.models.parte import ParteSemanal
 from app.models.parte_diaria import ParteDiaria
 from app.services import parte_diaria as pd
-from conftest import con_csrf, crear_parte, crearadius, entrar
+from conftest import con_csrf, crear_parte, crear_usuario, entrar
 
 
 def _session_str(items):
@@ -34,14 +34,22 @@ def completo(client, **campos):
     return datos
 
 
+def _get_edit_token(client):
+    """Extract edit_state_token from GET /parte response."""
+    import re
+    r = client.get("/parte")
+    m = re.search(r'name="edit_state_token" value="([^"]+)"', r.text)
+    return m.group(1) if m else None
+
+
 @pytest.fixture
 def atleta(db):
-    return crearadius(db, username="atleta1", full_name="Un Atleta")
+    return crear_usuario(db, username="atleta1", full_name="Un Atleta")
 
 
 class TestAcceso:
     def test_el_profesor_no_carga_partes(self, client, db):
-        profe = crearadius(db, username="profe", role="profesor")
+        profe = crear_usuario(db, username="profe", role="profesor")
         entrar(client, profe)
         assert client.get("/parte").status_code == 403
 
@@ -58,7 +66,7 @@ class TestAcceso:
         assert r.status_code == 403
 
     def test_el_atleta_no_puede_escribirle_el_parte_a_otro(self, client, db, atleta):
-        otro = crearadius(db, username="otro")
+        otro = crear_usuario(db, username="otro")
         entrar(client, atleta)
         client.post("/parte", data=completo(client, atleta_id=str(otro.id)),
                     follow_redirects=False)
@@ -81,7 +89,9 @@ class TestCreacionYActualizacion:
     def test_volver_a_entrar_actualiza_en_vez_de_duplicar(self, client, db, atleta):
         entrar(client, atleta)
         client.post("/parte", data=completo(client), follow_redirects=False)
-        client.post("/parte", data=completo(client, animo="2"), follow_redirects=False)
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
+        client.post("/parte", data=completo(client, animo="2", edit_state_token=edit_token), follow_redirects=False)
         assert db.query(ParteDiaria).count() == 1
         assert db.query(ParteDiaria).one().animo == 2
 
@@ -107,14 +117,18 @@ class TestCreacionYActualizacion:
         db.commit()
         db.expire_all()
         entrar(client, atleta)
-        client.post("/parte", data=completo(client, animo="9"), follow_redirects=False)
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
+        client.post("/parte", data=completo(client, animo="9", edit_state_token=edit_token), follow_redirects=False)
         parte = db.query(ParteDiaria).one()
         assert parte.animo == 9
 
     def test_no_hay_duplicado(self, client, db, atleta):
         entrar(client, atleta)
         client.post("/parte", data=completo(client), follow_redirects=False)
-        client.post("/parte", data=completo(client), follow_redirects=False)
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
+        client.post("/parte", data=completo(client, edit_state_token=edit_token), follow_redirects=False)
         assert db.query(ParteDiaria).count() == 1
 
 class TestValidacion:
@@ -178,10 +192,13 @@ class TestSesiones:
         client.post("/parte", data=completo(client), follow_redirects=False)
         parte = db.query(ParteDiaria).one()
         sid = parte.sesiones[0].id
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
         datos = completo(client,
                          sessions=_session_str([{"id": sid, "orden": 1,
                                                  "tipo_entrenamiento": "fuerza",
-                                                 "duracion_min": 30, "rpe": 8}]))
+                                                 "duracion_min": 30, "rpe": 8}]),
+                         edit_state_token=edit_token)
         client.post("/parte", data=datos, follow_redirects=False)
         db.expire_all()
         parte = db.query(ParteDiaria).one()
@@ -193,26 +210,43 @@ class TestSesiones:
     def test_nueva_sesion_sin_id(self, client, db, atleta):
         entrar(client, atleta)
         client.post("/parte", data=completo(client), follow_redirects=False)
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
+        # Use allow_full_session_replacement to replace all sessions
         datos = completo(client, sessions=_session_str([
             {"orden": 1, "tipo_entrenamiento": "resistencia", "duracion_min": 45, "rpe": 6},
             {"orden": 2, "tipo_entrenamiento": "fuerza", "duracion_min": 30, "rpe": 8},
-        ]))
+        ]), edit_state_token=edit_token, allow_full_session_replacement="1")
         client.post("/parte", data=datos, follow_redirects=False)
         parte = db.query(ParteDiaria).one()
         assert len(parte.sesiones) == 2
 
     def test_eliminar_sesion_explicitamente(self, client, db, atleta):
         entrar(client, atleta)
-        client.post("/parte", data=completo(client), follow_redirects=False)
+        # Create with two sessions first
+        datos = completo(client, sessions=_session_str([
+            {"orden": 1, "tipo_entrenamiento": "resistencia", "duracion_min": 45, "rpe": 6},
+            {"orden": 2, "tipo_entrenamiento": "fuerza", "duracion_min": 30, "rpe": 8},
+        ]))
+        client.post("/parte", data=datos, follow_redirects=False)
         parte = db.query(ParteDiaria).one()
-        sid = parte.sesiones[0].id
+        ids = [s.id for s in parte.sesiones]
+        sid_to_delete = ids[0]
+        sid_to_keep = ids[1]
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
+        # Delete one session explicitly, keep the other by including it in sessions
         datos = completo(client, entreno_hoy="si",
-                         sessions="",
-                         delete_session_ids=str(sid))
+                         sessions=_session_str([{"id": sid_to_keep, "orden": 1,
+                                                 "tipo_entrenamiento": "fuerza",
+                                                 "duracion_min": 30, "rpe": 8}]),
+                         delete_session_ids=str(sid_to_delete),
+                         edit_state_token=edit_token)
         client.post("/parte", data=datos, follow_redirects=False)
         db.expire_all()
         parte = db.query(ParteDiaria).one()
-        assert len(parte.sesiones) == 0
+        assert len(parte.sesiones) == 1
+        assert parte.sesiones[0].id == sid_to_keep
 
     def test_eliminar_varias_sesiones(self, client, db, atleta):
         entrar(client, atleta)
@@ -223,18 +257,32 @@ class TestSesiones:
         client.post("/parte", data=datos, follow_redirects=False)
         parte = db.query(ParteDiaria).one()
         ids = [s.id for s in parte.sesiones]
-        datos = completo(client, entreno_hoy="si", sessions="",
-                         delete_session_ids=",".join(str(i) for i in ids))
-        client.post("/parte", data=datos, follow_redirects=False)
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
+        # Use discard flow to remove all sessions (entreno_hoy=false)
+        datos = completo(client, entreno_hoy="no", sessions="", edit_state_token=edit_token)
+        r1 = client.post("/parte", data=datos)
+        assert r1.status_code == 422
+        import re
+        m = re.search(r'name="discard_token" value="([^"]+)"', r1.text)
+        assert m, "descarte token debe estar en el formulario"
+        discard_tok = m.group(1)
+        datos2 = completo(client, entreno_hoy="no", sessions="",
+                          confirm_discard_sessions="si",
+                          discard_token=discard_tok, edit_state_token=edit_token)
+        client.post("/parte", data=datos2, follow_redirects=False)
         db.expire_all()
         assert len(db.query(ParteDiaria).one().sesiones) == 0
 
     def test_id_ajeno_rechazado(self, client, db, atleta):
         entrar(client, atleta)
         client.post("/parte", data=completo(client), follow_redirects=False)
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
         datos = completo(client, sessions=_session_str([{"id": 99999, "orden": 1,
                                                           "tipo_entrenamiento": "resistencia",
-                                                          "duracion_min": 45, "rpe": 6}]))
+                                                          "duracion_min": 45, "rpe": 6}]),
+                         edit_state_token=edit_token)
         r = client.post("/parte", data=datos)
         assert r.status_code == 422
         assert db.query(ParteDiaria).count() == 1
@@ -244,10 +292,13 @@ class TestSesiones:
         client.post("/parte", data=completo(client), follow_redirects=False)
         parte = db.query(ParteDiaria).one()
         sid = parte.sesiones[0].id
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
         datos = completo(client, entreno_hoy="si",
                          sessions=_session_str([{"id": sid, "orden": 1,
                                                  "tipo_entrenamiento": "resistencia",
-                                                 "duracion_min": 45, "rpe": 6}]))
+                                                 "duracion_min": 45, "rpe": 6}]),
+                         edit_state_token=edit_token)
         client.post("/parte", data=datos, follow_redirects=False)
         db.expire_all()
         assert len(db.query(ParteDiaria).one().sesiones) == 1
@@ -261,7 +312,9 @@ class TestDescarte:
     def test_descarte_sin_confirmacion_es_422(self, client, db, atleta):
         entrar(client, atleta)
         self._crear_con_sesiones(client, db, atleta)
-        datos = completo(client, entreno_hoy="no", sessions="")
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
+        datos = completo(client, entreno_hoy="no", sessions="", edit_state_token=edit_token)
         r = client.post("/parte", data=datos)
         assert r.status_code == 422
         parte = db.query(ParteDiaria).one()
@@ -271,16 +324,20 @@ class TestDescarte:
     def test_descarte_sin_token_es_422(self, client, db, atleta):
         entrar(client, atleta)
         self._crear_con_sesiones(client, db, atleta)
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
         datos = completo(client, entreno_hoy="no", sessions="",
-                         confirm_discard_sessions="si")
+                         confirm_discard_sessions="si", edit_state_token=edit_token)
         r = client.post("/parte", data=datos)
         assert r.status_code == 422
 
     def test_descarte_valido(self, client, db, atleta):
         entrar(client, atleta)
         self._crear_con_sesiones(client, db, atleta)
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
         # Step 1: intento -> 422 con discard_token
-        datos = completo(client, entreno_hoy="no", sessions="")
+        datos = completo(client, entreno_hoy="no", sessions="", edit_state_token=edit_token)
         r1 = client.post("/parte", data=datos)
         assert r1.status_code == 422
         # Extract discard_token from the rendered form
@@ -290,7 +347,7 @@ class TestDescarte:
         discard_tok = m.group(1)
         datos2 = completo(client, entreno_hoy="no", sessions="",
                           confirm_discard_sessions="si",
-                          discard_token=discard_tok)
+                          discard_token=discard_tok, edit_state_token=edit_token)
         r2 = client.post("/parte", data=datos2, follow_redirects=False)
         assert r2.status_code == 302
         parte = db.query(ParteDiaria).one()
@@ -300,8 +357,10 @@ class TestDescarte:
     def test_descarte_stale_es_409(self, client, db, atleta):
         entrar(client, atleta)
         self._crear_con_sesiones(client, db, atleta)
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
         # Get fresh tokens
-        datos = completo(client, entreno_hoy="no", sessions="")
+        datos = completo(client, entreno_hoy="no", sessions="", edit_state_token=edit_token)
         r1 = client.post("/parte", data=datos)
         import re
         m = re.search(r'name="discard_token" value="([^"]+)"', r1.text)
@@ -315,7 +374,7 @@ class TestDescarte:
         db.commit()
         datos2 = completo(client, entreno_hoy="no", sessions="",
                           confirm_discard_sessions="si",
-                          discard_token=discard_tok)
+                          discard_token=discard_tok, edit_state_token=edit_token)
         r2 = client.post("/parte", data=datos2)
         assert r2.status_code == 409
         db.expire_all()
@@ -327,7 +386,9 @@ class TestDescarte:
         """Un booleano solo no debe borrar sesiones."""
         entrar(client, atleta)
         self._crear_con_sesiones(client, db, atleta)
-        datos = completo(client, entreno_hoy="no", sessions="")
+        # GET to obtain edit_state_token for update
+        edit_token = _get_edit_token(client)
+        datos = completo(client, entreno_hoy="no", sessions="", edit_state_token=edit_token)
         datos.pop("confirm_discard_sessions", None)
         client.post("/parte", data=datos)
         parte = db.query(ParteDiaria).one()

@@ -98,22 +98,51 @@ def _session_payload(form) -> tuple:
     repeated sessions fields plus optional explicit-delete and
     full-replacement flags.
     """
-    sessions = form.getlist("sessions") if hasattr(form, "getlist") else form.get("sessions", [])
-    raw = []
-    for item in sessions:
+    # Handle both newline-separated textarea and repeated form fields
+    sessions_raw = []
+    if hasattr(form, "getlist"):
+        sessions_list = form.getlist("sessions")
+    else:
+        sessions_list = [form.get("sessions", "")]
+    
+    for item in sessions_list:
         item = item.strip()
         if not item:
             continue
+        # Split by newlines for textarea content
+        for line in item.split("\n"):
+            line = line.strip()
+            if line:
+                sessions_raw.append(line)
+    
+    raw = []
+    for item in sessions_raw:
         raw.append(_parse_session_item(item))
-    explicit = form.getlist("delete_session_ids") if hasattr(form, "getlist") else []
-    delete_ids = []
-    for item in explicit:
+    
+    # Handle comma-separated delete_session_ids
+    explicit_raw = []
+    if hasattr(form, "getlist"):
+        explicit_list = form.getlist("delete_session_ids")
+    else:
+        explicit_list = [form.get("delete_session_ids", "")]
+    
+    for item in explicit_list:
         item = item.strip()
-        if item:
-            try:
-                delete_ids.append(int(item))
-            except ValueError:
-                pass
+        if not item:
+            continue
+        # Split by commas for comma-separated values
+        for part in item.split(","):
+            part = part.strip()
+            if part:
+                explicit_raw.append(part)
+    
+    delete_ids = []
+    for item in explicit_raw:
+        try:
+            delete_ids.append(int(item))
+        except ValueError:
+            pass
+    
     allow_replace = form.get("allow_full_session_replacement") == "1"
     payload = {
         "sueno_calidad": form.get("sueno_calidad", ""),
@@ -160,11 +189,17 @@ def _base_context(user, *, parte=None, form=None, errors=None, message=None,
 def _render_form(request, user, db, *, parte=None, form=None, errors=None,
                  message=None, conflict=False, stale=False, created=False,
                  edit_state_token=None, discard_token=None, status_code=200):
-    sessions_form = ""
-    delete_form = ""
-    if parte:
-        sessions_form = _serialize_sessions(parte.sesiones)
-        delete_form = _serialize_delete_ids(parte.sesiones)
+    # Use submitted form data for sessions/delete_ids on validation/conflict errors
+    # to preserve user input; fall back to persisted parte data otherwise
+    if form is not None and (status_code in (422, 409) or errors):
+        sessions_form = form.get("sessions", "") or ""
+        delete_form = form.get("delete_session_ids", "") or ""
+    else:
+        sessions_form = ""
+        delete_form = ""
+        if parte:
+            sessions_form = _serialize_sessions(parte.sesiones)
+            delete_form = _serialize_delete_ids(parte.sesiones)
     return templates.TemplateResponse(request, "atleta/parte.html", {
         **_base_context(
             user, parte=parte, form=form, errors=errors, message=message,

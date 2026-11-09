@@ -90,10 +90,10 @@
         <div class="card-body">
             <div class="campo">
                 <div class="lbl">¿Entrenaste hoy?</div>
-                {{ binario('entreno_hoy', 'si' if (form and form.get('entreno_hoy') == '1') or (parte and parte.entreno_hoy) else 'no') }}
+                {{ binario('entreno_hoy', 'si' if (form and form.get('entreno_hoy') == 'si') or (parte and parte.entreno_hoy) else 'no') }}
             </div>
 
-            <div id="bloque-entrenamiento" class="condicional {{ 'abierto' if (form and form.get('entreno_hoy') == '1') or (parte and parte.entreno_hoy) }}">
+            <div id="bloque-entrenamiento" class="condicional {{ 'abierto' if (form and form.get('entreno_hoy') == 'si') or (parte and parte.entreno_hoy) }}">
                 <div class="campo">
                     <label for="sessions">Sesiones (una por línea: id|orden|tipo|minutos|rpe|comentarios)</label>
                     <p class="apunte">Dejá en blanco el id para crear una nueva; usá el id que muestra abajo para editar una existente.</p>
@@ -124,7 +124,7 @@
         <div class="card-body">
             <div class="campo">
                 <div class="lbl">¿Tenés alguna molestia o dolor?</div>
-                {% set tiene = 'si' if (form and form.get('hay_molestia') == '1') or (parte and parte.hay_molestia) else 'no' %}
+                {% set tiene = 'si' if (form and form.get('hay_molestia') == 'si') or (parte and parte.hay_molestia) else 'no' %}
                 {{ binario('hay_molestia', tiene, abre='bloque-molestia') }}
             </div>
 
@@ -158,9 +158,9 @@
         <div class="card-body">
             <div class="campo">
                 <div class="lbl">¿Te sentiste enfermo hoy?</div>
-                {{ binario('sintomas_enfermedad', 'si' if (form and form.get('sintomas_enfermedad') == '1') or (parte and parte.sintomas_enfermedad) else 'no') }}
+                {{ binario('sintomas_enfermedad', 'si' if (form and form.get('sintomas_enfermedad') == 'si') or (parte and parte.sintomas_enfermedad) else 'no') }}
             </div>
-            <div id="bloque-sintomas" class="condicional {{ 'abierto' if (form and form.get('sintomas_enfermedad') == '1') or (parte and parte.sintomas_enfermedad) }}">
+            <div id="bloque-sintomas" class="condicional {{ 'abierto' if (form and form.get('sintomas_enfermedad') == 'si') or (parte and parte.sintomas_enfermedad) }}">
                 <div class="campo">
                     <label for="detalle_sintomas">Detallá los síntomas (opcional)</label>
                     <textarea id="detalle_sintomas" name="detalle_sintomas" rows="2"
@@ -179,7 +179,7 @@
             {% endif %}
             <div class="campo">
                 <div class="lbl">Confirmar descarte de sesiones</div>
-                {{ binario('confirm_discard_sessions', 'si' if (form and form.get('confirm_discard_sessions') == '1') else 'no') }}
+                {{ binario('confirm_discard_sessions', 'si' if (form and form.get('confirm_discard_sessions') == 'si') else 'no') }}
             </div>
         </div>
     </div>
