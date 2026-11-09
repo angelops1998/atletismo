@@ -38,39 +38,50 @@ def _parse_bool(value: str) -> bool:
     return (value or "").strip().lower() == "si"
 
 
-def _parse_session_item(text: str) -> dict:
+class FormParseError(ValueError):
+    """Controlled input parsing error; never passed to the service layer."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+def _parse_positive_int(raw: str, *, name: str) -> int:
+    text = (raw or "").strip()
+    if not text:
+        raise FormParseError(f"{name} inválido.")
+    try:
+        value = int(text)
+    except ValueError as exc:
+        raise FormParseError(f"{name} inválido.") from exc
+    if value < 1:
+        raise FormParseError(f"{name} debe ser un entero positivo.")
+    return value
+
+
+def _parse_session_item(text: str, *, index: int) -> dict:
     """Parse one session line: id|orden|tipo|duracion|rpe|comentarios.
 
-    The pipe delimiter keeps the form simple and avoids JSON parsing on the
-    client side. id is empty for new sessions.
+    Missing optional values keep their defaults; malformed submitted values are
+    rejected explicitly so they cannot become new sessions or silently change
+    values. Parsing errors must be handled before calling the Phase 2 service.
     """
     parts = text.split("|")
+    label = f"Sesión {index}"
     item = {"orden": 1, "tipo_entrenamiento": "resistencia",
             "duracion_min": 45, "rpe": 6, "comentarios_entrenamiento": None}
     if len(parts) >= 1 and parts[0].strip():
-        try:
-            item["id"] = int(parts[0].strip())
-        except ValueError:
-            item["id"] = None
+        item["id"] = _parse_positive_int(parts[0], name=f"{label}: id")
     else:
         item["id"] = None
     if len(parts) >= 2 and parts[1].strip():
-        try:
-            item["orden"] = int(parts[1].strip())
-        except ValueError:
-            pass
+        item["orden"] = _parse_positive_int(parts[1], name=f"{label}: orden")
     if len(parts) >= 3 and parts[2].strip():
         item["tipo_entrenamiento"] = parts[2].strip()
     if len(parts) >= 4 and parts[3].strip():
-        try:
-            item["duracion_min"] = int(parts[3].strip())
-        except ValueError:
-            pass
+        item["duracion_min"] = _parse_positive_int(parts[3], name=f"{label}: duración")
     if len(parts) >= 5 and parts[4].strip():
-        try:
-            item["rpe"] = int(parts[4].strip())
-        except ValueError:
-            pass
+        item["rpe"] = _parse_positive_int(parts[4], name=f"{label}: RPE")
     if len(parts) >= 6:
         item["comentarios_entrenamiento"] = parts[5].strip() or None
     return item
@@ -94,17 +105,18 @@ def _serialize_delete_ids(sessions) -> str:
 def _session_payload(form) -> tuple:
     """Build the service payload from the submitted form.
 
-    Returns (payload, delete_ids, allow_replace). Sessions are parsed from
-    repeated sessions fields plus optional explicit-delete and
-    full-replacement flags.
+    Returns (payload, delete_ids, allow_replace, errors). Malformed submitted
+    values are rejected explicitly and never passed partially to the Phase 2
+    service.
     """
+    errors = []
     # Handle both newline-separated textarea and repeated form fields
     sessions_raw = []
     if hasattr(form, "getlist"):
         sessions_list = form.getlist("sessions")
     else:
         sessions_list = [form.get("sessions", "")]
-    
+
     for item in sessions_list:
         item = item.strip()
         if not item:
@@ -114,18 +126,21 @@ def _session_payload(form) -> tuple:
             line = line.strip()
             if line:
                 sessions_raw.append(line)
-    
+
     raw = []
-    for item in sessions_raw:
-        raw.append(_parse_session_item(item))
-    
+    for idx, item in enumerate(sessions_raw, start=1):
+        try:
+            raw.append(_parse_session_item(item, index=idx))
+        except FormParseError as exc:
+            errors.append(exc.message)
+
     # Handle comma-separated delete_session_ids
     explicit_raw = []
     if hasattr(form, "getlist"):
         explicit_list = form.getlist("delete_session_ids")
     else:
         explicit_list = [form.get("delete_session_ids", "")]
-    
+
     for item in explicit_list:
         item = item.strip()
         if not item:
@@ -135,14 +150,21 @@ def _session_payload(form) -> tuple:
             part = part.strip()
             if part:
                 explicit_raw.append(part)
-    
+
     delete_ids = []
+    seen_delete = set()
     for item in explicit_raw:
         try:
-            delete_ids.append(int(item))
-        except ValueError:
-            pass
-    
+            value = _parse_positive_int(item, name="ID de sesión a eliminar")
+        except FormParseError as exc:
+            errors.append(exc.message)
+            continue
+        if value in seen_delete:
+            errors.append(f"ID de sesión a eliminar duplicado: {value}.")
+            continue
+        seen_delete.add(value)
+        delete_ids.append(value)
+
     allow_replace = form.get("allow_full_session_replacement") == "1"
     payload = {
         "sueno_calidad": form.get("sueno_calidad", ""),
@@ -162,7 +184,7 @@ def _session_payload(form) -> tuple:
         "entreno_hoy": _parse_bool(form.get("entreno_hoy")),
         "sessions": raw,
     }
-    return payload, delete_ids, allow_replace
+    return payload, delete_ids, allow_replace, errors
 
 
 def _base_context(user, *, parte=None, form=None, errors=None, message=None,
@@ -237,7 +259,18 @@ async def guardar(
 
     target_date = hoy()
     form = await request.form()
-    payload, delete_ids, allow_replace = _session_payload(form)
+    payload, delete_ids, allow_replace, parse_errors = _session_payload(form)
+
+    parte, edit_token, discard_token = pd.get_today_state(db, user.id, target_date)
+    if parse_errors:
+        return _render_form(
+            request, user, db,
+            parte=parte, form=form, errors=parse_errors,
+            message="Hay errores en los datos enviados.",
+            edit_state_token=edit_token,
+            discard_token=discard_token,
+            status_code=422,
+        )
 
     result = pd.save_daily_record(
         db,

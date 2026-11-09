@@ -395,17 +395,215 @@ class TestDescarte:
         assert parte.entreno_hoy is True
         assert len(parte.sesiones) == 1
 
+
+
+class TestInputParsing:
+    """Fase 3: rechazos explícitos de entrada malformada (router, sin service)."""
+
+    def _post(self, client, data):
+        return client.post("/parte", data=data)
+
+    def test_malformed_delete_id_es_422(self, client, db, atleta):
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client), follow_redirects=False)
+        parte = db.query(ParteDiaria).one()
+        sid = parte.sesiones[0].id
+        edit_token = _get_edit_token(client)
+        datos = completo(
+            client,
+            sessions=_session_str([{"id": sid, "orden": 1, "tipo_entrenamiento": "resistencia",
+                                    "duracion_min": 45, "rpe": 6}]),
+            delete_session_ids="abc",
+            edit_token=edit_token,
+        )
+        # edit_token must be passed as edit_state_token
+        datos["edit_state_token"] = edit_token
+        r = self._post(client, datos)
+        assert r.status_code == 422
+        db.expire_all()
+        parte = db.query(ParteDiaria).one()
+        assert len(parte.sesiones) == 1
+        assert parte.sesiones[0].id == sid
+
+    def test_mixed_valid_and_malformed_delete_ids_no_borra_nada(self, client, db, atleta):
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client, sessions=_session_str([
+            {"orden": 1, "tipo_entrenamiento": "resistencia", "duracion_min": 45, "rpe": 6},
+            {"orden": 2, "tipo_entrenamiento": "fuerza", "duracion_min": 30, "rpe": 8},
+        ])), follow_redirects=False)
+        parte = db.query(ParteDiaria).one()
+        ids = {s.id for s in parte.sesiones}
+        edit_token = _get_edit_token(client)
+        keep = list(ids)[0]
+        drop = list(ids)[1]
+        datos = completo(
+            client,
+            sessions=_session_str([{"id": keep, "orden": 1, "tipo_entrenamiento": "resistencia",
+                                    "duracion_min": 45, "rpe": 6}]),
+            delete_session_ids=f"{drop},abc",
+            edit_state_token=edit_token,
+        )
+        r = self._post(client, datos)
+        assert r.status_code == 422
+        db.expire_all()
+        parte = db.query(ParteDiaria).one()
+        assert {s.id for s in parte.sesiones} == ids
+        assert len(parte.sesiones) == 2
+
+    def test_non_positive_delete_id_es_422(self, client, db, atleta):
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client), follow_redirects=False)
+        parte = db.query(ParteDiaria).one()
+        sid = parte.sesiones[0].id
+        edit_token = _get_edit_token(client)
+        datos = completo(
+            client,
+            sessions=_session_str([{"id": sid, "orden": 1, "tipo_entrenamiento": "resistencia",
+                                    "duracion_min": 45, "rpe": 6}]),
+            delete_session_ids="0",
+            edit_state_token=edit_token,
+        )
+        r = self._post(client, datos)
+        assert r.status_code == 422
+        db.expire_all()
+        assert db.query(ParteDiaria).one().sesiones[0].id == sid
+
+    def test_duplicate_delete_ids_es_422(self, client, db, atleta):
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client, sessions=_session_str([
+            {"orden": 1, "tipo_entrenamiento": "resistencia", "duracion_min": 45, "rpe": 6},
+            {"orden": 2, "tipo_entrenamiento": "fuerza", "duracion_min": 30, "rpe": 8},
+        ])), follow_redirects=False)
+        parte = db.query(ParteDiaria).one()
+        ids = {s.id for s in parte.sesiones}
+        drop = list(ids)[0]
+        keep = list(ids)[1]
+        edit_token = _get_edit_token(client)
+        datos = completo(
+            client,
+            sessions=_session_str([{"id": keep, "orden": 1, "tipo_entrenamiento": "fuerza",
+                                    "duracion_min": 30, "rpe": 8}]),
+            delete_session_ids=f"{drop},{drop}",
+            edit_state_token=edit_token,
+        )
+        r = self._post(client, datos)
+        assert r.status_code == 422
+        db.expire_all()
+        assert {s.id for s in db.query(ParteDiaria).one().sesiones} == ids
+
+    def test_malformed_existing_session_id_no_crea_nueva(self, client, db, atleta):
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client), follow_redirects=False)
+        parte = db.query(ParteDiaria).one()
+        sid = parte.sesiones[0].id
+        edit_token = _get_edit_token(client)
+        datos = completo(
+            client,
+            sessions="abc|1|resistencia|45|6|",
+            edit_state_token=edit_token,
+        )
+        r = self._post(client, datos)
+        assert r.status_code == 422
+        db.expire_all()
+        parte = db.query(ParteDiaria).one()
+        assert len(parte.sesiones) == 1
+        assert parte.sesiones[0].id == sid
+        assert parte.sesiones[0].tipo_entrenamiento == "resistencia"
+
+    def test_malformed_session_order_es_422(self, client, db, atleta):
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client), follow_redirects=False)
+        sid = db.query(ParteDiaria).one().sesiones[0].id
+        edit_token = _get_edit_token(client)
+        datos = completo(client, sessions=f"{sid}|abc|resistencia|45|6|", edit_state_token=edit_token)
+        r = self._post(client, datos)
+        assert r.status_code == 422
+        db.expire_all()
+        assert db.query(ParteDiaria).one().sesiones[0].orden == 1
+
+    def test_malformed_duration_es_422(self, client, db, atleta):
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client), follow_redirects=False)
+        sid = db.query(ParteDiaria).one().sesiones[0].id
+        edit_token = _get_edit_token(client)
+        datos = completo(client, sessions=f"{sid}|1|resistencia|abc|6|", edit_state_token=edit_token)
+        r = self._post(client, datos)
+        assert r.status_code == 422
+        db.expire_all()
+        assert db.query(ParteDiaria).one().sesiones[0].duracion_min == 45
+
+    def test_malformed_rpe_es_422(self, client, db, atleta):
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client), follow_redirects=False)
+        sid = db.query(ParteDiaria).one().sesiones[0].id
+        edit_token = _get_edit_token(client)
+        datos = completo(client, sessions=f"{sid}|1|resistencia|45|abc|", edit_state_token=edit_token)
+        r = self._post(client, datos)
+        assert r.status_code == 422
+        db.expire_all()
+        assert db.query(ParteDiaria).one().sesiones[0].rpe == 6
+
+    def test_repeated_sessions_fields_se_preservan(self, client, db, atleta):
+        entrar(client, atleta)
+        csrf = con_csrf(client, "/parte")
+        line1 = "|1|resistencia|45|6|a"
+        line2 = "|2|fuerza|30|8|b"
+        data = {
+            "csrf_token": csrf,
+            "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
+            "dolor_muscular": "3", "estres": "4", "animo": "abc",  # force 422
+            "entreno_hoy": "si",
+            "sessions": [line1, line2],
+        }
+        r = client.post("/parte", data=data)
+        assert r.status_code == 422
+        # both submitted session lines preserved in form
+        assert "resistencia" in r.text and "fuerza" in r.text
+        assert db.query(ParteDiaria).count() == 0
+
+    def test_repeated_sessions_fields_crean_multiples(self, client, db, atleta):
+        entrar(client, atleta)
+        csrf = con_csrf(client, "/parte")
+        data = {
+            "csrf_token": csrf,
+            "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
+            "dolor_muscular": "3", "estres": "4", "animo": "8",
+            "entreno_hoy": "si",
+            "sessions": ["|1|resistencia|45|6|", "|2|fuerza|30|8|"],
+        }
+        r = client.post("/parte", data=data, follow_redirects=False)
+        assert r.status_code == 302
+        parte = db.query(ParteDiaria).one()
+        assert len(parte.sesiones) == 2
+
+    def test_parsing_failure_no_llama_service_ni_modifica(self, client, db, atleta):
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client), follow_redirects=False)
+        parte = db.query(ParteDiaria).one()
+        before = (parte.animo, parte.fatiga, [(s.id, s.duracion_min, s.rpe) for s in parte.sesiones])
+        edit_token = _get_edit_token(client)
+        datos = completo(
+            client,
+            animo="9",  # would change if service ran
+            sessions="abc|1|resistencia|45|6|",
+            delete_session_ids="1,bad",
+            edit_state_token=edit_token,
+        )
+        r = self._post(client, datos)
+        assert r.status_code == 422
+        db.expire_all()
+        parte = db.query(ParteDiaria).one()
+        after = (parte.animo, parte.fatiga, [(s.id, s.duracion_min, s.rpe) for s in parte.sesiones])
+        assert before == after
 class TestConflictos:
     def test_edicion_stale_es_409(self, client, db, atleta):
         entrar(client, atleta)
         client.post("/parte", data=completo(client), follow_redirects=False)
         parte = db.query(ParteDiaria).one()
-        # Capture edit token from GET
         r_get = client.get("/parte")
         import re
         m = re.search(r'name="edit_state_token" value="([^"]+)"', r_get.text)
         edit_tok = m.group(1) if m else None
-        # Mutate directly (simulating concurrent change)
         parte.animo = 5
         db.commit()
         datos = completo(client, animo="9", edit_state_token=edit_tok or "")
@@ -427,5 +625,4 @@ class TestConflictos:
         datos = completo(client, animo="9", edit_state_token=edit_tok or "")
         r = client.post("/parte", data=datos)
         assert r.status_code == 409
-        # The submitted value must still be visible (not silently replaced)
         assert "9" in r.text
