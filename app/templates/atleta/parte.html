@@ -64,6 +64,10 @@
                 {{ escala_num(campo, dato(campo), 1, 10) }}
             </div>
             {% endfor %}
+            <div class="campo">
+                <div class="lbl">Fatiga</div>
+                {{ escala_num('fatiga', dato('fatiga'), 1, 10) }}
+            </div>
         </div>
     </div>
 
@@ -91,15 +95,26 @@
 
             <div id="bloque-entrenamiento" class="condicional {{ 'abierto' if (form and form.get('entreno_hoy') == '1') or (parte and parte.entreno_hoy) }}">
                 <div class="campo">
-                    <label for="sessions">Sesiones (una por línea: tipo|minutos|rpe|comentarios)</label>
+                    <label for="sessions">Sesiones (una por línea: id|orden|tipo|minutos|rpe|comentarios)</label>
+                    <p class="apunte">Dejá en blanco el id para crear una nueva; usá el id que muestra abajo para editar una existente.</p>
                     <textarea id="sessions" name="sessions" rows="3"
-                              placeholder="resistencia|45|6|calentamiento">{{ sessions_form or '' }}</textarea>
+                              placeholder="|1|resistencia|45|6|calentamiento">{{ sessions_form or '' }}</textarea>
                 </div>
                 <div class="campo">
                     <label for="delete_session_ids">IDs de sesiones a eliminar (separados por coma, opcional)</label>
                     <input type="text" id="delete_session_ids" name="delete_session_ids"
                            value="{{ delete_form or '' }}" placeholder="12, 15">
                 </div>
+                {% if parte and parte.sesiones %}
+                <div class="campo">
+                    <div class="lbl">Sesiones actuales</div>
+                    <ul class="lista-sesiones">
+                        {% for s in parte.sesiones %}
+                        <li>Sesión {{ s.id }}: {{ s.tipo_entrenamiento }} · {{ s.duracion_min }} min · RPE {{ s.rpe }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -124,6 +139,47 @@
                     <div class="lbl">¿Cuánto te duele? (1 apenas — 10 muchísimo)</div>
                     {{ escala_num('molestia_dolor', dato('molestia_dolor')) }}
                 </div>
+                <div class="campo">
+                    <div class="lbl">¿Te afecta para entrenar? (0 nada — 3 mucho)</div>
+                    {{ escala_num('afecta_entrenamiento', dato('afecta_entrenamiento'), 0, 3) }}
+                </div>
+                <div class="campo">
+                    <div class="lbl">Zona "otra" (si elegiste "otro")</div>
+                    <input type="text" id="molestia_zona_otra" name="molestia_zona_otra"
+                           value="{{ dato('molestia_zona_otra') }}"
+                           placeholder="Especificá la otra zona.">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h3>Síntomas de enfermedad</h3></div>
+        <div class="card-body">
+            <div class="campo">
+                <div class="lbl">¿Te sentiste enfermo hoy?</div>
+                {{ binario('sintomas_enfermedad', 'si' if (form and form.get('sintomas_enfermedad') == '1') or (parte and parte.sintomas_enfermedad) else 'no') }}
+            </div>
+            <div id="bloque-sintomas" class="condicional {{ 'abierto' if (form and form.get('sintomas_enfermedad') == '1') or (parte and parte.sintomas_enfermedad) }}">
+                <div class="campo">
+                    <label for="detalle_sintomas">Detallá los síntomas (opcional)</label>
+                    <textarea id="detalle_sintomas" name="detalle_sintomas" rows="2"
+                              placeholder="Tos, fiebre, garganta…">{{ dato('detalle_sintomas') }}</textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h3>Descarte de sesiones</h3></div>
+        <div class="card-body">
+            <p class="apunte">Si tenés sesiones guardadas y querés bajarlas, usá el botón “No entrené hoy”. Te pedirá confirmar explícitamente el descarte, con un token firmado que evita que se borren sesiones por error.</p>
+            {% if discard_token %}
+            <input type="hidden" name="discard_token" value="{{ discard_token }}">
+            {% endif %}
+            <div class="campo">
+                <div class="lbl">Confirmar descarte de sesiones</div>
+                {{ binario('confirm_discard_sessions', 'si' if (form and form.get('confirm_discard_sessions') == '1') else 'no') }}
             </div>
         </div>
     </div>

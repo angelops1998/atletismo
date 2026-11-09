@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from ..auth import get_current_user
 from ..database import get_db
 from ..services import bienestar, parte_diaria as pd
 from ..templates_config import templates
@@ -30,6 +31,11 @@ def _parse_zonas(value: str):
     if not value:
         return []
     return [z.strip() for z in value.split(",") if z.strip()]
+
+
+def _parse_bool(value: str) -> bool:
+    """binario() emits si/no; service accepts si/no as well."""
+    return (value or "").strip().lower() == "si"
 
 
 def _parse_session_item(text: str) -> dict:
@@ -70,6 +76,21 @@ def _parse_session_item(text: str) -> dict:
     return item
 
 
+def _serialize_sessions(sessions) -> str:
+    """Serialize existing sessions into the pipe-delimited form."""
+    lines = []
+    for s in sessions or []:
+        lines.append(
+            f"{s.id}|{s.orden}|{s.tipo_entrenamiento}|{s.duracion_min}"
+            f"|{s.rpe}|{s.comentarios_entrenamiento or ''}"
+        )
+    return "\n".join(lines)
+
+
+def _serialize_delete_ids(sessions) -> str:
+    return ",".join(str(s.id) for s in sessions or [] if s.id is not None)
+
+
 def _session_payload(form) -> tuple:
     """Build the service payload from the submitted form.
 
@@ -101,15 +122,15 @@ def _session_payload(form) -> tuple:
         "dolor_muscular": form.get("dolor_muscular", ""),
         "estres": form.get("estres", ""),
         "animo": form.get("animo", ""),
-        "hay_molestia": form.get("hay_molestia") == "1",
+        "hay_molestia": _parse_bool(form.get("hay_molestia")),
         "molestia_zona": _parse_zonas(form.get("molestia_zona", "")),
         "molestia_zona_otra": form.get("molestia_zona_otra", ""),
         "molestia_dolor": form.get("molestia_dolor", ""),
         "afecta_entrenamiento": form.get("afecta_entrenamiento", ""),
-        "sintomas_enfermedad": form.get("sintomas_enfermedad") == "1",
+        "sintomas_enfermedad": _parse_bool(form.get("sintomas_enfermedad")),
         "detalle_sintomas": form.get("detalle_sintomas", ""),
         "comentarios": form.get("comentarios", ""),
-        "entreno_hoy": form.get("entreno_hoy") == "1",
+        "entreno_hoy": _parse_bool(form.get("entreno_hoy")),
         "sessions": raw,
     }
     return payload, delete_ids, allow_replace
@@ -124,7 +145,7 @@ def _base_context(user, *, parte=None, form=None, errors=None, message=None,
         "fecha": hoy(),
         "parte": parte,
         "form": form,
-        "errors": errors or [],
+        "errores": errors or [],
         "message": message,
         "conflict": conflict,
         "stale": stale,
@@ -139,6 +160,11 @@ def _base_context(user, *, parte=None, form=None, errors=None, message=None,
 def _render_form(request, user, db, *, parte=None, form=None, errors=None,
                  message=None, conflict=False, stale=False, created=False,
                  edit_state_token=None, discard_token=None, status_code=200):
+    sessions_form = ""
+    delete_form = ""
+    if parte:
+        sessions_form = _serialize_sessions(parte.sesiones)
+        delete_form = _serialize_delete_ids(parte.sesiones)
     return templates.TemplateResponse(request, "atleta/parte.html", {
         **_base_context(
             user, parte=parte, form=form, errors=errors, message=message,
@@ -149,6 +175,8 @@ def _render_form(request, user, db, *, parte=None, form=None, errors=None,
         "etiquetas": bienestar.ETIQUETAS,
         "rpe_escala": bienestar.RPE_ESCALA,
         "rpe_franjas": bienestar.RPE_FRANJAS,
+        "sessions_form": sessions_form,
+        "delete_form": delete_form,
     }, status_code=status_code)
 
 
@@ -182,7 +210,7 @@ async def guardar(
         payload=payload,
         edit_state_token=form.get("edit_state_token"),
         discard_token=form.get("discard_token"),
-        confirm_discard_sessions=form.get("confirm_discard_sessions") == "1",
+        confirm_discard_sessions=_parse_bool(form.get("confirm_discard_sessions")),
         explicit_delete_session_ids=delete_ids or None,
         allow_full_session_replacement=allow_replace,
         fecha=target_date,
