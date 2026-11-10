@@ -19,12 +19,16 @@
 </div>
 {% endmacro %}
 
-{% macro escala_num(nombre, valor, desde=1, hasta=10) %}
+{% macro escala_num(nombre, valor, desde=1, hasta=10, requerido=false, descriptores={}) %}
 <div class="escala escala-10">
     {% for n in range(desde, hasta + 1) %}
     <input type="radio" id="{{ nombre }}_{{ n }}" name="{{ nombre }}" value="{{ n }}"
-           {% if valor and valor|int == n %}checked{% endif %}>
-    <label for="{{ nombre }}_{{ n }}"><span class="n">{{ n }}</span></label>
+           {% if valor and valor|int == n %}checked{% endif %}
+           {% if requerido and loop.first %}required{% endif %}>
+    <label for="{{ nombre }}_{{ n }}">
+        <span class="n">{{ n }}</span>
+        {% if descriptores and descriptores.get(n) is not none %}<span class="txt">{{ descriptores[n] }}</span>{% endif %}
+    </label>
     {% endfor %}
 </div>
 {% endmacro %}

@@ -745,3 +745,155 @@ class TestConflictos:
         r = client.post("/parte", data=datos)
         assert r.status_code == 409
         assert "9" in r.text
+
+    def test_409_distingue_enviado_y_persistido(self, client, db, atleta):
+        """HTTP 409 muestra el valor enviado (formulario) y el persistido (servidor) por separado."""
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client), follow_redirects=False)
+        parte = db.query(ParteDiaria).one()
+        r_get = client.get("/parte")
+        import re
+        m = re.search(r'name="edit_state_token" value="([^"]+)"', r_get.text)
+        edit_tok = m.group(1) if m else None
+        # Valor autoritativo distinto al que se va a enviar
+        parte.horas_sueno = 9.5
+        db.commit()
+        datos = completo(client, horas_sueno="4.0", edit_state_token=edit_tok or "")
+        r = client.post("/parte", data=datos)
+        assert r.status_code == 409
+        # Valor enviado preservado en el formulario
+        assert 'name="horas_sueno"' in r.text
+        assert 'value="4.0"' in r.text
+        # Valor autoritativo persistido mostrado en la tarjeta de recuperación
+        assert '9.5' in r.text
+        # Nunca se sobrescribió con el envío
+        db.expire_all()
+        assert float(db.query(ParteDiaria).one().horas_sueno) == 9.5
+
+
+class TestRenderizado:
+    def test_form_renderiza_campos_diarios_obligatorios(self, client, db, atleta):
+        entrar(client, atleta)
+        r = client.get("/parte")
+        assert r.status_code == 200
+        for campo in ["sueno_calidad", "fatiga", "dolor_muscular", "estres", "animo",
+                      "horas_sueno", "hay_molestia", "molestia_zona",
+                      "molestia_dolor", "afecta_entrenamiento", "sintomas_enfermedad",
+                      "detalle_sintomas", "comentarios", "entreno_hoy",
+                      "sessions", "delete_session_ids"]:
+            assert f'name="{campo}"' in r.text
+
+    def test_escala_bienestar_1_a_10_con_requerido(self, client, db, atleta):
+        entrar(client, atleta)
+        r = client.get("/parte")
+        assert r.status_code == 200
+        for campo in ["sueno_calidad", "fatiga", "dolor_muscular", "estres", "animo"]:
+            assert f'id="{campo}_1"' in r.text
+            assert f'id="{campo}_10"' in r.text
+            assert f'name="{campo}"' in r.text
+        assert 'required' in r.text
+
+    def test_rango_horas_sueno_0_a_24(self, client, db, atleta):
+        entrar(client, atleta)
+        r = client.get("/parte")
+        assert r.status_code == 200
+        assert 'name="horas_sueno"' in r.text
+        assert 'min="0"' in r.text
+        assert 'max="24"' in r.text
+        assert 'step="0.5"' in r.text
+
+    def test_instrucciones_escala_tienen_descriptores(self, client, db, atleta):
+        entrar(client, atleta)
+        r = client.get("/parte")
+        assert r.status_code == 200
+        assert "Muy mala" in r.text
+        assert "Excelente" in r.text
+        assert "Ninguna" in r.text
+        assert "Extrema" in r.text
+
+    def test_bloques_condicionales_presentes(self, client, db, atleta):
+        entrar(client, atleta)
+        r = client.get("/parte")
+        assert r.status_code == 200
+        assert 'id="bloque-molestia"' in r.text
+        assert 'id="bloque-entrenamiento"' in r.text
+        assert 'id="bloque-sintomas"' in r.text
+        assert 'data-abre="bloque-molestia"' in r.text
+        assert 'data-abre="bloque-entrenamiento"' in r.text
+        assert 'data-abre="bloque-sintomas"' in r.text
+
+    def test_guia_zonas_molestia(self, client, db, atleta):
+        entrar(client, atleta)
+        r = client.get("/parte")
+        assert r.status_code == 200
+        assert 'list="zonas-molestia"' in r.text
+        assert 'id="zonas-molestia"' in r.text
+        for z in ["cuello", "hombros", "rodillas", "pies", "otro"]:
+            assert f'<option value="{z}">' in r.text
+
+    def test_form_crea_y_edita(self, client, db, atleta):
+        entrar(client, atleta)
+        r = client.get("/parte")
+        assert r.status_code == 200
+        assert "Enviar mi parte" in r.text
+        client.post("/parte", data=completo(client), follow_redirects=False)
+        r = client.get("/parte")
+        assert r.status_code == 200
+        assert "Guardar los cambios" in r.text
+
+
+class TestCondicionales:
+    def test_valores_molestia_se_preservan_al_ocultar(self, client, db, atleta):
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client, hay_molestia="si",
+                                              molestia_zona="rodillas",
+                                              molestia_dolor="7",
+                                              afecta_entrenamiento="1"),
+                    follow_redirects=False)
+        parte = db.query(ParteDiaria).one()
+        assert parte.hay_molestia is True
+        assert "rodillas" in parte.molestia_zona
+        assert parte.molestia_dolor == 7
+        assert parte.afecta_entrenamiento == 1
+
+        edit_token = _get_edit_token(client)
+        datos = completo(client, hay_molestia="no", edit_state_token=edit_token)
+        r = client.post("/parte", data=datos, follow_redirects=False)
+        assert r.status_code == 302
+        db.expire_all()
+        parte = db.query(ParteDiaria).one()
+        assert parte.hay_molestia is False
+
+    def test_sintomas_condicionales(self, client, db, atleta):
+        entrar(client, atleta)
+        client.post("/parte", data=completo(client, sintomas_enfermedad="si",
+                                            detalle_sintomas="fiebre y tos"),
+                    follow_redirects=False)
+        parte = db.query(ParteDiaria).one()
+        assert parte.sintomas_enfermedad is True
+        assert parte.detalle_sintomas == "fiebre y tos"
+
+        edit_token = _get_edit_token(client)
+        datos = completo(client, sintomas_enfermedad="no", edit_state_token=edit_token)
+        client.post("/parte", data=datos, follow_redirects=False)
+        db.expire_all()
+        parte = db.query(ParteDiaria).one()
+        assert parte.sintomas_enfermedad is False
+        assert parte.detalle_sintomas is None
+
+
+class TestValidacionAdicional:
+    def test_422_muestra_resumen_de_errores(self, client, db, atleta):
+        entrar(client, atleta)
+        r = client.post("/parte", data=completo(client, animo="abc"))
+        assert r.status_code == 422
+        assert "aviso-error" in r.text
+        assert "Corregí los errores" in r.text
+        assert db.query(ParteDiaria).count() == 0
+
+    def test_422_preserva_valores_enviados(self, client, db, atleta):
+        entrar(client, atleta)
+        r = client.post("/parte", data=completo(client, animo="abc"))
+        assert r.status_code == 422
+        assert "animo" in r.text
+        assert db.query(ParteDiaria).count() == 0

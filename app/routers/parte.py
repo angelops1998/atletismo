@@ -21,6 +21,48 @@ from ..tiempo import hoy, lunes_actual, lunes_de
 router = APIRouter(prefix="/parte", tags=["parte"])
 
 
+# Ítems de bienestar diario (escala 1-10). Reemplazan, solo para esta plantilla,
+# los ítems semanales 1-5 de services/bienestar.py (que se conservan intactos para
+# los consumidores semanales). Cada ítem trae su campo, su etiqueta y su pregunta.
+DAILY_ITEMS = [
+    ("sueno_calidad",  "Calidad del sueño",  "¿Cómo dormiste la noche pasada?"),
+    ("fatiga",         "Fatiga",             "¿Qué tan cansado/a te sentís hoy?"),
+    ("dolor_muscular", "Dolor muscular",     "¿Cómo están tus músculos?"),
+    ("estres",         "Estrés",             "¿Qué tan estresado/a te sentís?"),
+    ("animo",          "Ánimo",              "¿Cómo estuvo tu ánimo hoy?"),
+]
+
+# Descriptores por número (1-10) para cada escala de bienestar diario. Sirven de
+# guía en el formulario; la validación de rango sigue siendo del servicio (1-10).
+DAILY_DESCRIPTORES = {
+    "sueno_calidad": {
+        1: "Muy mala", 2: "Muy mala", 3: "Muy mala",
+        4: "Regular", 5: "Regular", 6: "Regular",
+        7: "Buena", 8: "Buena", 9: "Muy buena", 10: "Excelente",
+    },
+    "fatiga": {
+        1: "Ninguna", 2: "Ninguna", 3: "Baja",
+        4: "Moderada", 5: "Moderada", 6: "Moderada",
+        7: "Elevada", 8: "Elevada", 9: "Extrema", 10: "Extrema",
+    },
+    "dolor_muscular": {
+        1: "Ninguno", 2: "Ninguno", 3: "Leve",
+        4: "Moderado", 5: "Moderado", 6: "Moderado",
+        7: "Fuerte", 8: "Fuerte", 9: "Muy fuerte", 10: "Extremo",
+    },
+    "estres": {
+        1: "Ninguno", 2: "Ninguno", 3: "Leve",
+        4: "Moderado", 5: "Moderado", 6: "Moderado",
+        7: "Elevado", 8: "Elevado", 9: "Muy elevado", 10: "Extremo",
+    },
+    "animo": {
+        1: "Muy bajo", 2: "Muy bajo", 3: "Bajo",
+        4: "Bajo", 5: "Regular", 6: "Regular",
+        7: "Bueno", 8: "Bueno", 9: "Excelente", 10: "Excelente",
+    },
+}
+
+
 def _athlete_required(user) -> None:
     if user.role != "atleta":
         raise HTTPException(status_code=403,
@@ -205,6 +247,8 @@ def _base_context(user, *, parte=None, form=None, errors=None, message=None,
         "discard_token": discard_token,
         "molestia_zonas": pd.MOLESTIA_ZONAS,
         "tipos_entrenamiento": pd.TIPOS_SET,
+        "items_diarias": DAILY_ITEMS,
+        "descriptores_diarias": DAILY_DESCRIPTORES,
     }
 
 
@@ -236,8 +280,6 @@ def _render_form(request, user, db, *, parte=None, form=None, errors=None,
             conflict=conflict, stale=stale, created=created,
             edit_state_token=edit_state_token, discard_token=discard_token,
         ),
-        "items": bienestar.ITEMS,
-        "etiquetas": bienestar.ETIQUETAS,
         "rpe_escala": bienestar.RPE_ESCALA,
         "rpe_franjas": bienestar.RPE_FRANJAS,
         "sessions_form": sessions_form,
