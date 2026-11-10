@@ -93,7 +93,7 @@
             <span class="chip chip-info">Escala 1 a 10</span>
         </div>
         <div class="card-body">
-            <p class="apunte">Contestá pensando en hoy. En cada indicador, 1 es lo más bajo/peor y 10 lo más alto/mejor.</p>
+            <p class="apunte">Contestá pensando en hoy. Cada indicador tiene su propia interpretación; revisá la guía de valores debajo de cada escala.</p>
             {% for campo, etiqueta, pregunta in items_diarias %}
             <div class="campo">
                 <div class="lbl">{{ pregunta }}</div>
@@ -122,8 +122,14 @@
         <div class="card-head"><h3>C · Entrenamiento</h3></div>
         <div class="card-body">
             <div class="campo">
-                <div class="lbl">¿Entrenaste hoy?</div>
-                {% set entreno = 'si' if (form and form.get('entreno_hoy') == 'si') or (parte and parte.entreno_hoy) else 'no' %}
+                <div class="lbl">Â¿Entrenaste hoy?</div>
+                {% if form is not none and 'entreno_hoy' in form %}
+                    {% set entreno = 'si' if form.get('entreno_hoy') == 'si' else 'no' %}
+                {% elif parte %}
+                    {% set entreno = 'si' if parte.entreno_hoy else 'no' %}
+                {% else %}
+                    {% set entreno = 'no' %}
+                {% endif %}
                 {{ binario('entreno_hoy', entreno, abre='bloque-entrenamiento') }}
             </div>
 
@@ -159,8 +165,14 @@
         <div class="card-head"><h3>D · Molestias</h3></div>
         <div class="card-body">
             <div class="campo">
-                <div class="lbl">¿Tenés alguna molestia o dolor?</div>
-                {% set molestia = 'si' if (form and form.get('hay_molestia') == 'si') or (parte and parte.hay_molestia) else 'no' %}
+                <div class="lbl">Â¿TenÃ©s alguna molestia o dolor?</div>
+                {% if form is not none and 'hay_molestia' in form %}
+                    {% set molestia = 'si' if form.get('hay_molestia') == 'si' else 'no' %}
+                {% elif parte %}
+                    {% set molestia = 'si' if parte.hay_molestia else 'no' %}
+                {% else %}
+                    {% set molestia = 'no' %}
+                {% endif %}
                 {{ binario('hay_molestia', molestia, abre='bloque-molestia') }}
             </div>
 
@@ -199,8 +211,14 @@
         <div class="card-head"><h3>E · Síntomas de enfermedad</h3></div>
         <div class="card-body">
             <div class="campo">
-                <div class="lbl">¿Te sentiste enfermo hoy?</div>
-                {% set sintomas = 'si' if (form and form.get('sintomas_enfermedad') == 'si') or (parte and parte.sintomas_enfermedad) else 'no' %}
+                <div class="lbl">Â¿Te sentiste enfermo hoy?</div>
+                {% if form is not none and 'sintomas_enfermedad' in form %}
+                    {% set sintomas = 'si' if form.get('sintomas_enfermedad') == 'si' else 'no' %}
+                {% elif parte %}
+                    {% set sintomas = 'si' if parte.sintomas_enfermedad else 'no' %}
+                {% else %}
+                    {% set sintomas = 'no' %}
+                {% endif %}
                 {{ binario('sintomas_enfermedad', sintomas, abre='bloque-sintomas') }}
             </div>
             <div id="bloque-sintomas" class="condicional {{ 'abierto' if sintomas == 'si' }}">
