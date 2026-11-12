@@ -8,7 +8,7 @@ Guía para levantar una demostración aislada y repetible con un solo comando de
 
 - **Python 3.9+** (en este repositorio se usa el entorno virtual `.venv`, ya creado).
 - **PostgreSQL** (la app usa SQLAlchemy + Alembic sobre PostgreSQL). Opciones en orden de preferencia:
-  1. Una instalación local de PostgreSQL.
+  1. Una instalación local de PostgreSQL **con las herramientas de cliente `psql` y `createdb`**.
   2. Docker con el motor en ejecución (el script levanta un contenedor PostgreSQL aislado en `localhost`).
 - **Docker Desktop** (solo si se usa la opción 2).
 
@@ -53,22 +53,25 @@ Si no hay PostgreSQL local, el script usa Docker:
 - Reutiliza un contenedor/demo existente si ya está creado (detenido o en ejecución). Nunca elimina contenedores o volúmenes ajenos.
 - Nunca destruye automáticamente los datos de la demostración.
 
-**Gestión de credenciales de Docker:** al crear el contenedor, el script genera una contraseña de PostgreSQL y la guarda en el archivo `.demo/db_pass` (carpeta del repositorio, atributos de solo lectura y oculto, permisos restringidos al usuario actual). En ejecuciones siguientes, reutiliza el contenedor existente y recupera la contraseña de ese archivo, por lo que no hace falta adivinarla ni volver a crear la base de datos. Si el contenedor existe pero falta el archivo de credenciales, el script se detiene con un mensaje claro (no adivina ni restablece la base de datos automáticamente).
+**Gestión de credenciales de Docker:** al crear el contenedor, el script genera una contraseña de PostgreSQL y la guarda en el archivo `.demo/db_pass` (carpeta del repositorio, atributos de solo lectura y oculto, ACL restringida al usuario actual). La contraseña se pasa al contenedor mediante `--env-file` (un archivo temporal que se borra tras crear el contenedor), nunca como `-e POSTGRES_PASSWORD=...` en la línea de comandos. En ejecuciones siguientes, reutiliza el contenedor existente y recupera la contraseña de `.demo/db_pass`, por lo que no hace falta adivinarla ni volver a crear la base de datos. Si el contenedor existe pero falta el archivo de credenciales, el script se detiene con un mensaje claro (no adivina ni restablece la base de datos automáticamente).
 
-> Limitación de seguridad: `.demo/db_pass` almacena la contraseña en texto plano con protección a nivel de sistema de archivos (solo lectura, oculto). Cualquier usuario con acceso de lectura al archivo puede obtenerla. No se imprime en consola.
+> Limitación de seguridad: `.demo/db_pass` almacena la contraseña en texto plano con protección a nivel de sistema de archivos (ACL restringida al usuario actual, solo lectura, oculto). Cualquier usuario con acceso de lectura al archivo puede obtenerla. No se imprime en consola.
+
+**Autenticación de PostgreSQL local:** la contraseña se provee a `psql` y a SQLAlchemy mediante la variable de entorno `PGPASSWORD` (ámbito del proceso), nunca como argumento de línea de comandos ni incluida en `DATABASE_URL`. La URL de conexión se construye sin contraseña.
 
 Si el motor de Docker no está en ejecución, el script avisa con el requisito faltante y una recomendación de configuración (ver "Limitaciones").
 
 ## PostgreSQL local
 
-Si se detecta una instalación local de PostgreSQL (cliente `psql`/`createdb` o servicio en ejecución), el script:
+Si se detecta una instalación local de PostgreSQL (las herramientas `psql` y `createdb` deben estar disponibles), el script:
 
 1. Intenta conectarse sin contraseña (autenticación de confianza/peer).
-2. Si falla, solicita la contraseña de forma segura (no se imprime en consola).
-3. Verifica la conectividad con el servidor.
-4. Comprueba si la base `atletismo_demo` ya existe en el catálogo (`pg_database`).
-5. La crea solo si no existe (mediante `createdb` o `CREATE DATABASE`), nunca la elimina ni la reinicia automáticamente.
-6. Verifica la conexión final a `atletismo_demo`.
+2. Si falla, solicita la contraseña de forma segura (`Read-Host -AsSecureString`, no se imprime en consola).
+3. Provee la contraseña a `psql` mediante la variable de entorno `PGPASSWORD` (ámbito del proceso), nunca como argumento de línea de comandos.
+4. Verifica la conectividad con el servidor.
+5. Comprueba si la base `atletismo_demo` ya existe en el catálogo (`pg_database`).
+6. La crea solo si no existe (mediante `createdb` o `CREATE DATABASE`), nunca la elimina ni la reinicia automáticamente.
+7. Verifica la conexión final a `atletismo_demo`.
 
 XAMPP trae MariaDB/MySQL. Esta aplicación **no** usa MySQL ni MariaDB: su motor es PostgreSQL. No intentes apuntar la app a XAMPP.
 
@@ -193,4 +196,4 @@ La suite de pruebas del repositorio corre sobre SQLite en memoria y no toca Post
 .venv\Scripts\python.exe -m pytest
 ```
 
-Véase la sección de resultados del informe de implementación.
+Incluye pruebas permanentes del entorno de demostración (`tests/test_demo_environment.py`) que cubren validación de URL de base de datos, titularidad de cuentas, protección de secretos y construcción de argumentos de PowerShell. Véase la sección de resultados del informe de implementación.

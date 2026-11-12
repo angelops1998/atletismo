@@ -10,8 +10,18 @@
     nunca se toca ni se sobrescribe .env, y nunca se imprime la contraseña de la
     base ni la SECRET_KEY en consola.
 
-    Requisitos: Python y (una instalación local de PostgreSQL o Docker con el
-    motor en ejecución). XAMPP (MariaDB/MySQL) NO es la base de datos de esta app.
+    Seguridad de credenciales:
+    - La contraseña de PostgreSQL nunca se interpola en comandos de shell ni se
+      incluye en DATABASE_URL. Se provee a psql mediante la variable de entorno
+      PGPASSWORD (ámbito del proceso) y a Docker mediante un archivo temporal
+      --env-file que se borra tras crear el contenedor.
+    - La contraseña se guarda en .demo/db_pass (solo lectura, oculto, ACL
+      restringida al usuario actual) para reusar el contenedor en ejecuciones
+      siguientes sin tener que adivinarla.
+
+    Requisitos: Python y (una instalación local de PostgreSQL con psql y
+    createdb, o Docker con el motor en ejecución). XAMPP (MariaDB/MySQL) NO es
+    la base de datos de esta app.
 #>
 [CmdletBinding()]
 param()
@@ -33,7 +43,8 @@ Set-Location $repoRoot
     "alembic.ini",
     "requirements.txt",
     ".env.example",
-    "scripts/seed_demo.py"
+    "scripts/seed_demo.py",
+    "scripts/demo_db_identity.py"
 ) | ForEach-Object {
     if (-not (Test-Path -LiteralPath $_)) {
         Write-Host "[ERROR] No se encontró el archivo requerido: $_" -ForegroundColor Red
@@ -93,12 +104,16 @@ if ($LASTEXITCODE -ne 0) {
 # 5. Detectar base de datos PostgreSQL usable (local o Docker aislado)
 # ---------------------------------------------------------------------------
 $pgAvailable = $false
-$pgBinary = Get-Command psql -ErrorAction SilentlyContinue
+$pgPsql = Get-Command psql -ErrorAction SilentlyContinue
+$pgCreatedb = Get-Command createdb -ErrorAction SilentlyContinue
 $pgService = Get-Service -Name "*postgres*" -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "Running" }
 
-if ($pgBinary -or $pgService) {
+# Se requieren AMBAS herramientas de cliente (psql y createdb), no solo una.
+if ($pgPsql -and $pgCreatedb) {
     $pgAvailable = $true
-    Write-Host "Se detectó una instalación local de PostgreSQL." -ForegroundColor Green
+    Write-Host "Se detectó una instalación local de PostgreSQL (psql + createdb)." -ForegroundColor Green
+} elseif ($pgPsql -or $pgCreatedb -or $pgService) {
+    Write-Host "[WARN] Se detectó PostgreSQL parcialmente pero faltan herramientas de cliente." -ForegroundColor Yellow
 }
 
 $dockerAvailable = $false
@@ -113,7 +128,7 @@ if ($dockerCmd) {
 
 if (-not $pgAvailable -and -not $dockerAvailable) {
     Write-Host "`n[ERROR] No se encontró una base de datos PostgreSQL disponible." -ForegroundColor Red
-    Write-Host "Opciones:`n  1. Instala PostgreSQL localmente y ejecuta de nuevo este script.`n  2. Inicia Docker Desktop y ejecuta de nuevo este script (se usará un contenedor PostgreSQL aislado en localhost).`n  3. XAMPP (MariaDB/MySQL) NO es la base de datos de esta aplicación y no se usa." -ForegroundColor Red
+    Write-Host "Opciones:`n  1. Instala PostgreSQL localmente (psql y createdb) y ejecuta de nuevo este script.`n  2. Inicia Docker Desktop y ejecuta de nuevo este script (se usará un contenedor PostgreSQL aislado en localhost).`n  3. XAMPP (MariaDB/MySQL) NO es la base de datos de esta aplicación y no se usa." -ForegroundColor Red
     exit 1
 }
 
@@ -124,8 +139,7 @@ $dbName = "atletismo_demo"
 $dbConnectionString = $null
 $dbPassword = $null
 
-# Archivo de credenciales solo para el contenedor Docker (proceso-scoped,
-# permisos restringidos, nunca se imprime en consola).
+# Directorio y archivo de credenciales solo para el contenedor Docker.
 $demoDir = Join-Path $repoRoot ".demo"
 $passFile = Join-Path $demoDir "db_pass"
 
@@ -150,6 +164,11 @@ if ($pgAvailable) {
                 [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
             }
         }
+        # Proveer la contraseña a psql mediante PGPASSWORD (variable de entorno
+        # de ámbito del proceso), nunca como argumento de línea de comandos.
+        if ($dbPassword) {
+            $env:PGPASSWORD = $dbPassword
+        }
         $testConn = & psql -h $pgHost -p $pgPort -U $pgUser -d postgres -tAc "SELECT version()" 2>$null
         if ($LASTEXITCODE -ne 0) {
             Write-Host "[ERROR] No se pudo conectar al servidor PostgreSQL local." -ForegroundColor Red
@@ -169,13 +188,7 @@ if ($pgAvailable) {
     # 4. Crear solo si no existe y es explícitamente seguro.
     if (-not $dbExists) {
         Write-Host "Creando la base de datos '$dbName' ..." -ForegroundColor Cyan
-        $pgBin = Get-Command createdb -ErrorAction SilentlyContinue
-        if ($pgBin) {
-            & createdb -h $pgHost -p $pgPort -U $pgUser $dbName 2>$null
-        } else {
-            # Fallback: crear mediante SQL si no hay createdb.
-            & psql -h $pgHost -p $pgPort -U $pgUser -d postgres -c "CREATE DATABASE " + $dbName + ";" 2>$null
-        }
+        & createdb -h $pgHost -p $pgPort -U $pgUser $dbName 2>$null
         if ($LASTEXITCODE -ne 0) {
             Write-Host "[ERROR] No se pudo crear la base de datos '$dbName'." -ForegroundColor Red
             exit 1
@@ -193,8 +206,8 @@ if ($pgAvailable) {
     }
     Write-Host "Conexión a '$dbName' verificada." -ForegroundColor Green
 
-    $pwdSegment = if ($dbPassword) { ":" + $dbPassword + "@" } else { "@" }
-    $dbConnectionString = "postgresql://" + $pgUser + $pwdSegment + $pgHost + ":" + $pgPort + "/" + $dbName
+    # DATABASE_URL sin contraseña (PGPASSWORD la provee por separado).
+    $dbConnectionString = "postgresql://" + $pgUser + "@" + $pgHost + ":" + $pgPort + "/" + $dbName
 } elseif ($dockerAvailable) {
     # --- Opción B: Docker, contenedor PostgreSQL aislado ------------------
     $containerName = "atletismo-demo-db"
@@ -255,25 +268,40 @@ if ($pgAvailable) {
                 exit 1
             }
         }
-        # Contraseña de la base solo en memoria del proceso y en archivo con
-        # permisos restringidos; nunca se imprime en consola.
+        # Contraseña de la base generada en Python, almacenada en .demo/db_pass
+        # con permisos restringidos; nunca se imprime en consola.
         $dbPassword = (& $venvPython -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
-        Set-Content -LiteralPath $passFile -Value $dbPassword -Encoding UTF8
-        $passItem = Get-Item -LiteralPath $passFile
-        $passItem.Attributes = [System.IO.FileAttributes]::ReadOnly -bor [System.IO.FileAttributes]::Hidden
 
-        & docker run -d `
-            --name $containerName `
-            --mount "type=volume,src=" + $volumeName + ",dst=/var/lib/postgresql/data" `
-            -p ("127.0.0.1:" + $pgHostPort + ":5432") `
-            -e ("POSTGRES_DB=" + $dbName) `
-            -e ("POSTGRES_USER=" + $dbUser) `
-            -e ("POSTGRES_PASSWORD=" + $dbPassword) `
-            postgres:15-alpine | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "[ERROR] No se pudo crear el contenedor de PostgreSQL." -ForegroundColor Red
-            exit 1
+        # Archivo temporal para --env-file de Docker (se borra tras crear el contenedor).
+        $tempCredsFile = Join-Path $demoDir ("docker_env_" + [System.Guid]::NewGuid().ToString("N") + ".tmp")
+        Set-Content -LiteralPath $tempCredsFile -Value ("POSTGRES_PASSWORD=" + $dbPassword) -Encoding UTF8
+
+        try {
+            # Guardar la contraseña en el archivo persistente con ACL restringida.
+            Set-Content -LiteralPath $passFile -Value $dbPassword -Encoding UTF8
+            $passItem = Get-Item -LiteralPath $passFile
+            $passItem.Attributes = [System.IO.FileAttributes]::ReadOnly -bor [System.IO.FileAttributes]::Hidden
+            _RestringirAclAlUsuarioActual -LiteralPath $passFile
+
+            & docker run -d `
+                --name $containerName `
+                --mount "type=volume,src=" + $volumeName + ",dst=/var/lib/postgresql/data" `
+                -p ("127.0.0.1:" + $pgHostPort + ":5432") `
+                --env-file $tempCredsFile `
+                -e ("POSTGRES_DB=" + $dbName) `
+                -e ("POSTGRES_USER=" + $dbUser) `
+                postgres:15-alpine | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "[ERROR] No se pudo crear el contenedor de PostgreSQL." -ForegroundColor Red
+                exit 1
+            }
+        } finally {
+            # Borrar el archivo temporal de credenciales inmediatamente.
+            if (Test-Path -LiteralPath $tempCredsFile) {
+                Remove-Item -LiteralPath $tempCredsFile -Force
+            }
         }
+
         # Esperar a que PostgreSQL esté listo (máximo ~60 s).
         $ready = $false
         for ($i = 0; $i -lt 30; $i++) {
@@ -288,8 +316,17 @@ if ($pgAvailable) {
         Write-Host "PostgreSQL listo en el contenedor aislado." -ForegroundColor Green
     }
 
-    $pwdSegment = if ($dbPassword) { ":" + $dbPassword + "@" } else { "@" }
-    $dbConnectionString = "postgresql://" + $dbUser + $pwdSegment + "127.0.0.1:" + $pgHostPort + "/" + $dbName
+    # DATABASE_URL sin contraseña (PGPASSWORD la provee por separado).
+    $dbConnectionString = "postgresql://" + $dbUser + "@127.0.0.1:" + $pgHostPort + "/" + $dbName
+}
+
+# Exportar la conexión como variable de entorno del proceso (se hereda por hijos).
+# Nunca se escribe en .env ni se imprime. La contraseña viaja por PGPASSWORD.
+$env:DATABASE_URL = $dbConnectionString
+
+# Proveer PGPASSWORD a todos los procesos hijos (psql, SQLAlchemy/psycopg2).
+if ($dbPassword) {
+    $env:PGPASSWORD = $dbPassword
 }
 
 # Generar (o reutilizar) la clave secreta de desarrollo, solo en memoria del proceso.
@@ -300,27 +337,18 @@ if (-not $env:SECRET_KEY) {
     $script:DemoSecretKey = $env:SECRET_KEY
 }
 
-# Exportar la conexión como variable de entorno del proceso (se hereda por hijos).
-# Nunca se escribe en .env ni se imprime.
-$env:DATABASE_URL = $dbConnectionString
-
-# Resto de variables de entorno del proceso (ya DATABASE_URL y SECRET_KEY están definidas).
+# Resto de variables de entorno del proceso (ya DATABASE_URL, PGPASSWORD y SECRET_KEY están definidas).
 $env:HTTPS_ONLY = "false"
 $env:ALGORITHM = "HS256"
 $env:ACCESS_TOKEN_EXPIRE_MINUTES = "86400"
 
 # Validar identidad de la base antes de continuar (obligatorio, sin imprimir URL).
-$settingsCheck = & $venvPython -c "
-from app.config import get_settings
-s = get_settings()
-assert 'atletismo_demo' in s.database_url, s.database_url
-assert ('localhost' in s.database_url or '127.0.0.1' in s.database_url), s.database_url
-print('DB_OK')
-" 2>&1
+# Usa el módulo de validación unificado (scripts/demo_db_identity.py).
+$settingsCheck = & $venvPython scripts/demo_db_identity.py 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] No se pudo validar la identidad de la base de datos demo." -ForegroundColor Red
     # Sanitizar: no mostrar la URL completa (podría contener credenciales).
-    Write-Host $settingsCheck -ForegroundColor Red | ForEach-Object { if ($_ -notmatch 'postgresql://') { $_ } }
+    $settingsCheck | ForEach-Object { if ($_ -notmatch 'postgresql://') { Write-Host $_ -ForegroundColor Red } }
     exit 1
 }
 $settingsCheck | ForEach-Object { if ($_ -eq "DB_OK") { Write-Host "Base de datos verificada (atletismo_demo, localhost)." -ForegroundColor Green } }
@@ -356,4 +384,24 @@ Write-Host "Presiona Ctrl+C para detener la aplicación.`n" -ForegroundColor Gra
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] La aplicación no se inició correctamente." -ForegroundColor Red
     exit 1
+}
+
+
+# ---------------------------------------------------------------------------
+# Función auxiliar: restringe el ACL de un archivo al usuario actual.
+# ---------------------------------------------------------------------------
+function _RestringirAclAlUsuarioActual {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LiteralPath
+    )
+
+    $acl = Get-ACL -LiteralPath $LiteralPath
+    $acl.SetAccessRuleProtection($true, $false)  # Desheredar, copiar existentes
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        $currentUser, "FullControl", "Allow"
+    )
+    $acl.SetAccessRule($rule)
+    Set-ACL -LiteralPath $LiteralPath -AclObject $acl
 }

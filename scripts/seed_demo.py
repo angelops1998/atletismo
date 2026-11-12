@@ -22,7 +22,6 @@ import sys
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -37,6 +36,10 @@ from app.models.pago import Pago                           # noqa: E402
 from app.auth import hash_password, verify_password        # noqa: E402
 from app.services import cobranza, pruebas                 # noqa: E402
 from app.tiempo import hoy, lunes_actual                   # noqa: E402
+from scripts.demo_db_identity import (              # noqa: E402
+    DatabaseIdentityError,
+    validate_before_write,
+)
 
 # --- Titularidad demo (marcador explícito, campo soportado) ---------------
 DEMO_EMAIL_DOMAIN = "@atletismo.demo.local"
@@ -105,90 +108,20 @@ def _es_demo_owned(usuario: User, data: dict) -> bool:
 def _es_entorno_demo(db) -> None:
     """Valida que la base de destino sea la dedicada al demo.
 
-    Usa parseo estructural de la URL (no substrings) y verifica la identidad
-    del servidor realmente conectado antes de permitir escrituras. Rechaza
-    cualquier base que no sea atletismo_demo en localhost.
+    Usa la validación unificada de ``scripts/demo_db_identity.py``:
+    parseo estructural de la URL (no substrings) y verificación de la identidad
+    del servidor realmente conectado. Rechaza cualquier base que no sea
+    atletismo_demo en localhost.
     """
     from app.config import get_settings
-    from sqlalchemy import text
 
     settings = get_settings()
-    url = settings.database_url
-
     try:
-        parsed = urlparse(url)
-    except Exception:
+        validate_before_write(db, settings.database_url)
+    except DatabaseIdentityError as exc:
+        # Mensaje sanitizado: nunca incluir la URL completa (puede tener credenciales).
         raise SystemExit(
-            "[ERROR] No se pudo parsear DATABASE_URL.\n"
-            "El initializer solo escribe sobre la base de demostración."
-        )
-
-    if parsed.scheme not in ("postgresql", "postgres"):
-        raise SystemExit(
-            f"[ERROR] DATABASE_URL no usa el esquema postgresql://: {parsed.scheme}\n"
-            "El initializer solo escribe sobre la base de demostración."
-        )
-
-    if parsed.hostname not in ("localhost", "127.0.0.1"):
-        raise SystemExit(
-            f"[ERROR] DATABASE_URL no apunta a una instancia local aprobada: "
-            f"{parsed.hostname}\n"
-            "El initializer solo escribe sobre la base de demostración."
-        )
-
-    if parsed.path not in ("/atletismo_demo", "atletismo_demo"):
-        raise SystemExit(
-            f"[ERROR] La base de datos no es 'atletismo_demo' (path: {parsed.path}).\n"
-            "El initializer solo escribe sobre la base de demostración."
-        )
-
-    # Puerto: debe ser un puerto TCP válido para PostgreSQL (0 no es válido).
-    try:
-        puerto = parsed.port
-    except ValueError:
-        raise SystemExit(
-            "[ERROR] Puerto de DATABASE_URL fuera de rango (0-65535).\n"
-            "El initializer solo escribe sobre la base de demostración."
-        )
-    if puerto is not None and puerto == 0:
-        raise SystemExit(
-            "[ERROR] El puerto 0 no es válido para PostgreSQL.\n"
-            "El initializer solo escribe sobre la base de demostración."
-        )
-
-    # Verificar la identidad del servidor realmente conectado antes de escribir.
-    _verificar_conexion_actual(db)
-
-
-def _verificar_conexion_actual(db) -> None:
-    """Confirma que la conexión activa apunta a una PostgreSQL llamada
-    atletismo_demo. Nunca se imprime la URL completa ni la contraseña."""
-    from sqlalchemy import text
-
-    try:
-        row = db.execute(text("SELECT current_database(), version()")).first()
-    except Exception:
-        raise SystemExit(
-            "[ERROR] No se pudo verificar la identidad del servidor conectado.\n"
-            "Asegurate de que DATABASE_URL apunte a una PostgreSQL local llamada "
-            "atletismo_demo."
-        )
-    if row is None:
-        raise SystemExit(
-            "[ERROR] El servidor no devolvió identidad de base de datos.\n"
-            "Asegurate de que DATABASE_URL apunte a una PostgreSQL local llamada "
-            "atletismo_demo."
-        )
-    nombre_db, version = row[0], (row[1] or "")
-    if nombre_db != "atletismo_demo":
-        raise SystemExit(
-            f"[ERROR] La base de datos conectada es '{nombre_db}', se esperaba "
-            "'atletismo_demo'.\n"
-            "El initializer solo escribe sobre la base de demostración."
-        )
-    if "PostgreSQL" not in version:
-        raise SystemExit(
-            "[ERROR] El motor conectado no es PostgreSQL.\n"
+            "[ERROR] " + str(exc) + "\n"
             "El initializer solo escribe sobre la base de demostración."
         )
 

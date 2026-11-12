@@ -2,6 +2,9 @@
 .env
 *.env.local
 
+# Credenciales y datos del entorno de demostración local (nunca al repo)
+.demo/
+
 # Entorno virtual
 .venv/
 venv/
