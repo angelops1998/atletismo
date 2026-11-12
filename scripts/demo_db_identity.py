@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlparse
 
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 
 DEMO_DB_NAME = "atletismo_demo"
@@ -142,12 +142,49 @@ def validate_before_write(db_session, url: str) -> DatabaseIdentity:
     return identity
 
 
+def verify_database_identity(url: str) -> DatabaseIdentity:
+    """Valida la URL y verifica la identidad del servidor realmente conectado.
+
+    Crea un engine de SQLAlchemy, establece una conexión real y ejecuta una
+    consulta de identidad del servidor. Falla cerrado si la URL no es válida,
+    la conexión falla, el motor no es PostgreSQL o la base no es
+    ``atletismo_demo``.
+
+    Se usa antes de ejecutar Alembic para asegurar que las migraciones no se
+    apliquen a una base de datos incorrecta.
+    """
+    identity = parse_and_validate_database_url(url)
+    if not identity.is_local_demo:
+        raise DatabaseIdentityError(
+            "DATABASE_URL no apunta a la base de demostración aislada local."
+        )
+
+    engine = create_engine(url)
+    try:
+        with engine.connect() as conn:
+            verify_connected_identity(conn)
+    except DatabaseIdentityError:
+        raise
+    except Exception as exc:
+        raise DatabaseIdentityError(
+            "No se pudo verificar la identidad del servidor conectado."
+        ) from exc
+    finally:
+        engine.dispose()
+
+    return identity
+
+
 def main() -> None:
     """Punto de entrada para validación desde la línea de comandos.
 
-    Lee DATABASE_URL del entorno, valida su estructura e imprime DB_OK si todo
-    cuadra. Sale con código distinto de cero y un mensaje sin credenciales si
-    falla.
+    Lee DATABASE_URL del entorno y valida su identidad. Con ``--verify-connection``
+    establece una conexión real y verifica que el servidor conectado sea
+    PostgreSQL con la base ``atletismo_demo``. Sin el flag, solo valida la
+    estructura de la URL.
+
+    Imprime DB_OK si todo cuadra. Sale con código distinto de cero y un
+    mensaje sin credenciales si falla.
     """
     import os
 
@@ -156,8 +193,13 @@ def main() -> None:
         print("ERROR: DATABASE_URL no está definida.", file=sys.stderr)
         sys.exit(1)
 
+    verify_connection = "--verify-connection" in sys.argv
+
     try:
-        parse_and_validate_database_url(url)
+        if verify_connection:
+            verify_database_identity(url)
+        else:
+            parse_and_validate_database_url(url)
     except DatabaseIdentityError as exc:
         # Mensaje sanitizado: nunca incluir la URL completa (puede tener credenciales).
         print(f"ERROR: {exc}", file=sys.stderr)

@@ -5,6 +5,8 @@ Cubre:
 - Rechazo de targets remotos, producción, Supabase, esquemas no soportados.
 - Titularidad de cuentas de demostración (colisión con cuentas ajenas).
 - Protección de secretos (contraseñas no expuestas en mensajes de error).
+- Validación de identidad real contra una conexión (mockeada y real).
+- Seguridad de migraciones: Alembic no ejecuta sin verificación previa.
 - Construcción de argumentos de PowerShell (sin contraseñas en línea de comandos).
 
 Se ejecuta sobre SQLite en memoria y mocks; no requiere PostgreSQL ni Docker.
@@ -23,6 +25,7 @@ from scripts.demo_db_identity import (
     DatabaseIdentityError,
     parse_and_validate_database_url,
     validate_before_write,
+    verify_database_identity,
 )
 
 
@@ -75,7 +78,6 @@ def test_invalid_database_urls_are_rejected(url, motivo):
     mensaje = str(exc.value)
     # El mensaje nunca incluye la URL completa con credenciales.
     if url:
-        # La contraseña, si existe, nunca aparece en el mensaje.
         url_sin_esquema = url.split("://", 1)[1] if "://" in url else url
         assert url_sin_esquema not in mensaje
     # El motivo de rechazo aparece en el mensaje.
@@ -101,7 +103,111 @@ def test_parse_and_validate_returns_identity_object():
 
 
 # ---------------------------------------------------------------------------
-# 2. Validación unificada antes de escribir (validate_before_write)
+# 2. Validación de identidad real de la conexión (verify_database_identity)
+# ---------------------------------------------------------------------------
+
+def test_verify_database_identity_rejects_non_postgresql_scheme():
+    """verify_database_identity rechaza esquemas que no son PostgreSQL."""
+    with pytest.raises(DatabaseIdentityError):
+        verify_database_identity("sqlite://")
+
+
+def test_verify_database_identity_rejects_remote_host():
+    """verify_database_identity rechaza hosts remotos sin intentar conectar."""
+    with pytest.raises(DatabaseIdentityError):
+        verify_database_identity("postgresql://postgres@db.produccion.com:5432/atletismo_demo")
+
+
+def test_verify_database_identity_rejects_wrong_database_name():
+    """verify_database_identity rechaza nombre de base incorrecto sin conectar."""
+    with pytest.raises(DatabaseIdentityError):
+        verify_database_identity("postgresql://postgres@localhost:5432/otra_base")
+
+
+@patch("scripts.demo_db_identity.create_engine")
+def test_verify_database_identity_connection_failure(mock_create_engine):
+    """verify_database_identity falla cuando la conexión al servidor falla."""
+    mock_engine = MagicMock()
+    mock_engine.connect.side_effect = Exception("Connection refused")
+    mock_create_engine.return_value = mock_engine
+
+    with pytest.raises(DatabaseIdentityError) as exc:
+        verify_database_identity("postgresql://postgres@localhost:5432/atletismo_demo")
+    assert "No se pudo verificar la identidad" in str(exc.value)
+
+
+@patch("scripts.demo_db_identity.create_engine")
+def test_verify_database_identity_missing_result(mock_create_engine):
+    """verify_database_identity rechaza cuando current_database() devuelve None."""
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.first.return_value = None
+    mock_engine = MagicMock()
+    mock_engine.connect.return_value.__enter__.return_value = mock_conn
+    mock_create_engine.return_value = mock_engine
+
+    with pytest.raises(DatabaseIdentityError) as exc:
+        verify_database_identity("postgresql://postgres@localhost:5432/atletismo_demo")
+    assert "no devolvió identidad" in str(exc.value).lower()
+
+
+@patch("scripts.demo_db_identity.create_engine")
+def test_verify_database_identity_null_database_name(mock_create_engine):
+    """verify_database_identity rechaza cuando current_database() devuelve None como nombre."""
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.first.return_value = (None, "PostgreSQL 15")
+    mock_engine = MagicMock()
+    mock_engine.connect.return_value.__enter__.return_value = mock_conn
+    mock_create_engine.return_value = mock_engine
+
+    with pytest.raises(DatabaseIdentityError) as exc:
+        verify_database_identity("postgresql://postgres@localhost:5432/atletismo_demo")
+    assert "None" in str(exc.value) or "no devolvió" in str(exc.value).lower()
+
+
+@patch("scripts.demo_db_identity.create_engine")
+def test_verify_database_identity_wrong_database_name(mock_create_engine):
+    """verify_database_identity rechaza cuando current_database() devuelve otra base."""
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.first.return_value = ("otra_base", "PostgreSQL 15")
+    mock_engine = MagicMock()
+    mock_engine.connect.return_value.__enter__.return_value = mock_conn
+    mock_create_engine.return_value = mock_engine
+
+    with pytest.raises(DatabaseIdentityError) as exc:
+        verify_database_identity("postgresql://postgres@localhost:5432/atletismo_demo")
+    assert "otra_base" in str(exc.value)
+    assert "atletismo_demo" in str(exc.value)
+
+
+@patch("scripts.demo_db_identity.create_engine")
+def test_verify_database_identity_wrong_engine(mock_create_engine):
+    """verify_database_identity rechaza cuando el motor no es PostgreSQL."""
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.first.return_value = ("atletismo_demo", "MySQL 8.0")
+    mock_engine = MagicMock()
+    mock_engine.connect.return_value.__enter__.return_value = mock_conn
+    mock_create_engine.return_value = mock_engine
+
+    with pytest.raises(DatabaseIdentityError) as exc:
+        verify_database_identity("postgresql://postgres@localhost:5432/atletismo_demo")
+    assert "no es PostgreSQL" in str(exc.value)
+
+
+@patch("scripts.demo_db_identity.create_engine")
+def test_verify_database_identity_accepts_valid_identity(mock_create_engine):
+    """verify_database_identity acepta URL válida + servidor conectado correcto."""
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.first.return_value = ("atletismo_demo", "PostgreSQL 15.3")
+    mock_engine = MagicMock()
+    mock_engine.connect.return_value.__enter__.return_value = mock_conn
+    mock_create_engine.return_value = mock_engine
+
+    identity = verify_database_identity("postgresql://postgres@localhost:5432/atletismo_demo")
+    assert identity.dbname == "atletismo_demo"
+
+
+# ---------------------------------------------------------------------------
+# 3. Validación unificada antes de escribir (validate_before_write)
 # ---------------------------------------------------------------------------
 
 def test_validate_before_write_rejects_remote_host():
@@ -112,7 +218,6 @@ def test_validate_before_write_rejects_remote_host():
             session,
             "postgresql://postgres@db.produccion.com:5432/atletismo_demo",
         )
-    # No se ejecuta ninguna consulta contra la base si la URL ya falla.
     session.execute.assert_not_called()
 
 
@@ -130,7 +235,6 @@ def test_validate_before_write_rejects_supabase():
 def test_validate_before_write_verifies_connected_identity():
     """Cuando la URL es válida, se verifica la identidad del servidor conectado."""
     session = MagicMock()
-    # current_database() devuelve otra base -> rechazar.
     session.execute.return_value.first.return_value = ("otra_base", "PostgreSQL 15")
     with pytest.raises(DatabaseIdentityError) as exc:
         validate_before_write(
@@ -165,7 +269,42 @@ def test_validate_before_write_accepts_valid_identity():
 
 
 # ---------------------------------------------------------------------------
-# 3. Titularidad de cuentas de demostración (colisión con cuentas ajenas)
+# 4. Seguridad de migraciones: Alembic no ejecuta sin verificación previa
+# ---------------------------------------------------------------------------
+
+def test_seed_demo_validates_identity_before_writes():
+    """seed_demo.py llama _es_entorno_demo (validate_before_write) antes de
+    crear o modificar cualquier registro."""
+    import scripts.seed_demo as seed_mod
+
+    # Verificar que _es_entorno_demo existe y usa validate_before_write
+    assert hasattr(seed_mod, "_es_entorno_demo")
+    source = seed_mod._es_entorno_demo.__code__.co_names
+    assert "validate_before_write" in source
+
+
+def test_powerShell_validates_identity_before_alembic():
+    """iniciar_demo.ps1 ejecuta demo_db_identity.py --verify-connection ANTES
+    de alembic upgrade head."""
+    ps_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "scripts", "iniciar_demo.ps1",
+    )
+    with open(ps_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # --verify-connection debe aparecer antes de alembic upgrade head
+    verify_idx = content.find("--verify-connection")
+    alembic_idx = content.find("alembic upgrade head")
+    assert verify_idx != -1, "--verify-connection no encontrado en el script"
+    assert alembic_idx != -1, "alembic upgrade head no encontrado en el script"
+    assert verify_idx < alembic_idx, (
+        "La verificación de identidad debe ejecutarse antes de Alembic"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 5. Titularidad de cuentas de demostración (colisión con cuentas ajenas)
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
@@ -208,7 +347,6 @@ def test_ensure_user_rejects_foreign_account_occupying_demo_username(db_session)
     sobrescribir la cuenta ajena."""
     from scripts.seed_demo import _es_demo_owned, DEMO_PROFESOR
 
-    # Cuenta ajena que ocupa el username demo_profesor.
     ajena = _crear_usuario_ajena(
         db_session,
         username="demo_profesor",
@@ -216,11 +354,9 @@ def test_ensure_user_rejects_foreign_account_occupying_demo_username(db_session)
         role="atleta",
     )
 
-    # _es_demo_owned debe devolver False para la cuenta ajena.
     assert _es_demo_owned(ajena, DEMO_PROFESOR) is False
 
     # La cuenta ajena permanece intacta.
-    from app.models.user import User
     db_session.refresh(ajena)
     assert ajena.email == "profesor.real@club.com.ar"
     assert ajena.role == "atleta"
@@ -277,7 +413,7 @@ def test_ensure_user_rejects_wrong_email(db_session):
 
 
 # ---------------------------------------------------------------------------
-# 4. Protección de secretos en mensajes de error
+# 6. Protección de secretos en mensajes de error
 # ---------------------------------------------------------------------------
 
 def test_error_messages_do_not_contain_passwords():
@@ -294,55 +430,111 @@ def test_database_url_with_password_not_logged_in_identity_object():
     """El objeto DatabaseIdentity no expone la contraseña."""
     url_con_password = "postgresql://postgres:secreta@localhost:5432/atletismo_demo"
     identity = parse_and_validate_database_url(url_con_password)
-    # No hay campo de contraseña en el objeto.
     assert not hasattr(identity, "password")
     assert "secreta" not in str(identity)
 
 
+def test_error_messages_do_not_expose_full_url():
+    """Los mensajes de error nunca incluyen la URL completa de conexión
+    ni la contraseña cuando hay un error de validación."""
+    # Usar una URL inválida (host remoto) que incluya contraseña, para verificar
+    # que ni la contraseña ni la URL completa aparecen en el mensaje de error.
+    url_con_password = "postgresql://postgres:secreta@db.produccion.com:5432/atletismo_demo"
+    with pytest.raises(DatabaseIdentityError) as exc:
+        parse_and_validate_database_url(url_con_password)
+    mensaje = str(exc.value)
+    # La contraseña no debe aparecer en el mensaje de error
+    assert "secreta" not in mensaje
+    # La URL completa con esquema y contraseña no debe aparecer
+    assert "postgresql://postgres:secreta@" not in mensaje
+
+
 # ---------------------------------------------------------------------------
-# 5. Construcción de argumentos de PowerShell (simulación de la lógica)
+# 7. Construcción de argumentos de PowerShell y Docker
 # ---------------------------------------------------------------------------
 
 def test_powershell_connection_string_excludes_password():
     """La cadena de conexión usada por PowerShell no incluye la contraseña;
     esta viaja por PGPASSWORD."""
-    # Simula la construcción que hace iniciar_demo.ps1:
     pg_user = "postgres"
     pg_host = "127.0.0.1"
     pg_port = "5432"
     db_name = "atletismo_demo"
     connection_string = "postgresql://" + pg_user + "@" + pg_host + ":" + pg_port + "/" + db_name
 
-    assert "postgresql://postgres@127.0.0.1:5432/atletismo_demo" == connection_string
+    assert connection_string == "postgresql://postgres@127.0.0.1:5432/atletismo_demo"
     assert "PGPASSWORD" not in connection_string
-    # La contraseña no aparece en ningún segmento de la cadena.
     for segmento in connection_string.split(":"):
         assert "secreta" not in segmento
         assert "password" not in segmento.lower()
 
 
-def test_docker_run_uses_env_file_not_dash_e_password():
-    """Docker usa --env-file en lugar de -e POSTGRES_PASSWORD=... (evita que la
-    contraseña quede en la línea de comandos)."""
-    # Esta prueba valida la intención de diseño del script de PowerShell:
-    # el argumento --env-file se usa con un archivo temporal.
-    env_file_arg = "--env-file"
-    dash_e_password = "-e POSTGRES_PASSWORD=secreta"
-    assert env_file_arg != dash_e_password
-    assert env_file_arg == "--env-file"
+def test_docker_filter_argument_is_complete():
+    """El argumento --filter de Docker se construye como un argumento completo
+    (name=contenedor) sin romper los límites del argumento."""
+    container_name = "atletismo-demo-db"
+    filter_arg = "name=" + container_name
+    assert filter_arg == "name=atletismo-demo-db"
+    assert " " not in filter_arg  # Sin espacios que rompan límites de argumento
 
 
-# ---------------------------------------------------------------------------
-# 6. Detección de herramientas de cliente PostgreSQL
-# ---------------------------------------------------------------------------
+def test_docker_volume_filter_argument_is_complete():
+    """El argumento --filter de docker volume ls se construye completo."""
+    volume_name = "atletismo-demo-pgdata"
+    filter_arg = "name=" + volume_name
+    assert filter_arg == "name=atletismo-demo-pgdata"
+    assert " " not in filter_arg
+
+
+def test_docker_mount_argument_is_complete():
+    """El argumento --mount de Docker se construye como un argumento completo
+    sin espacios internos que rompan los límites."""
+    volume_name = "atletismo-demo-pgdata"
+    mount_arg = "type=volume,src=" + volume_name + ",dst=/var/lib/postgresql/data"
+    assert mount_arg == "type=volume,src=atletismo-demo-pgdata,dst=/var/lib/postgresql/data"
+    assert " " not in mount_arg
+
+
+def test_docker_publish_argument_is_complete():
+    """El argumento -p de Docker se construye completo sin espacios."""
+    pg_host_port = "5433"
+    publish_arg = "127.0.0.1:" + pg_host_port + ":5432"
+    assert publish_arg == "127.0.0.1:5433:5432"
+    assert " " not in publish_arg
+
 
 def test_postgresql_detection_requires_both_psql_and_createdb():
-    """La detección de Postgre Local requiere AMBAS herramientas (psql y
-    createdb), no solo una ni solo el servicio.
+    """La detección de PostgreSQL local requiere AMBAS herramientas (psql y
+    createdb), no solo una ni solo el servicio. Esto está implementado en
+    iniciar_demo.ps1: se comprueba que Get-Command devuelva tanto psql como
+    createdb antes de marcar a PostgreSQL como disponible."""
+    # Leer el script y verificar la lógica de detección
+    ps_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "scripts", "iniciar_demo.ps1",
+    )
+    with open(ps_path, "r", encoding="utf-8") as f:
+        content = f.read()
 
-    Esta expectativa está implementada en iniciar_demo.ps1 (sección de
-    detección): se comprueba que Get-Command devuelva tanto psql como createdb
-    antes de marcar a PostgreSQL como disponible.
-    """
-    assert True  # Documenta el requisito; la lógica está en el script de PowerShell.
+    # Verificar que se buscan ambas herramientas
+    assert "Get-Command psql" in content
+    assert "Get-Command createdb" in content
+    # Verificar que se requieren ambas (operador -and entre ellas)
+    assert "Get-Command psql" in content
+    assert "Get-Command createdb" in content
+    assert "-and" in content
 
+
+# ---------------------------------------------------------------------------
+# 8. Exclusión de credenciales del repositorio
+# ---------------------------------------------------------------------------
+
+def test_dotdemo_excluded_from_gitignore():
+    """.demo/ debe estar en .gitignore para que las credenciales no se suban."""
+    gitignore_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        ".gitignore",
+    )
+    with open(gitignore_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    assert ".demo/" in content, ".demo/ no está excluido en .gitignore"

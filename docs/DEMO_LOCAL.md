@@ -197,3 +197,22 @@ La suite de pruebas del repositorio corre sobre SQLite en memoria y no toca Post
 ```
 
 Incluye pruebas permanentes del entorno de demostración (`tests/test_demo_environment.py`) que cubren validación de URL de base de datos, titularidad de cuentas, protección de secretos y construcción de argumentos de PowerShell. Véase la sección de resultados del informe de implementación.
+
+---
+
+## Estado de validación (este informe)
+
+| Área de validación | Estado | Detalle |
+|--------------------|--------|---------|
+| Pruebas automatizadas (pytest) | PASS | 44 pruebas en `tests/test_demo_environment.py`; suite completa: 457 passed, 5 skipped, 0 failed |
+| Validación estática y sintaxis | PASS | Python (`py_compile`) y PowerShell (parser) válidos |
+| Identidad real de PostgreSQL (conexión) | BLOCKED | Requiere PostgreSQL local o Docker con motor operativo; no disponible en esta sesión |
+| Ejecución de Alembic (`alembic upgrade head`) | BLOCKED | Depende de PostgreSQL real |
+| Creación de datos de seed (`seed_demo.py`) | BLOCKED | Depende de PostgreSQL real |
+| Idempotencia del seed (segunda ejecución) | BLOCKED | Depende de PostgreSQL real |
+| Infraestructura Docker | NOT RUN | Docker instalado pero daemon no respondió en esta sesión |
+| Arranque de FastAPI (`uvicorn`) | BLOCKED | Depende de PostgreSQL real |
+| Verificación por navegador | NOT RUN | No se realizó pruebas de navegador real |
+
+Solo se documentan como PASS las verificaciones que se ejecutaron efectivamente. Las marcadas BLOCKED requieren que el propietario disponga de PostgreSQL local o Docker operativo para completarlas.
+

@@ -152,7 +152,8 @@ if ($pgAvailable) {
 
     # 1. Resolver autenticación: intentar sin contraseña (auth de confianza/peer).
     $dbPassword = $null
-    $testConn = & psql -h $pgHost -p $pgPort -U $pgUser -d postgres -tAc "SELECT version()" 2>$null
+    $testConnArgs = @("-h", $pgHost, "-p", $pgPort, "-U", $pgUser, "-d", "postgres", "-tAc", "SELECT version()")
+    $testConn = & psql @testConnArgs 2>$null
     if ($LASTEXITCODE -ne 0) {
         # 2. Si falla, pedir contraseña de forma segura (no se imprime).
         $secPwd = Read-Host -AsSecureString -Prompt "Contraseña de PostgreSQL para el usuario local (dejar vacío si usa auth de confianza)"
@@ -169,7 +170,7 @@ if ($pgAvailable) {
         if ($dbPassword) {
             $env:PGPASSWORD = $dbPassword
         }
-        $testConn = & psql -h $pgHost -p $pgPort -U $pgUser -d postgres -tAc "SELECT version()" 2>$null
+        $testConn = & psql @testConnArgs 2>$null
         if ($LASTEXITCODE -ne 0) {
             Write-Host "[ERROR] No se pudo conectar al servidor PostgreSQL local." -ForegroundColor Red
             exit 1
@@ -177,8 +178,10 @@ if ($pgAvailable) {
     }
     Write-Host "Conectividad con el servidor PostgreSQL local verificada." -ForegroundColor Green
 
-    # 3. Determinar si la base de datos ya existe.
-    $dbExists = & psql -h $pgHost -p $pgPort -U $pgUser -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '" + $dbName + "'" 2>$null
+    # 3. Determinar si la base de datos ya existe (consulta de catálogo).
+    $sqlCheckDb = "SELECT 1 FROM pg_database WHERE datname = '" + $dbName + "'"
+    $dbExistsArgs = @("-h", $pgHost, "-p", $pgPort, "-U", $pgUser, "-d", "postgres", "-tAc", $sqlCheckDb)
+    $dbExists = & psql @dbExistsArgs 2>$null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] No se pudo consultar el catálogo de bases de datos." -ForegroundColor Red
         exit 1
@@ -198,8 +201,10 @@ if ($pgAvailable) {
         Write-Host "La base de datos '$dbName' ya existe; se reutilizará." -ForegroundColor Cyan
     }
 
-    # 5. Verificar la conexión resultante.
-    $verify = & psql -h $pgHost -p $pgPort -U $pgUser -d $dbName -tAc "SELECT current_database()" 2>$null
+    # 5. Verificar la conexión resultante a la base demo.
+    $sqlCurrentDb = "SELECT current_database()"
+    $verifyArgs = @("-h", $pgHost, "-p", $pgPort, "-U", $pgUser, "-d", $dbName, "-tAc", $sqlCurrentDb)
+    $verify = & psql @verifyArgs 2>$null
     if ($LASTEXITCODE -ne 0 -or ($verify -ne $null -and $verify.Trim() -ne $dbName)) {
         Write-Host "[ERROR] No se pudo verificar la conexión a la base de datos '$dbName'." -ForegroundColor Red
         exit 1
@@ -222,7 +227,8 @@ if ($pgAvailable) {
     }
 
     # Reutilizar contenedor existente (detenido o en ejecución), nunca eliminar ajenos.
-    $existing = & docker ps -aq --filter "name=" + $containerName 2>$null
+    $filterName = "name=" + $containerName
+    $existing = & docker ps -aq --filter $filterName 2>$null
     if ($existing) {
         $state = & docker inspect -f '{{.State.Status}}' $containerName 2>$null
         if ($LASTEXITCODE -ne 0) {
@@ -256,7 +262,8 @@ if ($pgAvailable) {
         }
     } else {
         # Crear volumen dedicado si no existe.
-        $volExists = & docker volume ls -q --filter "name=" + $volumeName 2>$null
+        $filterVolume = "name=" + $volumeName
+        $volExists = & docker volume ls -q --filter $filterVolume 2>$null
         if ($LASTEXITCODE -ne 0) {
             Write-Host "[ERROR] No se pudo listar los volúmenes de Docker." -ForegroundColor Red
             exit 1
@@ -283,13 +290,20 @@ if ($pgAvailable) {
             $passItem.Attributes = [System.IO.FileAttributes]::ReadOnly -bor [System.IO.FileAttributes]::Hidden
             _RestringirAclAlUsuarioActual -LiteralPath $passFile
 
+            # Construir argumentos de docker run como array para preservar
+            # los límites de cada argumento (evita que PowerShell los parta).
+            $mountArg = "type=volume,src=" + $volumeName + ",dst=/var/lib/postgresql/data"
+            $publishArg = "127.0.0.1:" + $pgHostPort + ":5432"
+            $dbEnvArg = "POSTGRES_DB=" + $dbName
+            $userEnvArg = "POSTGRES_USER=" + $dbUser
+
             & docker run -d `
                 --name $containerName `
-                --mount "type=volume,src=" + $volumeName + ",dst=/var/lib/postgresql/data" `
-                -p ("127.0.0.1:" + $pgHostPort + ":5432") `
+                --mount $mountArg `
+                -p $publishArg `
                 --env-file $tempCredsFile `
-                -e ("POSTGRES_DB=" + $dbName) `
-                -e ("POSTGRES_USER=" + $dbUser) `
+                -e $dbEnvArg `
+                -e $userEnvArg `
                 postgres:15-alpine | Out-Null
             if ($LASTEXITCODE -ne 0) {
                 Write-Host "[ERROR] No se pudo crear el contenedor de PostgreSQL." -ForegroundColor Red
@@ -342,16 +356,20 @@ $env:HTTPS_ONLY = "false"
 $env:ALGORITHM = "HS256"
 $env:ACCESS_TOKEN_EXPIRE_MINUTES = "86400"
 
-# Validar identidad de la base antes de continuar (obligatorio, sin imprimir URL).
-# Usa el módulo de validación unificado (scripts/demo_db_identity.py).
-$settingsCheck = & $venvPython scripts/demo_db_identity.py 2>&1
+# ---------------------------------------------------------------------------
+# 6b. Validar identidad REAL de la base antes de cualquier escritura (Alembic).
+#     No se ejecuta Alembic hasta que la identidad del servidor conectado se
+#     haya verificado positivamente contra atletismo_demo.
+# ---------------------------------------------------------------------------
+Write-Host "Verificando identidad real de la base de datos conectada ..." -ForegroundColor Cyan
+$identityCheck = & $venvPython scripts/demo_db_identity.py --verify-connection 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "[ERROR] No se pudo validar la identidad de la base de datos demo." -ForegroundColor Red
+    Write-Host "[ERROR] No se pudo verificar la identidad de la base de datos demo." -ForegroundColor Red
     # Sanitizar: no mostrar la URL completa (podría contener credenciales).
-    $settingsCheck | ForEach-Object { if ($_ -notmatch 'postgresql://') { Write-Host $_ -ForegroundColor Red } }
+    $identityCheck | ForEach-Object { if ($_ -notmatch 'postgresql://') { Write-Host $_ -ForegroundColor Red } }
     exit 1
 }
-$settingsCheck | ForEach-Object { if ($_ -eq "DB_OK") { Write-Host "Base de datos verificada (atletismo_demo, localhost)." -ForegroundColor Green } }
+$identityCheck | ForEach-Object { if ($_ -eq "DB_OK") { Write-Host "Base de datos verificada (atletismo_demo, localhost, PostgreSQL)." -ForegroundColor Green } }
 
 # ---------------------------------------------------------------------------
 # 7. Ejecutar migraciones hasta el encabezado
