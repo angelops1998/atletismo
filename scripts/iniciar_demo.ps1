@@ -64,17 +64,14 @@ $venvPython = Join-Path $venvDir "Scripts\python.exe"
 if (-not (Test-Path -LiteralPath $venvPython)) {
     Write-Host "Creando entorno virtual en .venv ..."
     & python -m venv $venvDir
-    if (-not $?) {
+    if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] No se pudo crear el entorno virtual." -ForegroundColor Red
         exit 1
     }
 }
 
-# Actualizar pip dentro del venv para que las instalaciones sean fiables.
-& $venvPython -m pip install --upgrade pip -q | Out-Null
-
 # ---------------------------------------------------------------------------
-# 4. Verificar dependencias e instalar las que falten (solo si es necesario)
+# 4. Verificar dependencias (no se actualiza el gestor de paquetes en cada lanza)
 # ---------------------------------------------------------------------------
 Write-Host "Verificando dependencias del proyecto ..."
 $depsCheck = & $venvPython -c "
@@ -123,46 +120,27 @@ if (-not $pgAvailable -and -not $dockerAvailable) {
 # ---------------------------------------------------------------------------
 # 6. Inicializar o reutilizar la base de datos demo dedicada: atletismo_demo
 # ---------------------------------------------------------------------------
-function Set-DemoDbEnvironment {
-    param(
-        [string]$ConnectionString,
-        [string]$DbPassword
-    )
-    # Variables de entorno solo del proceso actual y sus hijos. Nunca se escriben en .env.
-    $env:DATABASE_URL = $ConnectionString
-    $env:DEMO_DB_PASSWORD = $DbPassword
-    $env:SECRET_KEY = $script:DemoSecretKey
-    $env:HTTPS_ONLY = "false"
-    $env:ALGORITHM = "HS256"
-    $env:ACCESS_TOKEN_EXPIRE_MINUTES = "86400"
-}
-
-# Generar (o reutilizar) la clave secreta de desarrollo, solo en memoria del proceso.
-if (-not $env:SECRET_KEY) {
-    $script:DemoSecretKey = & $venvPython -c "import secrets; print(secrets.token_hex(64))"
-} else {
-    $script:DemoSecretKey = $env:SECRET_KEY
-}
-
+$dbName = "atletismo_demo"
 $dbConnectionString = $null
 $dbPassword = $null
+
+# Archivo de credenciales solo para el contenedor Docker (proceso-scoped,
+# permisos restringidos, nunca se imprime en consola).
+$demoDir = Join-Path $repoRoot ".demo"
+$passFile = Join-Path $demoDir "db_pass"
 
 if ($pgAvailable) {
     # --- Opción A: PostgreSQL local ---------------------------------------
     Write-Host "Usando la instalación local de PostgreSQL ..." -ForegroundColor Cyan
-    $dbName = "atletismo_demo"
     $pgHost = "127.0.0.1"
     $pgPort = 5432
     $pgUser = "postgres"
-    # Intento de creación de la base de datos (ignora si ya existe).
-    & createdb $dbName 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "La base '$dbName' ya existe o no se pudo crear (se reutilizará si existe)." -ForegroundColor Cyan
-    }
-    # Si la conexión requiere contraseña, solicitarla de forma segura (no se imprime).
+
+    # 1. Resolver autenticación: intentar sin contraseña (auth de confianza/peer).
     $dbPassword = $null
-    $testConn = & psql -d postgres -tAc "SELECT version()" 2>$null
+    $testConn = & psql -h $pgHost -p $pgPort -U $pgUser -d postgres -tAc "SELECT version()" 2>$null
     if ($LASTEXITCODE -ne 0) {
+        # 2. Si falla, pedir contraseña de forma segura (no se imprime).
         $secPwd = Read-Host -AsSecureString -Prompt "Contraseña de PostgreSQL para el usuario local (dejar vacío si usa auth de confianza)"
         if ($secPwd) {
             $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secPwd)
@@ -172,7 +150,49 @@ if ($pgAvailable) {
                 [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
             }
         }
+        $testConn = & psql -h $pgHost -p $pgPort -U $pgUser -d postgres -tAc "SELECT version()" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] No se pudo conectar al servidor PostgreSQL local." -ForegroundColor Red
+            exit 1
+        }
     }
+    Write-Host "Conectividad con el servidor PostgreSQL local verificada." -ForegroundColor Green
+
+    # 3. Determinar si la base de datos ya existe.
+    $dbExists = & psql -h $pgHost -p $pgPort -U $pgUser -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '" + $dbName + "'" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] No se pudo consultar el catálogo de bases de datos." -ForegroundColor Red
+        exit 1
+    }
+    $dbExists = ($dbExists -ne $null -and $dbExists.Trim() -eq "1")
+
+    # 4. Crear solo si no existe y es explícitamente seguro.
+    if (-not $dbExists) {
+        Write-Host "Creando la base de datos '$dbName' ..." -ForegroundColor Cyan
+        $pgBin = Get-Command createdb -ErrorAction SilentlyContinue
+        if ($pgBin) {
+            & createdb -h $pgHost -p $pgPort -U $pgUser $dbName 2>$null
+        } else {
+            # Fallback: crear mediante SQL si no hay createdb.
+            & psql -h $pgHost -p $pgPort -U $pgUser -d postgres -c "CREATE DATABASE " + $dbName + ";" 2>$null
+        }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] No se pudo crear la base de datos '$dbName'." -ForegroundColor Red
+            exit 1
+        }
+        Write-Host "Base de datos '$dbName' creada." -ForegroundColor Green
+    } else {
+        Write-Host "La base de datos '$dbName' ya existe; se reutilizará." -ForegroundColor Cyan
+    }
+
+    # 5. Verificar la conexión resultante.
+    $verify = & psql -h $pgHost -p $pgPort -U $pgUser -d $dbName -tAc "SELECT current_database()" 2>$null
+    if ($LASTEXITCODE -ne 0 -or ($verify -ne $null -and $verify.Trim() -ne $dbName)) {
+        Write-Host "[ERROR] No se pudo verificar la conexión a la base de datos '$dbName'." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "Conexión a '$dbName' verificada." -ForegroundColor Green
+
     $pwdSegment = if ($dbPassword) { ":" + $dbPassword + "@" } else { "@" }
     $dbConnectionString = "postgresql://" + $pgUser + $pwdSegment + $pgHost + ":" + $pgPort + "/" + $dbName
 } elseif ($dockerAvailable) {
@@ -180,15 +200,22 @@ if ($pgAvailable) {
     $containerName = "atletismo-demo-db"
     $volumeName = "atletismo-demo-pgdata"
     $pgHostPort = 5433
-    $dbName = "atletismo_demo"
     $dbUser = "postgres"
 
     Write-Host "Preparando contenedor PostgreSQL aislado en Docker ..." -ForegroundColor Cyan
+
+    if (-not (Test-Path -LiteralPath $demoDir)) {
+        New-Item -ItemType Directory -Path $demoDir | Out-Null
+    }
 
     # Reutilizar contenedor existente (detenido o en ejecución), nunca eliminar ajenos.
     $existing = & docker ps -aq --filter "name=" + $containerName 2>$null
     if ($existing) {
         $state = & docker inspect -f '{{.State.Status}}' $containerName 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] No se pudo inspeccionar el contenedor $containerName." -ForegroundColor Red
+            exit 1
+        }
         if ($state -ne "running") {
             Write-Host "Iniciando contenedor demo existente: $containerName"
             & docker start $containerName | Out-Null
@@ -199,14 +226,42 @@ if ($pgAvailable) {
         } else {
             Write-Host "Contenedor demo ya en ejecución: $containerName"
         }
+
+        # Recuperar la contraseña generada originalmente para poder conectar.
+        if (Test-Path -LiteralPath $passFile) {
+            $dbPassword = Get-Content -LiteralPath $passFile -Raw
+            $dbPassword = $dbPassword.Trim()
+            if (-not $dbPassword) {
+                Write-Host "[ERROR] El archivo de credenciales del contenedor está vacío." -ForegroundColor Red
+                exit 1
+            }
+            Write-Host "Credenciales del contenedor existente recuperadas." -ForegroundColor Green
+        } else {
+            Write-Host "[ERROR] Existe el contenedor $containerName pero no se encontró el archivo de credenciales ($passFile)." -ForegroundColor Red
+            Write-Host "No se puede adivinar la contraseña original. Borre el contenedor manualmente o proporcione la contraseña para continuar." -ForegroundColor Red
+            exit 1
+        }
     } else {
         # Crear volumen dedicado si no existe.
         $volExists = & docker volume ls -q --filter "name=" + $volumeName 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] No se pudo listar los volúmenes de Docker." -ForegroundColor Red
+            exit 1
+        }
         if (-not $volExists) {
             & docker volume create $volumeName | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "[ERROR] No se pudo crear el volumen dedicado $volumeName." -ForegroundColor Red
+                exit 1
+            }
         }
-        # Contraseña de la base solo en memoria del proceso, no se imprime.
+        # Contraseña de la base solo en memoria del proceso y en archivo con
+        # permisos restringidos; nunca se imprime en consola.
         $dbPassword = (& $venvPython -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
+        Set-Content -LiteralPath $passFile -Value $dbPassword -Encoding UTF8
+        $passItem = Get-Item -LiteralPath $passFile
+        $passItem.Attributes = [System.IO.FileAttributes]::ReadOnly -bor [System.IO.FileAttributes]::Hidden
+
         & docker run -d `
             --name $containerName `
             --mount "type=volume,src=" + $volumeName + ",dst=/var/lib/postgresql/data" `
@@ -237,29 +292,38 @@ if ($pgAvailable) {
     $dbConnectionString = "postgresql://" + $dbUser + $pwdSegment + "127.0.0.1:" + $pgHostPort + "/" + $dbName
 }
 
+# Generar (o reutilizar) la clave secreta de desarrollo, solo en memoria del proceso.
+if (-not $env:SECRET_KEY) {
+    $script:DemoSecretKey = & $venvPython -c "import secrets; print(secrets.token_hex(64))"
+    $env:SECRET_KEY = $script:DemoSecretKey
+} else {
+    $script:DemoSecretKey = $env:SECRET_KEY
+}
+
 # Exportar la conexión como variable de entorno del proceso (se hereda por hijos).
+# Nunca se escribe en .env ni se imprime.
 $env:DATABASE_URL = $dbConnectionString
 
-# Validar identidad de la base antes de continuar (obligatorio).
+# Resto de variables de entorno del proceso (ya DATABASE_URL y SECRET_KEY están definidas).
+$env:HTTPS_ONLY = "false"
+$env:ALGORITHM = "HS256"
+$env:ACCESS_TOKEN_EXPIRE_MINUTES = "86400"
+
+# Validar identidad de la base antes de continuar (obligatorio, sin imprimir URL).
 $settingsCheck = & $venvPython -c "
 from app.config import get_settings
 s = get_settings()
 assert 'atletismo_demo' in s.database_url, s.database_url
 assert ('localhost' in s.database_url or '127.0.0.1' in s.database_url), s.database_url
-print('DB_OK ' + s.database_url.split('@')[1].split('/')[0])
+print('DB_OK')
 " 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] No se pudo validar la identidad de la base de datos demo." -ForegroundColor Red
-    Write-Host $settingsCheck -ForegroundColor Red
+    # Sanitizar: no mostrar la URL completa (podría contener credenciales).
+    Write-Host $settingsCheck -ForegroundColor Red | ForEach-Object { if ($_ -notmatch 'postgresql://') { $_ } }
     exit 1
 }
-$settingsCheck | ForEach-Object { if ($_ -match "^DB_OK ") { Write-Host "Base de datos verificada: " + $_.Replace('DB_OK ', '') -ForegroundColor Green } }
-
-# Resto de variables de entorno del proceso (ya DATABASE_URL y SECRET_KEY están definidas).
-$env:SECRET_KEY = $script:DemoSecretKey
-$env:HTTPS_ONLY = "false"
-$env:ALGORITHM = "HS256"
-$env:ACCESS_TOKEN_EXPIRE_MINUTES = "86400"
+$settingsCheck | ForEach-Object { if ($_ -eq "DB_OK") { Write-Host "Base de datos verificada (atletismo_demo, localhost)." -ForegroundColor Green } }
 
 # ---------------------------------------------------------------------------
 # 7. Ejecutar migraciones hasta el encabezado
@@ -289,7 +353,7 @@ Write-Host "`nIniciando la aplicación en http://127.0.0.1:8002 ..." -Foreground
 Write-Host "Presiona Ctrl+C para detener la aplicación.`n" -ForegroundColor Gray
 
 & $venvPython -m uvicorn app.main:app --host 127.0.0.1 --port 8002
-if (-not $?) {
+if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] La aplicación no se inició correctamente." -ForegroundColor Red
     exit 1
 }

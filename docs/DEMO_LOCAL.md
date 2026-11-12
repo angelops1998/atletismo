@@ -29,9 +29,9 @@ Qué hace el script, en orden:
 1. Verifica que esté en la raíz del repositorio.
 2. Comprueba la instalación de Python.
 3. Localiza (o crea) el entorno virtual `.venv`, siguiendo la convención del repo.
-4. Verifica e instala las dependencias del proyecto solo si faltan (`pip install -r requirements.txt`).
+4. Verifica e instala las dependencias del proyecto solo si faltan (`pip install -r requirements.txt`). No actualiza el gestor de paquetes en cada ejecución.
 5. Detecta PostgreSQL usable: instalación local o motor de Docker.
-6. Inicializa o reutiliza la base de datos dedicada `atletismo_demo`.
+6. Inicializa o reutiliza la base de datos dedicada `atletismo_demo` (sin eliminar ni reiniciar bases existentes).
 7. Configura la conexión **sin tocar `.env`** (variables de entorno solo del proceso actual).
 8. Genera una `SECRET_KEY` de desarrollo solo en memoria del proceso.
 9. Ejecuta `alembic upgrade head` (migraciones hasta el encabezado).
@@ -53,7 +53,24 @@ Si no hay PostgreSQL local, el script usa Docker:
 - Reutiliza un contenedor/demo existente si ya está creado (detenido o en ejecución). Nunca elimina contenedores o volúmenes ajenos.
 - Nunca destruye automáticamente los datos de la demostración.
 
+**Gestión de credenciales de Docker:** al crear el contenedor, el script genera una contraseña de PostgreSQL y la guarda en el archivo `.demo/db_pass` (carpeta del repositorio, atributos de solo lectura y oculto, permisos restringidos al usuario actual). En ejecuciones siguientes, reutiliza el contenedor existente y recupera la contraseña de ese archivo, por lo que no hace falta adivinarla ni volver a crear la base de datos. Si el contenedor existe pero falta el archivo de credenciales, el script se detiene con un mensaje claro (no adivina ni restablece la base de datos automáticamente).
+
+> Limitación de seguridad: `.demo/db_pass` almacena la contraseña en texto plano con protección a nivel de sistema de archivos (solo lectura, oculto). Cualquier usuario con acceso de lectura al archivo puede obtenerla. No se imprime en consola.
+
 Si el motor de Docker no está en ejecución, el script avisa con el requisito faltante y una recomendación de configuración (ver "Limitaciones").
+
+## PostgreSQL local
+
+Si se detecta una instalación local de PostgreSQL (cliente `psql`/`createdb` o servicio en ejecución), el script:
+
+1. Intenta conectarse sin contraseña (autenticación de confianza/peer).
+2. Si falla, solicita la contraseña de forma segura (no se imprime en consola).
+3. Verifica la conectividad con el servidor.
+4. Comprueba si la base `atletismo_demo` ya existe en el catálogo (`pg_database`).
+5. La crea solo si no existe (mediante `createdb` o `CREATE DATABASE`), nunca la elimina ni la reinicia automáticamente.
+6. Verifica la conexión final a `atletismo_demo`.
+
+XAMPP trae MariaDB/MySQL. Esta aplicación **no** usa MySQL ni MariaDB: su motor es PostgreSQL. No intentes apuntar la app a XAMPP.
 
 ---
 
@@ -124,8 +141,10 @@ Si no se puede garantizar un restablecimiento seguro, no se implementa; en ese c
 - Base de datos dedicada: `atletismo_demo`.
 - URL de conexión dedicada, inyectada solo como variable de entorno del proceso (`DATABASE_URL`), nunca escrita en `.env` ni en `.env.example`.
 - La app lee `DATABASE_URL` del entorno (sobrescribe cualquier valor de `.env` si existiera), así que el `.env` del usuario queda intacto.
+- Validación estricta de la URL de conexión (parseo estructural, no substrings): esquema `postgresql://`, host `localhost`/`127.0.0.1`, base de datos exactamente `atletismo_demo`, y verificación de la identidad del servidor realmente conectado (`current_database()` y `version()`). Se rechazan nombres de base incorrectos, hosts remotos, URLs de producción/Supabase, esquemas no soportados y puertos inválidos.
 - Los registros de demostración se identifican por el dominio de email dedicado `@atletismo.demo.local` más los nombres de usuario estables. El inicializador solo crea/actualiza/borra esos registros; los registros ajenos se preservan.
 - Nunca se conecta a Supabase ni a producción. Nunca se reutiliza una base de datos no identificada.
+- Ninguna contraseña de base de datos, URL completa de conexión ni `SECRET_KEY` se imprime en consola ni se persiste en `.env`.
 
 ---
 
@@ -158,10 +177,11 @@ Cubre las pantallas del profesor y del atleta:
 
 ## Limitaciones
 
-- En esta sesión no estaba disponible ni una instalación local de PostgreSQL ni el motor de Docker en ejecución (Docker Desktop se lanzó pero su API de daemon no respondió, probablemente en configuración de primera ejecución de WSL2). Por tanto, las verificaciones contra PostgreSQL real (conexión, identidad de la base, `alembic upgrade head` sobre `atletismo_demo`, creación de cuentas y datos demo) **no se pudieron ejecutar** en esta sesión y quedan pendientes hasta que PostgreSQL o Docker estén disponibles. El script está preparado para usarlos en cuanto estén presentes.
+- Se requiere una instalación local de PostgreSQL (con `psql`/`createdb`) o Docker Desktop con el motor en ejecución para correr el demo completo. El script verifica estos requisitos y se detiene con un mensaje claro si faltan, sin escribir en ninguna base de datos.
 - La app escucha en `127.0.0.1:8002` (solo loopback) para no exponerla en la red local.
 - Las cuentas de demostración no fuerzan cambio de contraseña (`debe_cambiar_password = false`) porque ya traen contraseñas reales de demo; esto es una simplificación del entorno demo y no se debe replicar en producción.
 - No se implementó un restablecimiento destructivo automático; el restablecimiento es explícito (`--borrar-demo --confirmar-borrar-demo`) y afecta solo registros demo.
+- La verificación contra PostgreSQL real (conexión, identidad de la base, `alembic upgrade head` sobre `atletismo_demo`, creación de cuentas y datos demo, idempotencia ejecutada) depende de que PostgreSQL o Docker estén disponibles en la máquina del propietario.
 
 ---
 

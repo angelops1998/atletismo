@@ -4,10 +4,10 @@ Crea las cuentas de demostración y un conjunto reducido de datos de ejemplo
 sobre la base de datos dedicada ``atletismo_demo``. Nunca toca registros ajenos:
 solo crea o actualiza registros cuya titularidad es claramente demo.
 
-La titularidad demo se marca con el dominio de email dedicado
-``@atletismo.demo.local`` (campo soportado, unico e indexado), combinado con los
-nombres de usuario estables definidos abajo. Nunca se asume titularidad solo
-por el nombre de usuario.
+La titularidad demo se valida de forma estricta: nombre de usuario estable,
+email de dominio dedicado ``@atletismo.demo.local`` y rol esperado. Nunca se
+asume titularidad solo por el nombre de usuario, y nunca se sobrescribe ni se
+elimina una cuenta que no supere esa validación.
 
 Uso:
     python scripts/seed_demo.py                 # crea/actualiza los datos demo
@@ -22,6 +22,7 @@ import sys
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -33,8 +34,8 @@ from app.models.sesion_entrenamiento import SesionEntrenamiento  # noqa: E402
 from app.models.marca import Marca                         # noqa: E402
 from app.models.asistencia import Asistencia               # noqa: E402
 from app.models.pago import Pago                           # noqa: E402
-from app.auth import hash_password                         # noqa: E402
-from app.services import cobranza                          # noqa: E402
+from app.auth import hash_password, verify_password        # noqa: E402
+from app.services import cobranza, pruebas                 # noqa: E402
 from app.tiempo import hoy, lunes_actual                   # noqa: E402
 
 # --- Titularidad demo (marcador explícito, campo soportado) ---------------
@@ -75,6 +76,7 @@ DEMO_ATLETAS = [
 ]
 
 DEMO_USERNAMES = {DEMO_PROFESOR["username"]} | {a["username"] for a in DEMO_ATLETAS}
+DEMO_ATLETA_USERNAMES = {a["username"] for a in DEMO_ATLETAS}
 
 HOY = hoy()
 AYER = HOY - timedelta(days=1)
@@ -86,60 +88,160 @@ def _email_de(username: str) -> str:
     return f"{username}{DEMO_EMAIL_DOMAIN}"
 
 
+def _es_demo_owned(usuario: User, data: dict) -> bool:
+    """Verifica que ``usuario`` sea exactamente la cuenta demo esperada.
+
+    La titularidad exige coincidencia simultánea de username, email (dominio
+    dedicado) y rol. Una coincidencia solo por username no basta.
+    """
+    email = (usuario.email or "").lower()
+    return (
+        usuario.username == data["username"]
+        and email == _email_de(data["username"]).lower()
+        and usuario.role == data["role"]
+    )
+
+
 def _es_entorno_demo(db) -> None:
     """Valida que la base de destino sea la dedicada al demo.
 
-    Se llama antes de borrar o escribir. Rechaza cualquier base que no sea
-    atletismo_demo en localhost, para nunca tocar una base ajena o de produccion.
+    Usa parseo estructural de la URL (no substrings) y verifica la identidad
+    del servidor realmente conectado antes de permitir escrituras. Rechaza
+    cualquier base que no sea atletismo_demo en localhost.
     """
     from app.config import get_settings
+    from sqlalchemy import text
+
     settings = get_settings()
     url = settings.database_url
-    if "atletismo_demo" not in url:
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
         raise SystemExit(
-            f"[ERROR] La base configurada no es la dedicada al demo: {url}\n"
-            "El initializer solo escribe sobre la base de demostracion."
-        )
-    if "localhost" not in url and "127.0.0.1" not in url:
-        raise SystemExit(
-            f"[ERROR] La base no pertenece a una instancia local aprobada: {url}"
+            "[ERROR] No se pudo parsear DATABASE_URL.\n"
+            "El initializer solo escribe sobre la base de demostración."
         )
 
+    if parsed.scheme not in ("postgresql", "postgres"):
+        raise SystemExit(
+            f"[ERROR] DATABASE_URL no usa el esquema postgresql://: {parsed.scheme}\n"
+            "El initializer solo escribe sobre la base de demostración."
+        )
 
-def _es_demo(usuario: User) -> bool:
-    """Un registro es demo si su email usa el dominio dedicado y su usuario es
-    uno de los estables de demostracion (doble chequeo, nunca solo por username)."""
-    email = (usuario.email or "").lower()
-    return email.endswith(DEMO_EMAIL_DOMAIN) and usuario.username in DEMO_USERNAMES
+    if parsed.hostname not in ("localhost", "127.0.0.1"):
+        raise SystemExit(
+            f"[ERROR] DATABASE_URL no apunta a una instancia local aprobada: "
+            f"{parsed.hostname}\n"
+            "El initializer solo escribe sobre la base de demostración."
+        )
+
+    if parsed.path not in ("/atletismo_demo", "atletismo_demo"):
+        raise SystemExit(
+            f"[ERROR] La base de datos no es 'atletismo_demo' (path: {parsed.path}).\n"
+            "El initializer solo escribe sobre la base de demostración."
+        )
+
+    # Puerto: debe ser un puerto TCP válido para PostgreSQL (0 no es válido).
+    try:
+        puerto = parsed.port
+    except ValueError:
+        raise SystemExit(
+            "[ERROR] Puerto de DATABASE_URL fuera de rango (0-65535).\n"
+            "El initializer solo escribe sobre la base de demostración."
+        )
+    if puerto is not None and puerto == 0:
+        raise SystemExit(
+            "[ERROR] El puerto 0 no es válido para PostgreSQL.\n"
+            "El initializer solo escribe sobre la base de demostración."
+        )
+
+    # Verificar la identidad del servidor realmente conectado antes de escribir.
+    _verificar_conexion_actual(db)
+
+
+def _verificar_conexion_actual(db) -> None:
+    """Confirma que la conexión activa apunta a una PostgreSQL llamada
+    atletismo_demo. Nunca se imprime la URL completa ni la contraseña."""
+    from sqlalchemy import text
+
+    try:
+        row = db.execute(text("SELECT current_database(), version()")).first()
+    except Exception:
+        raise SystemExit(
+            "[ERROR] No se pudo verificar la identidad del servidor conectado.\n"
+            "Asegurate de que DATABASE_URL apunte a una PostgreSQL local llamada "
+            "atletismo_demo."
+        )
+    if row is None:
+        raise SystemExit(
+            "[ERROR] El servidor no devolvió identidad de base de datos.\n"
+            "Asegurate de que DATABASE_URL apunte a una PostgreSQL local llamada "
+            "atletismo_demo."
+        )
+    nombre_db, version = row[0], (row[1] or "")
+    if nombre_db != "atletismo_demo":
+        raise SystemExit(
+            f"[ERROR] La base de datos conectada es '{nombre_db}', se esperaba "
+            "'atletismo_demo'.\n"
+            "El initializer solo escribe sobre la base de demostración."
+        )
+    if "PostgreSQL" not in version:
+        raise SystemExit(
+            "[ERROR] El motor conectado no es PostgreSQL.\n"
+            "El initializer solo escribe sobre la base de demostración."
+        )
 
 
 def _ids_atletas_demo(db) -> list[int]:
-    """IDs de atletas demo, identificados por el dominio de email dedicado."""
+    """IDs de atletas demo, identificados por email dominio dedicado + username
+    estable + rol atleta (titularidad estricta)."""
+    usernames = list(DEMO_ATLETA_USERNAMES)
     return [
         u.id for u in db.query(User)
         .filter(User.email.like(f"%{DEMO_EMAIL_DOMAIN}"))
+        .filter(User.username.in_(usernames))
         .filter(User.role == "atleta")
         .all()
     ]
 
 
 def _ensure_user(db, data: dict) -> User:
-    """Crea o actualiza una cuenta demo. La contraseña se hashea con el
-    mecanismo real de la app (bcrypt, app.auth.hash_password)."""
+    """Crea o actualiza una cuenta demo de forma segura.
+
+    - Si el username ya existe y NO es una cuenta demo verificada (username +
+      email dominio dedicado + rol), se detiene la inicialización para no
+      sobrescribir una cuenta ajena.
+    - Si el username existe y es demo, se actualizan solo sus propios campos.
+    - Si no existe, se crea.
+    La contraseña solo se rehashea si la almacenada no verifica contra la
+    contraseña demo esperada (idempotencia: no se modifica el registro
+    innecesariamente en cada corrida).
+    """
     usuario = db.query(User).filter(User.username == data["username"]).first()
     es_nuevo = usuario is None
     if es_nuevo:
         usuario = User(username=data["username"], role=data["role"])
         db.add(usuario)
+    else:
+        if not _es_demo_owned(usuario, data):
+            raise SystemExit(
+                f"[ERROR] El usuario '{data['username']}' ya existe pero no es una "
+                "cuenta de demostración (email o rol no coinciden). No se "
+                "sobreescribirá una cuenta ajena.\n"
+                "El initializer solo crea o actualiza cuentas verificadas como demo."
+            )
 
-    # Titularidad explícita: email de dominio dedicado.
+    # Titularidad verificada: actualizar solo campos de esta cuenta demo.
     usuario.email = _email_de(data["username"])
-    usuario.hashed_password = hash_password(data["password"])
     usuario.full_name = data["full_name"]
     usuario.role = data["role"]
     usuario.is_active = True
-    # Contraseña real de demo: no se exige cambio al entrar.
     usuario.debe_cambiar_password = False
+    # Rehashear solo si la contraseña almacenada no verifica (evita modificar
+    # el registro en cada corrida idempotente).
+    if not verify_password(data["password"], usuario.hashed_password or ""):
+        usuario.hashed_password = hash_password(data["password"])
     if es_nuevo:
         usuario.fecha_alta = HOY
 
@@ -152,7 +254,6 @@ def _ensure_user(db, data: dict) -> User:
         usuario.contacto_emergencia = "Familiar Demo — +591 70000001"
         usuario.observaciones_medicas = "Cuenta de demostración del entorno local."
         usuario.cuota_mensual = data["cuota_mensual"]
-        # Se empieza a cobrar este mes: la deuda se ve clara en el estado de cuenta.
         usuario.cobro_desde = MES_ACTUAL
 
     return usuario
@@ -173,13 +274,12 @@ def _borrar_datos_demo(db, atleta_ids: list[int], borrar_usuarios: bool = False)
     if borrar_usuarios:
         for uid in atleta_ids:
             u = db.query(User).get(uid)
-            if u is not None and _es_demo(u):
+            if u is not None and u.username in DEMO_ATLETA_USERNAMES:
                 db.delete(u)
         profesor = db.query(User).filter(
             User.username == DEMO_PROFESOR["username"],
-            User.email.like(f"%{DEMO_EMAIL_DOMAIN}"),
         ).first()
-        if profesor is not None and _es_demo(profesor):
+        if profesor is not None and _es_demo_owned(profesor, DEMO_PROFESOR):
             db.delete(profesor)
 
 
@@ -255,7 +355,7 @@ def _crear_partes_semanales(db, atletas: dict) -> None:
         peso = Decimal("70.0")
         for i in range(4):
             semana = lunes - timedelta(weeks=3 - i)
-            peso = (peso + Decimal(str(round(__import__("random").uniform(-0.4, 0.4), 1)))).quantize(
+            peso = (peso + Decimal(str(round(random.uniform(-0.4, 0.4), 1)))).quantize(
                 Decimal("0.1"), rounding=ROUND_HALF_UP)
             db.add(ParteSemanal(
                 atleta_id=atleta.id, semana=semana,
@@ -347,7 +447,7 @@ def main() -> None:
             print("Datos de demostración borrados (solo registros titularidad demo).")
             return
 
-        # Cuentas de demostración (idempotente: crea o actualiza).
+        # Cuentas de demostración (idempotente: crea o actualiza solo cuentas demo).
         profesor = _ensure_user(db, DEMO_PROFESOR)
         atletas = {a["username"]: _ensure_user(db, a) for a in DEMO_ATLETAS}
         db.commit()
