@@ -54,6 +54,7 @@ DEMO_PROFESOR = {
 DEMO_ATLETAS = [
     {
         "username": "demo_atleta1",
+        "role": "atleta",
         "password": "DemoAtleta2026!",
         "full_name": "Lucía Demo",
         "categoria": "Juveniles",
@@ -62,6 +63,7 @@ DEMO_ATLETAS = [
     },
     {
         "username": "demo_atleta2",
+        "role": "atleta",
         "password": "DemoAtleta2026!",
         "full_name": "Mateo Demo",
         "categoria": "Mayores",
@@ -70,6 +72,7 @@ DEMO_ATLETAS = [
     },
     {
         "username": "demo_atleta3",
+        "role": "atleta",
         "password": "DemoAtleta2026!",
         "full_name": "Camila Demo",
         "categoria": "Juveniles",
@@ -173,7 +176,16 @@ def _ensure_user(db, data: dict) -> User:
     usuario.debe_cambiar_password = False
     # Rehashear solo si la contraseña almacenada no verifica (evita modificar
     # el registro en cada corrida idempotente).
-    if not verify_password(data["password"], usuario.hashed_password or ""):
+    try:
+        password_is_valid = verify_password(
+            data["password"], usuario.hashed_password or ""
+        )
+    except (TypeError, ValueError):
+        # New User rows have no hash until this initializer sets one; bcrypt
+        # raises ValueError for an empty or malformed hash instead of returning
+        # False. Treat that state as needing the demo password hash.
+        password_is_valid = False
+    if not password_is_valid:
         usuario.hashed_password = hash_password(data["password"])
     if es_nuevo:
         usuario.fecha_alta = HOY

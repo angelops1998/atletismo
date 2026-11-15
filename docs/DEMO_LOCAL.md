@@ -118,7 +118,11 @@ Rutas clave para la demostración:
 ## Cómo detener y reiniciar
 
 - **Detener:** `Ctrl+C` en la terminal donde corre `.\scripts\iniciar_demo.ps1`.
+- **Detener solo PostgreSQL:** `docker stop atletismo-demo-db`. El volumen `atletismo-demo-pgdata` se conserva.
+- **Reanudar PostgreSQL:** vuelve a ejecutar `.\scripts\iniciar_demo.ps1`; el script inicia el contenedor dedicado existente.
 - **Reiniciar:** ejecuta de nuevo `.\scripts\iniciar_demo.ps1`. Es idempotente: no duplica cuentas, atletas, pagos, asistencias, marcas, partes ni registros diarios. Vuelve a dejar los datos de demostración en el estado conocido.
+
+El script crea o reutiliza `.demo/` en la raíz del repositorio. En modo Docker guarda allí `db_pass` (oculto y con ACL para el usuario actual); `docker_env_*.tmp` solo existe durante la creación del contenedor y se elimina inmediatamente. No crea ni modifica `.env`. También crea `.venv` si no existe y puede instalar `requirements.txt` en ese entorno.
 
 ---
 
@@ -196,23 +200,23 @@ La suite de pruebas del repositorio corre sobre SQLite en memoria y no toca Post
 .venv\Scripts\python.exe -m pytest
 ```
 
-Incluye pruebas permanentes del entorno de demostración (`tests/test_demo_environment.py`) que cubren validación de URL de base de datos, titularidad de cuentas, protección de secretos y construcción de argumentos de PowerShell. Véase la sección de resultados del informe de implementación.
+Incluye pruebas del entorno de demostración (`tests/test_demo_environment.py`) para identidad de base, titularidad, secretos, argumentos y el comportamiento real del helper PowerShell de verificación. La prueba ejecuta PowerShell cuando está disponible y cubre salida nula, vacía, espacios, nombre inesperado y código de salida no cero.
 
 ---
 
-## Estado de validación (este informe)
+## Estado de validación local (12 de noviembre de 2026)
 
 | Área de validación | Estado | Detalle |
 |--------------------|--------|---------|
-| Pruebas automatizadas (pytest) | PASS | 44 pruebas en `tests/test_demo_environment.py`; suite completa: 457 passed, 5 skipped, 0 failed |
-| Validación estática y sintaxis | PASS | Python (`py_compile`) y PowerShell (parser) válidos |
-| Identidad real de PostgreSQL (conexión) | BLOCKED | Requiere PostgreSQL local o Docker con motor operativo; no disponible en esta sesión |
-| Ejecución de Alembic (`alembic upgrade head`) | BLOCKED | Depende de PostgreSQL real |
-| Creación de datos de seed (`seed_demo.py`) | BLOCKED | Depende de PostgreSQL real |
-| Idempotencia del seed (segunda ejecución) | BLOCKED | Depende de PostgreSQL real |
-| Infraestructura Docker | NOT RUN | Docker instalado pero daemon no respondió en esta sesión |
-| Arranque de FastAPI (`uvicorn`) | BLOCKED | Depende de PostgreSQL real |
-| Verificación por navegador | NOT RUN | No se realizó pruebas de navegador real |
+| Área | Resultado observado |
+|------|---------------------|
+| Docker Desktop / daemon | Disponible; contenedor dedicado `atletismo-demo-db`, PostgreSQL 15, puerto loopback 5433 y volumen `atletismo-demo-pgdata`. |
+| PostgreSQL real | Conexión verificada; `current_database()` devolvió exactamente `atletismo_demo` y el motor informó PostgreSQL. |
+| Alembic | `alembic upgrade head` completó; revisión `c4b8e2d91f07` (head del repositorio). |
+| Seed | Completado dos veces. Conteos estables: 4 usuarios, 3 partes diarios, 12 semanales, 3 marcas, 15 asistencias y 2 pagos. |
+| Aplicación / HTTP | Uvicorn inició en `http://127.0.0.1:8002`; `/auth/login`, `/` y `/club` respondieron HTTP 200. |
+| Navegador | Inicio de sesión del profesor demo completado; panel autenticado visible en `/panel`. |
+| Pruebas | `python -m pytest -q`: 465 passed, 5 skipped; una advertencia de deprecación de Starlette/httpx. |
 
-Solo se documentan como PASS las verificaciones que se ejecutaron efectivamente. Las marcadas BLOCKED requieren que el propietario disponga de PostgreSQL local o Docker operativo para completarlas.
+La conexión PostgreSQL, migración, seed repetido, HTTP, navegador, parser de PowerShell y `py_compile` se ejecutaron realmente en esta máquina. Las pruebas automatizadas usan SQLite/mocks donde corresponde; no sustituyen la validación PostgreSQL real anterior.
 

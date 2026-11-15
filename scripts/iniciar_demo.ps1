@@ -28,6 +28,22 @@ param()
 
 $ErrorActionPreference = "Stop"
 
+function _RestringirAclAlUsuarioActual {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LiteralPath
+    )
+
+    $acl = Get-ACL -LiteralPath $LiteralPath
+    $acl.SetAccessRuleProtection($true, $false)
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        $currentUser, "FullControl", "Allow"
+    )
+    $acl.SetAccessRule($rule)
+    Set-ACL -LiteralPath $LiteralPath -AclObject $acl
+}
+
 # ---------------------------------------------------------------------------
 # 0. Trabajar siempre desde la raíz del repositorio
 # ---------------------------------------------------------------------------
@@ -44,7 +60,8 @@ Set-Location $repoRoot
     "requirements.txt",
     ".env.example",
     "scripts/seed_demo.py",
-    "scripts/demo_db_identity.py"
+    "scripts/demo_db_identity.py",
+    "scripts/demo_db_validation.psm1"
 ) | ForEach-Object {
     if (-not (Test-Path -LiteralPath $_)) {
         Write-Host "[ERROR] No se encontró el archivo requerido: $_" -ForegroundColor Red
@@ -205,7 +222,8 @@ if ($pgAvailable) {
     $sqlCurrentDb = "SELECT current_database()"
     $verifyArgs = @("-h", $pgHost, "-p", $pgPort, "-U", $pgUser, "-d", $dbName, "-tAc", $sqlCurrentDb)
     $verify = & psql @verifyArgs 2>$null
-    if ($LASTEXITCODE -ne 0 -or ($verify -ne $null -and $verify.Trim() -ne $dbName)) {
+    Import-Module (Join-Path $repoRoot "scripts/demo_db_validation.psm1") -Force
+    if (-not (Test-DemoDatabaseVerification -ExitCode $LASTEXITCODE -Output $verify -ExpectedDatabase $dbName)) {
         Write-Host "[ERROR] No se pudo verificar la conexión a la base de datos '$dbName'." -ForegroundColor Red
         exit 1
     }
@@ -402,24 +420,4 @@ Write-Host "Presiona Ctrl+C para detener la aplicación.`n" -ForegroundColor Gra
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] La aplicación no se inició correctamente." -ForegroundColor Red
     exit 1
-}
-
-
-# ---------------------------------------------------------------------------
-# Función auxiliar: restringe el ACL de un archivo al usuario actual.
-# ---------------------------------------------------------------------------
-function _RestringirAclAlUsuarioActual {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$LiteralPath
-    )
-
-    $acl = Get-ACL -LiteralPath $LiteralPath
-    $acl.SetAccessRuleProtection($true, $false)  # Desheredar, copiar existentes
-    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-        $currentUser, "FullControl", "Allow"
-    )
-    $acl.SetAccessRule($rule)
-    Set-ACL -LiteralPath $LiteralPath -AclObject $acl
 }

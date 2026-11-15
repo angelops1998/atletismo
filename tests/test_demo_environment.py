@@ -13,6 +13,8 @@ Se ejecuta sobre SQLite en memoria y mocks; no requiere PostgreSQL ni Docker.
 """
 
 import os
+import shutil
+import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -380,6 +382,15 @@ def test_ensure_user_accepts_legitimate_demo_account(db_session):
     assert _es_demo_owned(legitima, DEMO_PROFESOR) is True
 
 
+def test_ensure_user_sets_password_when_new_user_has_no_hash(db_session):
+    """Fresh seed rows begin with no hash; bcrypt must not abort initialization."""
+    from scripts.seed_demo import _ensure_user, DEMO_PROFESOR
+    from app.auth import verify_password
+
+    user = _ensure_user(db_session, DEMO_PROFESOR)
+    assert verify_password(DEMO_PROFESOR["password"], user.hashed_password)
+
+
 def test_ensure_user_rejects_wrong_role(db_session):
     """Mismo username y email, pero rol distinto -> no es demo."""
     from scripts.seed_demo import _es_demo_owned, DEMO_PROFESOR
@@ -523,6 +534,43 @@ def test_postgresql_detection_requires_both_psql_and_createdb():
     assert "Get-Command psql" in content
     assert "Get-Command createdb" in content
     assert "-and" in content
+
+
+@pytest.mark.parametrize(
+    ("exit_code", "output", "expected"),
+    [
+        (0, "atletismo_demo", True),
+        (1, "atletismo_demo", False),
+        (0, None, False),
+        (0, "", False),
+        (0, " \t\r\n", False),
+        (0, "otra_base", False),
+        (0, "atletismo_demo\notra_base", False),
+    ],
+)
+def test_powershell_database_output_validation_behavior(exit_code, output, expected):
+    """Exercise the same PowerShell helper called before Alembic, not source text."""
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    if not shell:
+        pytest.skip("PowerShell is unavailable; helper behavior cannot be executed")
+    module = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "scripts", "demo_db_validation.psm1",
+    )
+    output_literal = "$null" if output is None else "'" + output.replace("'", "''") + "'"
+    command = (
+        f"Import-Module '{module.replace("'", "''")}' -Force; "
+        f"$result = Test-DemoDatabaseVerification -ExitCode {exit_code} "
+        f"-Output {output_literal} -ExpectedDatabase 'atletismo_demo'; "
+        "if ($result) { 'true' } else { 'false' }"
+    )
+    encoded = __import__("base64").b64encode(command.encode("utf-16le")).decode("ascii")
+    result = subprocess.run(
+        [shell, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().lower() == str(expected).lower()
 
 
 # ---------------------------------------------------------------------------
