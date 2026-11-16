@@ -15,23 +15,26 @@
 {% endblock %}
 
 {% block contenido %}
-<form method="get" action="/atletas" style="display:flex; gap:8px; margin-bottom:12px">
-    <input type="search" name="q" value="{{ busqueda }}" placeholder="Buscar por nombre…">
+<form method="get" action="/atletas" class="filtros-fecha">
+    <label for="buscar-atleta">Buscar atleta</label>
+    <input id="buscar-atleta" type="search" name="q" value="{{ busqueda }}" placeholder="Nombre…">
+    <label for="fecha-atletas">Estado del día</label>
+    <input id="fecha-atletas" type="date" name="fecha" value="{{ fecha.isoformat() }}" required>
     {% if ver_bajas %}<input type="hidden" name="bajas" value="1">{% endif %}
-    <button type="submit" class="btn">Buscar</button>
+    <button type="submit" class="btn btn-primario">Aplicar</button>
 </form>
 
 <div class="acciones" style="margin-bottom:12px">
-    <a href="/atletas" class="btn btn-sm {{ 'btn-primario' if not ver_bajas }}">Activos</a>
-    <a href="/atletas?bajas=1" class="btn btn-sm {{ 'btn-primario' if ver_bajas }}">Dados de baja</a>
+    <a href="/atletas?fecha={{ fecha.isoformat() }}" class="btn btn-sm {{ 'btn-primario' if not ver_bajas }}">Activos</a>
+    <a href="/atletas?bajas=1&fecha={{ fecha.isoformat() }}" class="btn btn-sm {{ 'btn-primario' if ver_bajas }}">Dados de baja</a>
 </div>
 
 {% if filas %}
 <div class="card">
     <div class="lista">
         {% for f in filas %}
-        <a href="/atletas/{{ f.atleta.id }}" class="item">
-            <span class="avatar avatar-{{ f.semaforo or '' }}">{{ f.atleta.nombre[0] }}</span>
+        <a href="/atletas/{{ f.atleta.id }}" class="item item-atleta-diario">
+            <span class="avatar">{{ f.atleta.nombre[0] }}</span>
             <div class="item-txt">
                 <div class="item-nombre">{{ f.atleta.nombre }}</div>
                 <div class="item-sub">
@@ -40,11 +43,20 @@
                 </div>
                 <div class="item-chips">
                     {% if f.parte %}
-                    <span class="chip chip-{{ 'ok' if f.semaforo == 'bien' else ('atencion' if f.semaforo == 'atencion' else 'mal') }}">
-                        Bienestar {{ f.bienestar }}/{{ maximo }}
-                    </span>
+                    <span class="chip chip-ok">Parte enviado · {{ f.parte.fecha|fecha_corta }}</span>
+                    <span class="chip">Sueño {{ f.parte.sueno_calidad }}/10</span>
+                    <span class="chip">Fatiga {{ f.parte.fatiga }}/10</span>
+                    <span class="chip">Dolor muscular {{ f.parte.dolor_muscular }}/10</span>
+                    <span class="chip">Estrés {{ f.parte.estres }}/10</span>
+                    <span class="chip">Ánimo {{ f.parte.animo }}/10</span>
+                    <span class="chip">{{ 'Entrenó' if f.parte.entreno_hoy else 'No entrenó' }}</span>
+                    {% if f.parte.hay_molestia %}
+                    <span class="chip chip-mal">Molestia · {{ f.parte.molestia_dolor or '—' }}/10 · {{ f.parte.molestia_zona|join(', ') if f.parte.molestia_zona else 'zona no indicada' }}{% if f.parte.molestia_zona_otra %} ({{ f.parte.molestia_zona_otra }}){% endif %}</span>
+                    {% endif %}
+                    {% if f.parte.sintomas_enfermedad %}<span class="chip chip-mal">Síntomas declarados</span>{% endif %}
                     {% else %}
-                    <span class="chip chip-atencion">Sin parte</span>
+                    <span class="chip chip-atencion">Sin parte para {{ fecha|fecha_corta }}</span>
+                    {% if f.ultima_fecha %}<span class="chip">Último: {{ f.ultima_fecha|fecha_corta }}</span>{% endif %}
                     {% endif %}
 
                     {% if f.cuenta.estado == 'debe' %}
@@ -53,10 +65,8 @@
                     <span class="chip chip-ok">Al día</span>
                     {% endif %}
 
-                    {% for a in f.alertas %}
-                    <span class="chip chip-mal">{{ a.titulo }}</span>
-                    {% endfor %}
                 </div>
+                {% if f.parte and f.parte.comentarios %}<div class="item-sub">Comentario: {{ f.parte.comentarios }}</div>{% endif %}
             </div>
         </a>
         {% endfor %}

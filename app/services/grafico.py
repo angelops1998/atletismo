@@ -37,9 +37,9 @@ def linea(valores: Sequence[Optional[float]], *, ancho: int = ANCHO, alto: int =
           minimo: float | None = None, maximo: float | None = None) -> dict:
     """Serie de puntos para un gráfico de líneas.
 
-    Los None (semanas sin parte) NO se interpolan: cortan la línea en segmentos.
-    Dibujar una recta sobre una semana sin datos haría creer que el atleta cargó
-    algo, que es justo lo contrario de lo que hay que ver.
+    Los None (períodos sin observación) NO se interpolan: cortan la línea en
+    segmentos. Dibujar una recta sobre una fecha sin datos haría creer que hubo
+    un registro, que es justo lo contrario de lo que se quiere mostrar.
     """
     n = len(valores)
     if n == 0:

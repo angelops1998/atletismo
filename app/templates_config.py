@@ -93,6 +93,17 @@ def duracion_filter(minutos) -> str:
     return f"{horas} h" if resto == 0 else f"{horas} h {resto} min"
 
 
+def mmss_filter(segundos) -> str:
+    """Segundos almacenados como enteros, presentados de forma uniforme MM:SS."""
+    if segundos is None:
+        return "—"
+    try:
+        minutos, resto = divmod(int(segundos), 60)
+    except (TypeError, ValueError):
+        return "—"
+    return f"{minutos:02d}:{resto:02d}"
+
+
 templates.env.globals["csrf_input"] = _csrf_input
 templates.env.globals["static"] = _static
 templates.env.globals["now"] = ahora
@@ -109,3 +120,4 @@ templates.env.filters["fecha_corta"] = fecha_corta_filter
 templates.env.filters["mes"] = mes_filter
 templates.env.filters["semana"] = semana_filter
 templates.env.filters["duracion"] = duracion_filter
+templates.env.filters["mmss"] = mmss_filter

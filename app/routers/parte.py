@@ -1,184 +1,404 @@
-"""El parte semanal: lo que el atleta carga una vez por semana desde el celular."""
+﻿"""Phase 3 router integration for daily tracking (Phase 3 only).
+
+Replaces the weekly /parte workflow with the approved daily, today-only
+workflow over the existing Phase 2 domain services. Policy A and the signed
+discard-confirmation protocol are preserved exactly; the router is a thin
+HTTP/controller layer and does not duplicate domain validation, locking or
+concurrency handling.
+"""
 from datetime import date, timedelta
-from decimal import Decimal, InvalidOperation
-from fastapi import APIRouter, Depends, Request, Form, HTTPException
+import re
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from ..templates_config import templates
-from ..database import get_db
 from ..auth import get_current_user
-from ..models.parte import ParteSemanal
-from ..services import bienestar
-from ..tiempo import lunes_actual, lunes_de
+from ..database import get_db
+from ..services import bienestar, parte_diaria as pd
+from ..templates_config import templates
+from ..tiempo import hoy, lunes_actual, lunes_de
 
 router = APIRouter(prefix="/parte", tags=["parte"])
 
-# Cuántas semanas para atrás se puede completar un parte. Una: el que se olvidó
-# el domingo lo carga el lunes siguiente. Más que eso ya no es un recuerdo, es
-# una invención, y datos inventados son peores que datos faltantes.
-SEMANAS_EDITABLES = 1
+
+# Ítems de bienestar diario (escala 1-10). Reemplazan, solo para esta plantilla,
+# los ítems semanales 1-5 de services/bienestar.py (que se conservan intactos para
+# los consumidores semanales). Cada ítem trae su campo, su etiqueta y su pregunta.
+DAILY_ITEMS = [
+    ("sueno_calidad",  "Calidad del sueño",  "¿Cómo dormiste la noche pasada?"),
+    ("fatiga",         "Fatiga",             "¿Qué tan cansado/a te sentís hoy?"),
+    ("dolor_muscular", "Dolor muscular",     "¿Cómo están tus músculos?"),
+    ("estres",         "Estrés",             "¿Qué tan estresado/a te sentís?"),
+    ("animo",          "Ánimo",              "¿Cómo estuvo tu ánimo hoy?"),
+]
+
+# Descriptores por número (1-10) para cada escala de bienestar diario. Sirven de
+# guía en el formulario; la validación de rango sigue siendo del servicio (1-10).
+DAILY_DESCRIPTORES = {
+    "sueno_calidad": {
+        1: "Muy mala", 2: "Muy mala", 3: "Muy mala",
+        4: "Regular", 5: "Regular", 6: "Regular",
+        7: "Buena", 8: "Buena", 9: "Muy buena", 10: "Excelente",
+    },
+    "fatiga": {
+        1: "Ninguna", 2: "Ninguna", 3: "Baja",
+        4: "Moderada", 5: "Moderada", 6: "Moderada",
+        7: "Elevada", 8: "Elevada", 9: "Extrema", 10: "Extrema",
+    },
+    "dolor_muscular": {
+        1: "Ninguno", 2: "Ninguno", 3: "Leve",
+        4: "Moderado", 5: "Moderado", 6: "Moderado",
+        7: "Fuerte", 8: "Fuerte", 9: "Muy fuerte", 10: "Extremo",
+    },
+    "estres": {
+        1: "Ninguno", 2: "Ninguno", 3: "Leve",
+        4: "Moderado", 5: "Moderado", 6: "Moderado",
+        7: "Elevado", 8: "Elevado", 9: "Muy elevado", 10: "Extremo",
+    },
+    "animo": {
+        1: "Muy bajo", 2: "Muy bajo", 3: "Bajo",
+        4: "Bajo", 5: "Regular", 6: "Regular",
+        7: "Bueno", 8: "Bueno", 9: "Excelente", 10: "Excelente",
+    },
+}
 
 
-def _semana_pedida(valor: str | None) -> date:
-    """La semana que se está cargando, validada contra la ventana permitida."""
-    actual = lunes_actual()
-    if not valor:
-        return actual
-    try:
-        pedida = lunes_de(date.fromisoformat(valor))
-    except ValueError:
-        return actual
-    if pedida > actual:
-        return actual
-    if pedida < actual - timedelta(weeks=SEMANAS_EDITABLES):
+def _athlete_required(user) -> None:
+    if user.role != "atleta":
         raise HTTPException(status_code=403,
-                            detail="Esa semana ya está cerrada. Avisale al profesor.")
-    return pedida
+                            detail="El parte diario lo carga cada atleta.")
 
 
-def _entero(valor: str, minimo: int, maximo: int) -> int | None:
+def _parse_zonas(value: str):
+    if not value:
+        return []
+    return [z.strip() for z in value.split(",") if z.strip()]
+
+
+def _parse_bool(value: str) -> bool:
+    """binario() emits si/no; service accepts si/no as well."""
+    return (value or "").strip().lower() == "si"
+
+
+class FormParseError(ValueError):
+    """Controlled input parsing error; never passed to the service layer."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+def _mmss_seconds(raw: str, *, name: str) -> int:
+    match = re.fullmatch(r"(\d{2,3}):(\d{2})", (raw or "").strip())
+    if not match or int(match.group(2)) > 59:
+        raise FormParseError(f"{name}: ingresá minutos y segundos como MM:SS (ejemplo 01:30).")
+    return int(match.group(1)) * 60 + int(match.group(2))
+
+
+def _parse_positive_int(raw: str, *, name: str) -> int:
+    text = (raw or "").strip()
+    if not text:
+        raise FormParseError(f"{name} inválido.")
     try:
-        n = int(valor)
-    except (TypeError, ValueError):
-        return None
-    return n if minimo <= n <= maximo else None
+        value = int(text)
+    except ValueError as exc:
+        raise FormParseError(f"{name} inválido.") from exc
+    if value < 1:
+        raise FormParseError(f"{name} debe ser un entero positivo.")
+    return value
 
 
-def _decimal(valor: str, minimo: float, maximo: float) -> Decimal | None:
-    """Los números con coma se escriben con coma en el celular; el navegador
-    manda '7,5' y float() se rompe, así que se normaliza acá."""
-    if valor is None or not str(valor).strip():
-        return None
-    try:
-        d = Decimal(str(valor).strip().replace(",", "."))
-    except InvalidOperation:
-        return None
-    return d if Decimal(str(minimo)) <= d <= Decimal(str(maximo)) else None
+def _parse_session_item(text: str, *, index: int) -> dict:
+    """Parse one session line: id|orden|tipo|duracion|rpe|comentarios.
+
+    Missing optional values keep their defaults; malformed submitted values are
+    rejected explicitly so they cannot become new sessions or silently change
+    values. Parsing errors must be handled before calling the Phase 2 service.
+    """
+    parts = text.split("|")
+    label = f"Sesión {index}"
+    item = {"orden": 1, "tipo_entrenamiento": "resistencia",
+            "duracion_min": 45, "rpe": 6, "comentarios_entrenamiento": None}
+    if len(parts) >= 1 and parts[0].strip():
+        item["id"] = _parse_positive_int(parts[0], name=f"{label}: id")
+    else:
+        item["id"] = None
+    if len(parts) >= 2 and parts[1].strip():
+        item["orden"] = _parse_positive_int(parts[1], name=f"{label}: orden")
+    if len(parts) >= 3 and parts[2].strip():
+        item["tipo_entrenamiento"] = parts[2].strip()
+    if len(parts) >= 4 and parts[3].strip():
+        item["duracion_min"] = _parse_positive_int(parts[3], name=f"{label}: duración")
+    if len(parts) >= 5 and parts[4].strip():
+        item["rpe"] = _parse_positive_int(parts[4], name=f"{label}: RPE")
+    if len(parts) >= 6:
+        item["comentarios_entrenamiento"] = parts[5].strip() or None
+    return item
+
+
+def _serialize_sessions(sessions) -> str:
+    """Serialize existing sessions into the pipe-delimited form."""
+    lines = []
+    for s in sessions or []:
+        lines.append(
+            f"{s.id}|{s.orden}|{s.tipo_entrenamiento}|{s.duracion_min}"
+            f"|{s.rpe}|{s.comentarios_entrenamiento or ''}"
+        )
+    return "\n".join(lines)
+
+
+def _serialize_delete_ids(sessions) -> str:
+    return ",".join(str(s.id) for s in sessions or [] if s.id is not None)
+
+
+def _session_payload(form) -> tuple:
+    """Build the service payload from the submitted form.
+
+    Returns (payload, delete_ids, allow_replace, errors). Malformed submitted
+    values are rejected explicitly and never passed partially to the Phase 2
+    service.
+    """
+    errors = []
+    # Handle both newline-separated textarea and repeated form fields
+    sessions_raw = []
+    if hasattr(form, "getlist"):
+        sessions_list = form.getlist("sessions")
+    else:
+        sessions_list = [form.get("sessions", "")]
+
+    for item in sessions_list:
+        item = item.strip()
+        if not item:
+            continue
+        # Split by newlines for textarea content
+        for line in item.split("\n"):
+            line = line.strip()
+            if line:
+                sessions_raw.append(line)
+
+    raw = []
+    for idx, item in enumerate(sessions_raw, start=1):
+        try:
+            raw.append(_parse_session_item(item, index=idx))
+        except FormParseError as exc:
+            errors.append(exc.message)
+
+    # Handle comma-separated delete_session_ids
+    explicit_raw = []
+    if hasattr(form, "getlist"):
+        explicit_list = form.getlist("delete_session_ids")
+    else:
+        explicit_list = [form.get("delete_session_ids", "")]
+
+    for item in explicit_list:
+        item = item.strip()
+        if not item:
+            continue
+        # Split by commas for comma-separated values
+        for part in item.split(","):
+            part = part.strip()
+            if part:
+                explicit_raw.append(part)
+
+    delete_ids = []
+    seen_delete = set()
+    for item in explicit_raw:
+        try:
+            value = _parse_positive_int(item, name="ID de sesión a eliminar")
+        except FormParseError as exc:
+            errors.append(exc.message)
+            continue
+        if value in seen_delete:
+            errors.append(f"ID de sesión a eliminar duplicado: {value}.")
+            continue
+        seen_delete.add(value)
+        delete_ids.append(value)
+
+    allow_replace = form.get("allow_full_session_replacement") == "1"
+    payload = {
+        "sueno_calidad": form.get("sueno_calidad", ""),
+        "horas_sueno": form.get("horas_sueno", ""),
+        "fatiga": form.get("fatiga", ""),
+        "dolor_muscular": form.get("dolor_muscular", ""),
+        "estres": form.get("estres", ""),
+        "animo": form.get("animo", ""),
+        "hay_molestia": _parse_bool(form.get("hay_molestia")),
+        "molestia_zona": _parse_zonas(form.get("molestia_zona", "")),
+        "molestia_zona_otra": form.get("molestia_zona_otra", ""),
+        "molestia_dolor": form.get("molestia_dolor", ""),
+        "afecta_entrenamiento": form.get("afecta_entrenamiento", ""),
+        "sintomas_enfermedad": _parse_bool(form.get("sintomas_enfermedad")),
+        "detalle_sintomas": form.get("detalle_sintomas", ""),
+        "comentarios": form.get("comentarios", ""),
+        "entreno_hoy": _parse_bool(form.get("entreno_hoy")),
+        "sessions": raw,
+    }
+    if payload["entreno_hoy"]:
+        principal = {"estructura_tipo": form.get("estructura_tipo", "")}
+        for field in ("series", "repeticiones_por_serie", "distancia_m"):
+            try:
+                principal[field] = _parse_positive_int(form.get(field, ""), name=field)
+            except FormParseError as exc:
+                errors.append(exc.message)
+        for field in ("descanso_micro_min", "descanso_micro_max", "descanso_macro_min",
+                      "descanso_macro_max", "tiempo_rep_min", "tiempo_rep_max"):
+            try:
+                principal[field] = _mmss_seconds(form.get(field, ""), name=field)
+            except FormParseError as exc:
+                errors.append(exc.message)
+        for low, high in (("descanso_micro_min", "descanso_micro_max"),
+                          ("descanso_macro_min", "descanso_macro_max"),
+                          ("tiempo_rep_min", "tiempo_rep_max")):
+            if low in principal and high in principal and principal[low] > principal[high]:
+                errors.append(f"{low}: el mínimo no puede superar el máximo.")
+        payload["entrenamiento_principal"] = {
+            "estructura_tipo": principal.get("estructura_tipo"),
+            "series": principal.get("series"),
+            "repeticiones_por_serie": principal.get("repeticiones_por_serie"),
+            "distancia_m": principal.get("distancia_m"),
+            **{f"{field}_s": value for field, value in principal.items() if field.endswith(("_min", "_max"))},
+        }
+    else:
+        payload["entrenamiento_principal"] = None
+    return payload, delete_ids, allow_replace, errors
+
+
+def _base_context(user, *, parte=None, form=None, errors=None, message=None,
+                  conflict=False, stale=False, created=False,
+                  edit_state_token=None, discard_token=None):
+    """Stable template context for Phase 3/4 transition."""
+    return {
+        "user": user,
+        "fecha": hoy(),
+        "parte": parte,
+        "form": form,
+        "errores": errors or [],
+        "message": message,
+        "conflict": conflict,
+        "stale": stale,
+        "created": created,
+        "edit_state_token": edit_state_token,
+        "discard_token": discard_token,
+        "molestia_zonas": pd.MOLESTIA_ZONAS,
+        "tipos_entrenamiento": pd.TIPOS_SET,
+        "items_diarias": DAILY_ITEMS,
+        "descriptores_diarias": DAILY_DESCRIPTORES,
+    }
+
+
+def _render_form(request, user, db, *, parte=None, form=None, errors=None,
+                 message=None, conflict=False, stale=False, created=False,
+                 edit_state_token=None, discard_token=None, status_code=200):
+    # Use submitted form data for sessions/delete_ids on validation/conflict errors
+    # to preserve user input; fall back to persisted parte data otherwise.
+    # Multi-value retrieval preserves repeated form fields without discarding
+    # newline-separated textarea input or changing single-value behavior.
+    if form is not None and (status_code in (422, 409) or errors):
+        if hasattr(form, "getlist"):
+            sessions_items = [str(item) for item in form.getlist("sessions") if str(item).strip()]
+            delete_items = [str(item) for item in form.getlist("delete_session_ids") if str(item).strip()]
+            sessions_form = "\n".join(sessions_items)
+            delete_form = ",".join(delete_items)
+        else:
+            sessions_form = form.get("sessions", "") or ""
+            delete_form = form.get("delete_session_ids", "") or ""
+    else:
+        sessions_form = ""
+        delete_form = ""
+        if parte:
+            sessions_form = _serialize_sessions(parte.sesiones)
+            delete_form = _serialize_delete_ids(parte.sesiones)
+    return templates.TemplateResponse(request, "atleta/parte.html", {
+        **_base_context(
+            user, parte=parte, form=form, errors=errors, message=message,
+            conflict=conflict, stale=stale, created=created,
+            edit_state_token=edit_state_token, discard_token=discard_token,
+        ),
+        "rpe_escala": bienestar.RPE_ESCALA,
+        "rpe_franjas": bienestar.RPE_FRANJAS,
+        "sessions_form": sessions_form,
+        "delete_form": delete_form,
+    }, status_code=status_code)
 
 
 @router.get("", response_class=HTMLResponse)
-async def formulario(request: Request, semana: str | None = None,
-                     db: Session = Depends(get_db)):
+async def formulario(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
-    if user.role != "atleta":
-        raise HTTPException(status_code=403,
-                            detail="El parte semanal lo carga cada atleta.")
+    _athlete_required(user)
 
-    objetivo = _semana_pedida(semana)
-    parte = bienestar.parte_de_semana(db, user.id, objetivo)
-    anterior = lunes_actual() - timedelta(weeks=1)
+    target_date = hoy()
+    parte, edit_token, discard_token = pd.get_today_state(db, user.id, target_date)
 
-    return templates.TemplateResponse(request, "atleta/parte.html", {
-        "user": user,
-        "semana": objetivo,
-        "parte": parte,
-        "items": bienestar.ITEMS,
-        "etiquetas": bienestar.ETIQUETAS,
-        "rpe_escala": bienestar.RPE_ESCALA,
-        "rpe_franjas": bienestar.RPE_FRANJAS,
-        "es_semana_actual": objetivo == lunes_actual(),
-        "parte_pendiente": bienestar.parte_de_semana(db, user.id, lunes_actual()) is None,
-        # Si todavía no cargó la semana pasada, se le ofrece completarla: es la
-        # forma de no perder el dato del que se olvidó el domingo.
-        "falta_anterior": (objetivo == lunes_actual()
-                           and bienestar.parte_de_semana(db, user.id, anterior) is None),
-        "semana_anterior": anterior,
-    })
+    return _render_form(request, user, db, parte=parte,
+                       edit_state_token=edit_token, discard_token=discard_token)
 
 
 @router.post("", response_class=HTMLResponse)
 async def guardar(
     request: Request,
-    semana: str = Form(""),
-    sueno_calidad: str = Form(""),
-    dolor_muscular: str = Form(""),
-    estres: str = Form(""),
-    animo: str = Form(""),
-    horas_sueno: str = Form(""),
-    comidas_dia: str = Form(""),
-    alimentacion_calidad: str = Form(""),
-    hidratacion_litros: str = Form(""),
-    come_antes_entrenar: str = Form(""),
-    suplementos: str = Form(""),
-    peso_kg: str = Form(""),
-    sesiones: str = Form(""),
-    minutos_totales: str = Form(""),
-    rpe: str = Form(""),
-    molestias: str = Form(""),
-    molestia_zona: str = Form(""),
-    molestia_dolor: str = Form(""),
-    comentarios: str = Form(""),
     db: Session = Depends(get_db),
 ):
     user = get_current_user(request, db)
-    if user.role != "atleta":
-        raise HTTPException(status_code=403,
-                            detail="El parte semanal lo carga cada atleta.")
+    _athlete_required(user)
 
-    objetivo = _semana_pedida(semana)
-    valores = {campo: _entero(request_valor, 1, 5) for campo, request_valor in (
-        ("sueno_calidad", sueno_calidad), ("dolor_muscular", dolor_muscular),
-        ("estres", estres), ("animo", animo),
-    )}
+    target_date = hoy()
+    form = await request.form()
+    payload, delete_ids, allow_replace, parse_errors = _session_payload(form)
 
-    errores = []
-    faltantes = [etiqueta for campo, etiqueta, _p in bienestar.ITEMS
-                 if valores[campo] is None]
-    if faltantes:
-        errores.append("Faltan responder: " + ", ".join(faltantes).lower() + ".")
+    parte, edit_token, discard_token = pd.get_today_state(db, user.id, target_date)
+    if parse_errors:
+        return _render_form(
+            request, user, db,
+            parte=parte, form=form, errors=parse_errors,
+            message="Hay errores en los datos enviados.",
+            edit_state_token=edit_token,
+            discard_token=discard_token,
+            status_code=422,
+        )
 
-    # El RPE reemplazó al ítem de energía, así que es obligatorio como lo era
-    # aquel: salvo que el atleta diga que no entrenó (0 sesiones), en cuyo caso no
-    # hay esfuerzo que calificar.
-    cantidad_sesiones = _entero(sesiones, 0, 21)
-    esfuerzo = _entero(rpe, 1, 10)
-    if esfuerzo is None and cantidad_sesiones != 0:
-        errores.append("Indicá del 1 al 10 qué tan duro te resultó entrenar (RPE).")
+    result = pd.save_daily_record(
+        db,
+        atleta_id=user.id,
+        payload=payload,
+        edit_state_token=form.get("edit_state_token"),
+        discard_token=form.get("discard_token"),
+        confirm_discard_sessions=_parse_bool(form.get("confirm_discard_sessions")),
+        explicit_delete_session_ids=delete_ids or None,
+        allow_full_session_replacement=allow_replace,
+        fecha=target_date,
+    )
 
-    tiene_molestias = molestias == "si"
-    dolor = _entero(molestia_dolor, 0, 10)
-    if tiene_molestias and dolor is None:
-        errores.append("Indicá del 0 al 10 cuánto te duele.")
-    if tiene_molestias and not molestia_zona.strip():
-        errores.append("Indicá en qué parte del cuerpo tenés la molestia.")
+    if result.ok:
+        return RedirectResponse(url="/parte?ok=1", status_code=302)
 
-    if errores:
-        return templates.TemplateResponse(request, "atleta/parte.html", {
-            "user": user, "semana": objetivo,
-            "parte": bienestar.parte_de_semana(db, user.id, objetivo),
-            "items": bienestar.ITEMS, "etiquetas": bienestar.ETIQUETAS,
-            "rpe_escala": bienestar.RPE_ESCALA,
-            "rpe_franjas": bienestar.RPE_FRANJAS,
-            "es_semana_actual": objetivo == lunes_actual(),
-            "parte_pendiente": True,
-            "errores": errores,
-            "form": await request.form(),
-        }, status_code=422)
+    if result.status == pd.STATUS_VALIDATION:
+        return _render_form(
+            request, user, db,
+            parte=result.parte, form=form, errors=result.errors,
+            message=result.message,
+            edit_state_token=result.edit_state_token,
+            discard_token=result.discard_token,
+            status_code=422,
+        )
 
-    # Si ya existe el parte de esa semana se edita, no se duplica: es lo que hace
-    # que "una vez por semana" se cumpla aunque el atleta entre tres veces.
-    parte = bienestar.parte_de_semana(db, user.id, objetivo)
-    if parte is None:
-        parte = ParteSemanal(atleta_id=user.id, semana=objetivo)
-        db.add(parte)
+    if result.status == pd.STATUS_CONFLICT:
+        return _render_form(
+            request, user, db,
+            parte=result.parte, form=form, errors=result.errors,
+            message=result.message, conflict=result.conflict, stale=result.stale,
+            edit_state_token=result.edit_state_token,
+            discard_token=result.discard_token,
+            status_code=409,
+        )
 
-    for campo, valor in valores.items():
-        setattr(parte, campo, valor)
-    parte.horas_sueno = _decimal(horas_sueno, 0, 24)
-    parte.comidas_dia = _entero(comidas_dia, 0, 10)
-    parte.alimentacion_calidad = _entero(alimentacion_calidad, 1, 5)
-    parte.hidratacion_litros = _decimal(hidratacion_litros, 0, 15)
-    parte.come_antes_entrenar = (come_antes_entrenar == "si") if come_antes_entrenar else None
-    parte.suplementos = suplementos.strip()[:200] or None
-    parte.peso_kg = _decimal(peso_kg, 20, 250)
-    parte.sesiones = cantidad_sesiones
-    parte.minutos_totales = _entero(minutos_totales, 0, 3000)
-    parte.rpe = esfuerzo
-    parte.molestias = tiene_molestias
-    parte.molestia_zona = molestia_zona.strip()[:80] if tiene_molestias else None
-    parte.molestia_dolor = dolor if tiene_molestias else None
-    parte.comentarios = comentarios.strip() or None
+    if result.status == pd.STATUS_NOT_FOUND:
+        return _render_form(
+            request, user, db, form=form, errors=result.errors,
+            message=result.message, status_code=404,
+        )
 
-    db.commit()
-    return RedirectResponse(url="/inicio?parte=1", status_code=302)
+    return _render_form(
+        request, user, db, form=form, errors=result.errors,
+        message=result.message, status_code=500,
+    )

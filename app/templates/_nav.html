@@ -34,6 +34,9 @@
         <div class="nom">{{ user.nombre }}</div>
         <div class="rol">{{ user.role }}</div>
         <a href="/cuenta">Mi cuenta</a>
-        <a href="/auth/logout">Cerrar sesión</a>
+        <form method="post" action="/auth/logout" class="rail-logout">
+            {{ csrf_input(request) }}
+            <button type="submit">Cerrar sesión</button>
+        </form>
     </div>
 </aside>
