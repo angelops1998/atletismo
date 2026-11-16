@@ -533,6 +533,8 @@ fieldset { border: none; }
    TABLAS
    ============================================================ */
 .tabla-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tabla-historial-diario { min-width: 1120px; }
+.tabla-historial-diario .comentario-resumen { max-width: 220px; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th {
     text-align: left;

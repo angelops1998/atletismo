@@ -18,12 +18,10 @@ from ..models.user import User
 from ..models.marca import Marca
 from ..models.pago import Pago
 from ..models.asistencia import Asistencia
-from ..services import bienestar, alertas, cobranza, grafico, pruebas, seguimiento_diario
+from ..services import cobranza, grafico, pruebas, seguimiento_diario
 from ..tiempo import hoy, lunes_actual, fecha_razonable
 
 router = APIRouter(prefix="/atletas", tags=["atletas"])
-
-SEMANAS_FICHA = 16
 
 # La contraseña provisoria se le muestra al profesor una sola vez, en la ficha,
 # para que se la dicte. Viaja en una cookie de vida corta y NO en la URL: el query
@@ -315,7 +313,21 @@ async def ficha(atleta_id: int, request: Request, db: Session = Depends(get_db))
         reportes_diarios, total_reportes_diarios = seguimiento_diario.historial_atleta(
             db, atleta.id, desde=desde, hasta=hasta, pagina=pagina, por_pagina=por_pagina)
 
-    serie = bienestar.serie_individual(db, atleta.id, SEMANAS_FICHA)
+    resumen_diario = seguimiento_diario.resumen_diario_atleta(
+        db, atleta.id, desde=desde, hasta=hasta)
+    campos_graficos_diarios = {
+        "sueno_calidad": ("Calidad del sueño", 1, 10, "escala 1–10"),
+        "fatiga": ("Fatiga", 1, 10, "escala 1–10"),
+        "dolor_muscular": ("Dolor muscular", 1, 10, "escala 1–10"),
+        "estres": ("Estrés", 1, 10, "escala 1–10"),
+        "animo": ("Ánimo", 1, 10, "escala 1–10"),
+        "horas_sueno": ("Horas de sueño", 0, 24, "horas"),
+    }
+    graficos_diarios = {
+        campo: grafico.linea(resumen_diario["series"][campo], minimo=minimo,
+                             maximo=maximo, alto=125)
+        for campo, (_, minimo, maximo, _) in campos_graficos_diarios.items()
+    }
     marcas = (db.query(Marca).filter(Marca.atleta_id == atleta.id)
               .order_by(Marca.fecha.desc(), Marca.id.desc()).all())
 
@@ -349,25 +361,20 @@ async def ficha(atleta_id: int, request: Request, db: Session = Depends(get_db))
              .order_by(Pago.periodo.desc()).all())
 
     respuesta = templates.TemplateResponse(request, "panel/atleta_ficha.html", {
-        "user": user, "atleta": atleta, "serie": serie, "items": bienestar.ITEMS,
+        "user": user, "atleta": atleta,
         "reportes_diarios": reportes_diarios,
         "total_reportes_diarios": total_reportes_diarios,
         "pagina_diaria": pagina, "paginas_diarias": paginas_diarias,
         "por_pagina_diaria": por_pagina, "desde_diario": desde, "hasta_diario": hasta,
-        "acwr": alertas.acwr(serie),
-        "grafico_bienestar": grafico.linea([f["bienestar"] for f in serie],
-                                           minimo=bienestar.MINIMO, maximo=bienestar.MAXIMO, alto=150),
-        "grafico_carga": grafico.barras([f["carga"] for f in serie], alto=130),
-        "grafico_sueno": grafico.linea([f["sueno"] for f in serie], alto=130),
-        "grafico_peso": grafico.linea([f["peso"] for f in serie], alto=130),
-        "tiene_peso": any(f["peso"] is not None for f in serie),
+        "resumen_diario": resumen_diario,
+        "campos_graficos_diarios": campos_graficos_diarios,
+        "graficos_diarios": graficos_diarios,
         "resumen_pruebas": resumen_pruebas,
         "pruebas": pruebas,
         "asistencias": asistencias,
         "presentes": presentes,
         "cuenta": cobranza.estado_cuenta(db, atleta),
         "pagos": pagos,
-        "maximo": bienestar.MAXIMO,
         # Solo viene con valor justo después del alta o de un reseteo.
         "password_nueva": password_nueva,
     })

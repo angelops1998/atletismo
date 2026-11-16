@@ -72,6 +72,102 @@ def historial_atleta(
     return rows, total
 
 
+def resumen_diario_atleta(
+    db: Session, atleta_id: int, *, desde: date | None = None,
+    hasta: date | None = None,
+) -> dict:
+    """Resumen y serie cronológica desde partes diarios del rango elegido.
+
+    La consulta principal devuelve solo columnas escalares. Las sesiones se
+    agregan aparte por fecha, evitando cargar el historial ORM completo para
+    calcular tarjetas y gráficas. Cada sesión cuenta una vez; minutos y carga
+    son sumas de los campos ya guardados en ``SesionEntrenamiento``.
+    """
+    campos = ["sueno_calidad", "fatiga", "dolor_muscular", "estres", "animo", "horas_sueno"]
+    query = db.query(
+        ParteDiaria.fecha.label("fecha"),
+        ParteDiaria.sueno_calidad.label("sueno_calidad"),
+        ParteDiaria.fatiga.label("fatiga"),
+        ParteDiaria.dolor_muscular.label("dolor_muscular"),
+        ParteDiaria.estres.label("estres"),
+        ParteDiaria.animo.label("animo"),
+        ParteDiaria.horas_sueno.label("horas_sueno"),
+        ParteDiaria.entreno_hoy.label("entreno_hoy"),
+        ParteDiaria.hay_molestia.label("hay_molestia"),
+        ParteDiaria.sintomas_enfermedad.label("sintomas_enfermedad"),
+    ).filter(ParteDiaria.atleta_id == atleta_id)
+    if desde:
+        query = query.filter(ParteDiaria.fecha >= desde)
+    if hasta:
+        query = query.filter(ParteDiaria.fecha <= hasta)
+    observaciones = [dict(row._mapping) for row in query.order_by(ParteDiaria.fecha).all()]
+
+    sesiones_query = (db.query(
+        ParteDiaria.fecha.label("fecha"),
+        func.count(SesionEntrenamiento.id).label("cantidad"),
+        func.sum(SesionEntrenamiento.duracion_min).label("minutos"),
+        func.sum(SesionEntrenamiento.rpe).label("suma_rpe"),
+        func.sum(SesionEntrenamiento.carga_sesion).label("carga"),
+    ).join(SesionEntrenamiento, SesionEntrenamiento.parte_diaria_id == ParteDiaria.id)
+        .filter(ParteDiaria.atleta_id == atleta_id))
+    if desde:
+        sesiones_query = sesiones_query.filter(ParteDiaria.fecha >= desde)
+    if hasta:
+        sesiones_query = sesiones_query.filter(ParteDiaria.fecha <= hasta)
+    sesiones_por_fecha = {
+        row.fecha: {
+            "cantidad": int(row.cantidad or 0),
+            "minutos": int(row.minutos or 0),
+            "suma_rpe": int(row.suma_rpe or 0),
+            "carga": int(row.carga or 0),
+        }
+        for row in sesiones_query.group_by(ParteDiaria.fecha).all()
+    }
+    for reporte in observaciones:
+        reporte["sesiones"] = sesiones_por_fecha.get(reporte["fecha"], {
+            "cantidad": 0, "minutos": 0, "suma_rpe": 0, "carga": 0,
+        })
+
+    def promedio(campo: str) -> float | None:
+        valores = [float(reporte[campo]) for reporte in observaciones if reporte[campo] is not None]
+        return round(mean(valores), 1) if valores else None
+
+    cantidad_sesiones = sum(r["sesiones"]["cantidad"] for r in observaciones)
+    suma_rpe = sum(r["sesiones"]["suma_rpe"] for r in observaciones)
+    fechas = [r["fecha"] for r in observaciones]
+    series = {}
+    for campo in campos:
+        valores = []
+        fecha_anterior = None
+        for reporte in observaciones:
+            fecha = reporte["fecha"]
+            if fecha_anterior is not None and (fecha - fecha_anterior).days > 1:
+                valores.append(None)
+            valor = reporte[campo]
+            valores.append(float(valor) if valor is not None else None)
+            fecha_anterior = fecha
+        series[campo] = valores
+
+    return {
+        "reportes": len(observaciones),
+        "primera_fecha": fechas[0] if fechas else None,
+        "ultima_fecha": fechas[-1] if fechas else None,
+        "promedios": {campo: promedio(campo) for campo in campos},
+        "molestias": sum(1 for r in observaciones if r["hay_molestia"]),
+        "sintomas": sum(1 for r in observaciones if r["sintomas_enfermedad"]),
+        "entrenaron": sum(1 for r in observaciones if r["entreno_hoy"]),
+        "no_entrenaron": sum(1 for r in observaciones if not r["entreno_hoy"]),
+        "sesiones": {
+            "cantidad": cantidad_sesiones,
+            "minutos": sum(r["sesiones"]["minutos"] for r in observaciones),
+            "rpe_promedio": round(suma_rpe / cantidad_sesiones, 1) if cantidad_sesiones else None,
+            "carga": sum(r["sesiones"]["carga"] for r in observaciones),
+        },
+        "observaciones": observaciones,
+        "series": series,
+    }
+
+
 def reportes_del_periodo(
     db: Session, desde: date, hasta: date, atleta_ids: list[int] | None = None,
 ) -> list[ParteDiaria]:

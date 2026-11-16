@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_iconos.html" import icono %}
-{% from "_graficos.html" import linea, barras %}
+{% from "_graficos.html" import linea %}
 {% block title %}{{ atleta.nombre }} — {{ club.club_nombre }}{% endblock %}
 
 {% block barra %}
@@ -36,23 +36,25 @@
 </div>
 {% endif %}
 
+<div class="seccion-titulo"><h2>Resumen diario</h2><span class="tenue">{{ resumen_diario.reportes }} partes en el período seleccionado</span></div>
+<form method="get" action="/atletas/{{ atleta.id }}" class="filtros-fecha">
+    <label for="desde-diario">Desde</label><input id="desde-diario" type="date" name="desde" value="{{ desde_diario.isoformat() if desde_diario else '' }}">
+    <label for="hasta-diario">Hasta</label><input id="hasta-diario" type="date" name="hasta" value="{{ hasta_diario.isoformat() if hasta_diario else '' }}">
+    <button class="btn btn-sm btn-primario" type="submit">Filtrar</button>
+    <a class="btn btn-sm" href="/atletas/{{ atleta.id }}">Todo el historial</a>
+</form>
+<p class="apunte">{% if desde_diario or hasta_diario %}Indicadores calculados solo con partes diarios entre {{ desde_diario|fecha if desde_diario else 'el inicio del registro' }} y {{ hasta_diario|fecha if hasta_diario else 'hoy' }}.{% elif resumen_diario.primera_fecha %}Indicadores calculados solo con los partes diarios entre {{ resumen_diario.primera_fecha|fecha }} y {{ resumen_diario.ultima_fecha|fecha }}.{% else %}Todavía no hay partes diarios para resumir.{% endif %}</p>
 <div class="kpis" style="margin-top:12px">
-    {% set ultimo = serie[-1] %}
-    <div class="kpi">
-        <div class="valor">{{ ultimo.bienestar or '—' }}</div>
-        <div class="etiqueta">Histórico semanal</div>
-        <div class="detalle">escala anterior · sobre {{ maximo }}</div>
-    </div>
-    <div class="kpi">
-        <div class="valor">{{ ('%.1f'|format(ultimo.sueno)) if ultimo.sueno else '—' }}</div>
-        <div class="etiqueta">Horas de sueño semanales</div>
-        <div class="detalle">histórico · promedio por noche</div>
-    </div>
-    <div class="kpi {{ 'kpi-mal' if acwr and (acwr > 1.5 or acwr < 0.8) else '' }}">
-        <div class="valor">{{ acwr or '—' }}</div>
-        <div class="etiqueta">Ratio de carga semanal histórico</div>
-        <div class="detalle">métrica del sistema anterior</div>
-    </div>
+    <div class="kpi"><div class="valor">{{ resumen_diario.reportes }}</div><div class="etiqueta">Partes diarios</div><div class="detalle">observaciones reales</div></div>
+    <div class="kpi"><div class="valor">{{ ('%.1f'|format(resumen_diario.promedios.sueno_calidad)) if resumen_diario.promedios.sueno_calidad is not none else '—' }}</div><div class="etiqueta">Calidad del sueño</div><div class="detalle">promedio · escala 1–10</div></div>
+    <div class="kpi"><div class="valor">{{ ('%.1f'|format(resumen_diario.promedios.fatiga)) if resumen_diario.promedios.fatiga is not none else '—' }}</div><div class="etiqueta">Fatiga</div><div class="detalle">promedio · escala 1–10</div></div>
+    <div class="kpi"><div class="valor">{{ ('%.1f'|format(resumen_diario.promedios.dolor_muscular)) if resumen_diario.promedios.dolor_muscular is not none else '—' }}</div><div class="etiqueta">Dolor muscular</div><div class="detalle">promedio · escala 1–10</div></div>
+    <div class="kpi"><div class="valor">{{ ('%.1f'|format(resumen_diario.promedios.estres)) if resumen_diario.promedios.estres is not none else '—' }}</div><div class="etiqueta">Estrés</div><div class="detalle">promedio · escala 1–10</div></div>
+    <div class="kpi"><div class="valor">{{ ('%.1f'|format(resumen_diario.promedios.animo)) if resumen_diario.promedios.animo is not none else '—' }}</div><div class="etiqueta">Ánimo</div><div class="detalle">promedio · escala 1–10</div></div>
+    <div class="kpi"><div class="valor">{{ ('%.1f'|format(resumen_diario.promedios.horas_sueno)) if resumen_diario.promedios.horas_sueno is not none else '—' }}</div><div class="etiqueta">Horas de sueño</div><div class="detalle">promedio por noche</div></div>
+    <div class="kpi {{ 'kpi-mal' if resumen_diario.molestias else '' }}"><div class="valor">{{ resumen_diario.molestias if resumen_diario.reportes else '—' }}</div><div class="etiqueta">Molestias declaradas</div><div class="detalle">partes del período</div></div>
+    <div class="kpi {{ 'kpi-mal' if resumen_diario.sintomas else '' }}"><div class="valor">{{ resumen_diario.sintomas if resumen_diario.reportes else '—' }}</div><div class="etiqueta">Síntomas declarados</div><div class="detalle">partes del período</div></div>
+    <div class="kpi kpi-tartan"><div class="valor">{{ resumen_diario.entrenaron ~ ' / ' ~ resumen_diario.no_entrenaron if resumen_diario.reportes else '—' }}</div><div class="etiqueta">Entrenó / no entrenó</div><div class="detalle">respuestas en los partes diarios</div></div>
     <div class="kpi {{ 'kpi-mal' if cuenta.estado == 'debe' else 'kpi-ok' }}">
         <div class="valor" style="font-size:19px">{{ cuenta.texto }}</div>
         <div class="etiqueta">Cuota</div>
@@ -60,14 +62,43 @@
     </div>
 </div>
 
-<div class="seccion-titulo"><h2>Partes diarios</h2><span class="tenue">{{ total_reportes_diarios }} registros</span></div>
-<form method="get" action="/atletas/{{ atleta.id }}" class="filtros-fecha">
-    <label for="desde-diario">Desde</label><input id="desde-diario" type="date" name="desde" value="{{ desde_diario.isoformat() if desde_diario else '' }}">
-    <label for="hasta-diario">Hasta</label><input id="hasta-diario" type="date" name="hasta" value="{{ hasta_diario.isoformat() if hasta_diario else '' }}">
-    <button class="btn btn-sm btn-primario" type="submit">Filtrar</button>
-    <a class="btn btn-sm" href="/atletas/{{ atleta.id }}">Todo el historial</a>
-</form>
+<div class="card"><div class="card-head"><h3>Sesiones individuales registradas</h3></div><div class="card-body">
+    {% if resumen_diario.sesiones.cantidad %}
+    <p>{{ resumen_diario.sesiones.cantidad }} sesiones · {{ resumen_diario.sesiones.minutos }} min guardados · RPE promedio {{ '%.1f'|format(resumen_diario.sesiones.rpe_promedio) }} · carga almacenada total {{ resumen_diario.sesiones.carga }}.</p>
+    <p class="apunte">Minutos, RPE y carga se agregan desde las sesiones individuales. La estructura principal planificada se presenta por separado en cada parte.</p>
+    {% else %}<p>— · No hay sesiones individuales en este período.</p>{% endif %}
+</div></div>
+
+<div class="seccion-titulo"><h2>Evolución diaria</h2></div>
+{% if resumen_diario.reportes %}
+<div class="split">
+    {% for campo, config in campos_graficos_diarios.items() %}
+    <div class="card"><div class="card-head"><h3>{{ config[0] }}</h3><span class="tenue">{{ config[3] }}</span></div>
+        <div class="card-body">{{ linea(graficos_diarios[campo], resumen_diario.primera_fecha|fecha_corta if resumen_diario.primera_fecha else '', resumen_diario.ultima_fecha|fecha_corta if resumen_diario.ultima_fecha else '', rango=true) }}
+            <p class="apunte">Observaciones en orden cronológico. Un corte indica un día sin parte; no se le asigna cero.</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}<div class="card"><div class="card-body"><p>No hay observaciones diarias para graficar en este período.</p></div></div>{% endif %}
+
+<div class="seccion-titulo"><h2>Historial diario</h2><span class="tenue">{{ total_reportes_diarios }} partes · página {{ pagina_diaria }} de {{ paginas_diarias }}</span></div>
 {% if reportes_diarios %}
+<div class="card"><div class="tabla-scroll"><table class="tabla-historial-diario">
+    <thead><tr><th>Fecha</th><th class="num">Sueño</th><th class="num">Fatiga</th><th class="num">Dolor muscular</th><th class="num">Estrés</th><th class="num">Ánimo</th><th class="num">Horas</th><th>Entrenamiento</th><th class="num">Sesiones</th><th>Molestia</th><th>Síntomas</th><th>Comentario</th><th></th></tr></thead>
+    <tbody>{% for r in reportes_diarios %}<tr>
+        <td>{{ r.fecha|fecha_corta }}</td><td class="num">{{ r.sueno_calidad if r.sueno_calidad is not none else '—' }}</td>
+        <td class="num">{{ r.fatiga if r.fatiga is not none else '—' }}</td><td class="num">{{ r.dolor_muscular if r.dolor_muscular is not none else '—' }}</td>
+        <td class="num">{{ r.estres if r.estres is not none else '—' }}</td><td class="num">{{ r.animo if r.animo is not none else '—' }}</td>
+        <td class="num">{{ ('%.1f'|format(r.horas_sueno)) if r.horas_sueno is not none else '—' }}</td>
+        <td>{% if not r.entreno_hoy %}No entrenó{% elif r.entrenamiento_principal %}{{ 'Aeróbico' if r.entrenamiento_principal.estructura_tipo == 'aerobico' else 'Velocidad' }} · {{ r.entrenamiento_principal.series }}×{{ r.entrenamiento_principal.repeticiones_por_serie }}×{{ r.entrenamiento_principal.distancia_m }} m{% else %}Entrenó{% endif %}</td>
+        <td class="num">{{ r.sesiones|length }}</td>
+        <td>{% if r.hay_molestia %}<span class="chip chip-mal">Sí · {{ r.molestia_dolor or '—' }}/10</span>{% else %}No{% endif %}</td>
+        <td>{% if r.sintomas_enfermedad %}<span class="chip chip-atencion">Sí</span>{% else %}No{% endif %}</td>
+        <td class="comentario-resumen">{% if r.comentarios %}{{ r.comentarios[:72] }}{% if r.comentarios|length > 72 %}…{% endif %}{% else %}—{% endif %}</td>
+        <td><a class="btn btn-sm" href="/atletas/{{ atleta.id }}?desde={{ r.fecha.isoformat() }}&hasta={{ r.fecha.isoformat() }}#reporte-{{ r.id }}">Detalle</a></td>
+    </tr>{% endfor %}</tbody>
+</table></div></div>
 <div class="lista-reportes">
     {% for r in reportes_diarios %}
     <details class="card reporte-diario" id="reporte-{{ r.id }}" {% if request.query_params.get('desde') == r.fecha.isoformat() and request.query_params.get('hasta') == r.fecha.isoformat() %}open{% endif %}>
@@ -139,73 +170,6 @@
 {% else %}
 <div class="card"><div class="card-body"><div class="vacio">{{ icono('parte') }}<p>{% if desde_diario or hasta_diario %}No hay partes diarios en el período seleccionado.{% else %}Todavía no hay partes diarios para este atleta.{% endif %}</p></div></div></div>
 {% endif %}
-
-<div class="seccion-titulo"><h2>Histórico semanal · sistema anterior</h2></div>
-<p class="apunte">Estas gráficas corresponden a partes semanales históricos y no se mezclan con los registros diarios que siguen.</p>
-<div class="split">
-    <div class="card">
-        <div class="card-head"><h3>Bienestar</h3></div>
-        <div class="card-body">
-            {{ linea(grafico_bienestar, 'hace ' ~ serie|length ~ ' semanas', 'esta semana') }}
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-head"><h3>Carga de entrenamiento</h3></div>
-        <div class="card-body">
-            {{ barras(grafico_carga) }}
-            <p class="apunte">Esfuerzo percibido × minutos. Los saltos bruscos son
-                los que terminan en lesión.</p>
-        </div>
-    </div>
-</div>
-<div class="split">
-    <div class="card">
-        <div class="card-head"><h3>Horas de sueño</h3></div>
-        <div class="card-body">{{ linea(grafico_sueno) }}</div>
-    </div>
-    {% if tiene_peso %}
-    <div class="card">
-        <div class="card-head"><h3>Peso</h3></div>
-        <div class="card-body">{{ linea(grafico_peso) }}</div>
-    </div>
-    {% endif %}
-</div>
-
-<div class="seccion-titulo"><h2>Histórico semanal · sistema anterior</h2></div>
-<div class="card">
-    <div class="tabla-scroll">
-        <table>
-            <thead>
-            <tr>
-                <th>Semana</th><th class="num">Bienestar</th><th class="num">Sueño</th>
-                <th class="num">Comida</th><th class="num">Carga</th>
-                <th>Molestias</th><th>Comentarios</th>
-            </tr>
-            </thead>
-            <tbody>
-            {% for f in serie|reverse %}
-            <tr>
-                <td>{{ f.semana|fecha_corta }}</td>
-                <td class="num">
-                    {% if f.bienestar %}
-                    <span class="chip chip-{{ color_bienestar(f.bienestar) }}">{{ f.bienestar }}</span>
-                    {% else %}<span class="tenue">sin cargar</span>{% endif %}
-                </td>
-                <td class="num">{{ ('%.1f'|format(f.sueno)) if f.sueno else '—' }}</td>
-                <td class="num">{{ f.parte.alimentacion_calidad if f.parte and f.parte.alimentacion_calidad else '—' }}</td>
-                <td class="num">{{ f.carga or '—' }}</td>
-                <td>
-                    {% if f.parte and f.parte.molestias %}
-                    <span class="chip chip-mal">{{ f.parte.molestia_zona }} {{ f.parte.molestia_dolor }}/10</span>
-                    {% else %}<span class="tenue">—</span>{% endif %}
-                </td>
-                <td class="tenue" style="max-width:220px">{{ (f.parte.comentarios if f.parte else '') or '' }}</td>
-            </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
 
 <div class="seccion-titulo">
     <h2>Marcas</h2>

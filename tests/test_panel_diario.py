@@ -1,5 +1,6 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
+import re
 
 from app.models.entrenamiento_principal import EntrenamientoPrincipal
 from app.models.parte_diaria import ParteDiaria
@@ -124,7 +125,9 @@ def test_ficha_muestra_estructura_completa_sesiones_y_orden_diario(client, db):
                      "Sesión 1 · Velocidad sprint", "45 min · RPE 7/10 · carga almacenada 315",
                      "Series de pista", "Congestión", "Molestia al final", "No entrenó"):
         assert fragment in text
-    assert text.index("14 de noviembre de 2026") < text.index("13 de noviembre de 2026")
+    tabla = re.search(r'<table class="tabla-historial-diario".*?</table>', text, re.S)
+    assert tabla
+    assert tabla.group(0).index("14/11/26") < tabla.group(0).index("13/11/26")
 
 
 def test_ficha_muestra_estructura_sin_sesiones_y_no_inventa_entrenamiento(client, db):
@@ -160,6 +163,142 @@ def test_ficha_filtra_historial_por_fecha_y_pagina(client, db):
     assert "13 de noviembre de 2026" in response.text
     assert "12 de noviembre de 2026" not in response.text
     assert "14 de noviembre de 2026" not in response.text
+    assert "1 partes en el período seleccionado" in response.text
+    assert "escala 1–10" in response.text
+
+
+def test_ficha_tabla_graficos_y_kpis_son_diarios_y_conserva_secciones_admin(client, db):
+    profe = crear_usuario(db, username="profe", role="profesor")
+    atleta = crear_usuario(db, username="atleta", full_name="Corredora")
+    primero = crear_reporte(db, atleta.id, date(2026, 11, 12),
+                            sueno_calidad=6, fatiga=2, dolor_muscular=3,
+                            estres=4, animo=10, horas_sueno=Decimal("6.0"),
+                            entreno_hoy=True)
+    agregar_estructura(db, primero)
+    db.add(SesionEntrenamiento(parte_diaria_id=primero.id, orden=1,
+                               tipo_entrenamiento="resistencia", duracion_min=45,
+                               rpe=6, carga_sesion=270))
+    segundo = crear_reporte(db, atleta.id, date(2026, 11, 14),
+                            sueno_calidad=10, fatiga=6, dolor_muscular=7,
+                            estres=8, animo=6, horas_sueno=Decimal("10.0"),
+                            entreno_hoy=False, hay_molestia=True,
+                            sintomas_enfermedad=True)
+    db.add(SesionEntrenamiento(parte_diaria_id=segundo.id, orden=1,
+                               tipo_entrenamiento="movilidad_recuperacion", duracion_min=30,
+                               rpe=4, carga_sesion=120))
+    db.commit()
+    entrar(client, profe)
+
+    response = client.get(f"/atletas/{atleta.id}")
+    assert response.status_code == 200
+    text = response.text
+    for fragment in ("Resumen diario", "Evolución diaria", "Historial diario",
+                     "Calidad del sueño", "Fatiga", "Dolor muscular", "Estrés", "Ánimo",
+                     "Horas de sueño", "2 partes en el período seleccionado",
+                     "8.0", "4.0", "5.0", "8.0", "8.0", "1 / 1",
+                     "2 sesiones", "75 min guardados", "RPE promedio 5.0",
+                     "carga almacenada total 390", "tabla-historial-diario",
+                     "12/11/26", "14/11/26", "No entrenó", "Marcas",
+                     "Cuota y pagos", "Asistencia", "Ficha"):
+        assert fragment in text
+    for obsolete in ("Histórico semanal", "Partes semanales", "Carga de entrenamiento semanal",
+                     "Ratio de carga semanal", "Bienestar histórico"):
+        assert obsolete not in text
+    assert text.index("12/11/26") < text.index("14/11/26")
+
+
+def test_ficha_resumen_vacio_no_presenta_ceros_como_observaciones(client, db):
+    profe = crear_usuario(db, username="profe", role="profesor")
+    atleta = crear_usuario(db, username="atleta")
+    entrar(client, profe)
+
+    response = client.get(f"/atletas/{atleta.id}")
+    assert response.status_code == 200
+    assert "0 partes en el período seleccionado" in response.text
+    assert "Todavía no hay partes diarios para resumir" in response.text
+    assert "No hay observaciones diarias para graficar" in response.text
+    assert "—</div><div class=\"etiqueta\">Calidad del sueño" in response.text
+    assert "—</div><div class=\"etiqueta\">Molestias declaradas" in response.text
+    assert "No hay sesiones individuales en este período" in response.text
+    assert "Partes semanales" not in response.text
+
+
+def test_servicio_genera_series_diarias_cronologicas_con_cortes(client, db):
+    atleta = crear_usuario(db, username="atleta")
+    fechas = [date(2026, 11, 10), date(2026, 11, 11),
+              date(2026, 11, 14), date(2026, 11, 15)]
+    for indice, dia in enumerate(fechas, start=1):
+        crear_reporte(db, atleta.id, dia, fatiga=indice)
+    db.commit()
+
+    from app.services.seguimiento_diario import resumen_diario_atleta
+    resumen = resumen_diario_atleta(db, atleta.id,
+                                    desde=fechas[0], hasta=fechas[-1])
+    assert resumen["observaciones"][0]["fecha"] == fechas[0]
+    assert resumen["observaciones"][-1]["fecha"] == fechas[-1]
+    assert resumen["series"]["fatiga"] == [1.0, 2.0, None, 3.0, 4.0]
+    assert resumen["promedios"]["fatiga"] == 2.5
+    from app.services.grafico import linea
+    grafico = linea(resumen["series"]["fatiga"], minimo=1, maximo=10)
+    assert grafico["puntos"][2] is None
+    assert len(grafico["segmentos"]) == 2
+
+
+def test_paginacion_de_tabla_mantiene_filtros_de_fecha(client, db):
+    profe = crear_usuario(db, username="profe", role="profesor")
+    atleta = crear_usuario(db, username="atleta")
+    inicio = date(2026, 10, 26)
+    for indice in range(21):
+        crear_reporte(db, atleta.id, inicio + timedelta(days=indice))
+    db.commit()
+    entrar(client, profe)
+
+    response = client.get(f"/atletas/{atleta.id}", params={
+        "desde": inicio.isoformat(), "hasta": (inicio + timedelta(days=20)).isoformat(),
+    })
+    assert response.status_code == 200
+    assert "Página 1 de 2" in response.text
+    assert f"?pagina=2&desde={inicio.isoformat()}&hasta=" in response.text
+    primera_tabla = re.search(r'<table class="tabla-historial-diario".*?</table>', response.text, re.S)
+    assert primera_tabla and "26/10/26" not in primera_tabla.group(0)
+    segunda = client.get(f"/atletas/{atleta.id}", params={
+        "pagina": 2, "desde": inicio.isoformat(),
+        "hasta": (inicio + timedelta(days=20)).isoformat(),
+    })
+    assert segunda.status_code == 200
+    assert "Página 2 de 2" in segunda.text
+    tabla = re.search(r'<table class="tabla-historial-diario".*?</table>', segunda.text, re.S)
+    assert tabla and "26/10/26" in tabla.group(0)
+
+
+def test_otras_vistas_docentes_siguen_sin_presentacion_semanal(client, db):
+    profe = crear_usuario(db, username="profe", role="profesor")
+    crear_usuario(db, username="atleta")
+    entrar(client, profe)
+    for ruta in ("/panel", "/atletas", "/estadisticas"):
+        response = client.get(ruta)
+        assert response.status_code == 200
+        assert "Parte semanal" not in response.text
+        assert "bienestar de la semana" not in response.text.lower()
+
+
+def test_costo_de_ficha_no_crece_por_cada_parte_diario(client, db, contar_consultas):
+    profe = crear_usuario(db, username="profe", role="profesor")
+    atleta = crear_usuario(db, username="atleta")
+    entrar(client, profe)
+    inicio = date(2026, 1, 1)
+    for indice in range(5):
+        crear_reporte(db, atleta.id, inicio + timedelta(days=indice))
+    db.commit()
+    with contar_consultas() as pocas:
+        assert client.get(f"/atletas/{atleta.id}").status_code == 200
+
+    for indice in range(5, 30):
+        crear_reporte(db, atleta.id, inicio + timedelta(days=indice))
+    db.commit()
+    with contar_consultas() as muchas:
+        assert client.get(f"/atletas/{atleta.id}").status_code == 200
+    assert muchas.total == pocas.total
 
 
 def test_estadisticas_filtra_fechas_y_agrega_solo_reportes_diarios(client, db):
