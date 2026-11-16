@@ -1,4 +1,4 @@
-"""Add optional principal workout structure to training sessions.
+"""Add structured principal workout per daily record.
 
 Revision ID: b67a104e9c32
 Revises: c4b8e2d91f07
@@ -14,45 +14,29 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    for name in (
-        "estructura_tipo", "series", "repeticiones_por_serie", "distancia_m",
-        "descanso_micro_min_s", "descanso_micro_max_s", "descanso_macro_min_s",
-        "descanso_macro_max_s", "tiempo_rep_min_s", "tiempo_rep_max_s",
-    ):
-        op.add_column("sesiones_entrenamiento", sa.Column(name, sa.Integer(), nullable=True))
-    op.alter_column("sesiones_entrenamiento", "estructura_tipo", type_=sa.String(16))
-    op.create_check_constraint(
-        "ck_sesiones_estructura_tipo",
-        "sesiones_entrenamiento",
-        "estructura_tipo IS NULL OR estructura_tipo IN ('aerobico', 'velocidad')",
+    op.create_table(
+        "entrenamientos_principales",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("parte_diaria_id", sa.Integer(), sa.ForeignKey("partes_diarios.id", ondelete="CASCADE"), nullable=False, unique=True),
+        sa.Column("estructura_tipo", sa.String(16), nullable=False),
+        sa.Column("series", sa.Integer(), nullable=False),
+        sa.Column("repeticiones_por_serie", sa.Integer(), nullable=False),
+        sa.Column("distancia_m", sa.Integer(), nullable=False),
+        sa.Column("descanso_micro_min_s", sa.Integer(), nullable=False),
+        sa.Column("descanso_micro_max_s", sa.Integer(), nullable=False),
+        sa.Column("descanso_macro_min_s", sa.Integer(), nullable=False),
+        sa.Column("descanso_macro_max_s", sa.Integer(), nullable=False),
+        sa.Column("tiempo_rep_min_s", sa.Integer(), nullable=False),
+        sa.Column("tiempo_rep_max_s", sa.Integer(), nullable=False),
+        sa.CheckConstraint("estructura_tipo IN ('aerobico','velocidad')", name="ck_entrenamiento_principal_tipo"),
+        sa.CheckConstraint("series > 0 AND repeticiones_por_serie > 0 AND distancia_m > 0", name="ck_entrenamiento_principal_cantidades"),
+        sa.CheckConstraint("descanso_micro_min_s >= 0 AND descanso_micro_max_s >= descanso_micro_min_s", name="ck_entrenamiento_principal_micro"),
+        sa.CheckConstraint("descanso_macro_min_s >= 0 AND descanso_macro_max_s >= descanso_macro_min_s", name="ck_entrenamiento_principal_macro"),
+        sa.CheckConstraint("tiempo_rep_min_s >= 0 AND tiempo_rep_max_s >= tiempo_rep_min_s", name="ck_entrenamiento_principal_tiempo"),
     )
-    for name in ("series", "repeticiones_por_serie", "distancia_m"):
-        op.create_check_constraint(
-            f"ck_sesiones_{name}_positivo",
-            "sesiones_entrenamiento",
-            f"{name} IS NULL OR {name} > 0",
-        )
-    for low, high in (
-        ("descanso_micro_min_s", "descanso_micro_max_s"),
-        ("descanso_macro_min_s", "descanso_macro_max_s"),
-        ("tiempo_rep_min_s", "tiempo_rep_max_s"),
-    ):
-        op.create_check_constraint(
-            f"ck_sesiones_{low}_rango",
-            "sesiones_entrenamiento",
-            f"({low} IS NULL AND {high} IS NULL) OR ({low} >= 0 AND {high} >= {low})",
-        )
+    op.create_index("ix_entrenamientos_principales_parte_diaria_id", "entrenamientos_principales", ["parte_diaria_id"], unique=True)
 
 
 def downgrade() -> None:
-    for name in ("descanso_micro_min_s", "descanso_macro_min_s", "tiempo_rep_min_s"):
-        op.drop_constraint(f"ck_sesiones_{name}_rango", "sesiones_entrenamiento", type_="check")
-    for name in ("series", "repeticiones_por_serie", "distancia_m"):
-        op.drop_constraint(f"ck_sesiones_{name}_positivo", "sesiones_entrenamiento", type_="check")
-    op.drop_constraint("ck_sesiones_estructura_tipo", "sesiones_entrenamiento", type_="check")
-    for name in (
-        "estructura_tipo", "series", "repeticiones_por_serie", "distancia_m",
-        "descanso_micro_min_s", "descanso_micro_max_s", "descanso_macro_min_s",
-        "descanso_macro_max_s", "tiempo_rep_min_s", "tiempo_rep_max_s",
-    ):
-        op.drop_column("sesiones_entrenamiento", name)
+    op.drop_index("ix_entrenamientos_principales_parte_diaria_id", table_name="entrenamientos_principales")
+    op.drop_table("entrenamientos_principales")

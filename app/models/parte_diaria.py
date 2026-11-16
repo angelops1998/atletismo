@@ -122,3 +122,7 @@ class ParteDiaria(Base):
         order_by="SesionEntrenamiento.orden, SesionEntrenamiento.id",
         passive_deletes=True,
     )
+    entrenamiento_principal = relationship(
+        "EntrenamientoPrincipal", back_populates="parte_diaria",
+        cascade="all, delete-orphan", uselist=False, passive_deletes=True,
+    )
