@@ -58,16 +58,6 @@
             <div class="campo"><div class="lbl">¿Entrenó hoy?</div><div class="ayuda">{{ 'Sí' if parte.entreno_hoy else 'No' }}</div></div>
             <div class="campo"><div class="lbl">¿Molestia?</div><div class="ayuda">{{ 'Sí' if parte.hay_molestia else 'No' }}</div></div>
         </div>
-        {% if parte.sesiones %}
-        <div class="campo">
-            <div class="lbl">Sesiones actuales</div>
-            <ul class="lista-sesiones">
-                {% for s in parte.sesiones %}
-                <li>Sesión {{ s.id }}: {{ s.tipo_entrenamiento }} · {{ s.duracion_min }} min · RPE {{ s.rpe }}</li>
-                {% endfor %}
-            </ul>
-        </div>
-        {% endif %}
     </div>
 </div>
 {% endif %}
@@ -161,31 +151,6 @@
                 </div>
             </div>
 
-            <div id="bloque-sesiones-individuales" class="condicional {{ 'abierto' if entreno == 'si' }}">
-                <h4>Sesiones realizadas</h4>
-                <div class="campo">
-                    <label for="sessions">Sesiones (una por línea: id|orden|tipo|minutos|rpe|comentarios)</label>
-                    <p class="apunte">Dejá el id en blanco para crear una sesión nueva; usá el id que aparece en "Sesiones actuales" para editar una existente.</p>
-                    <textarea id="sessions" name="sessions" rows="4"
-                              placeholder="|1|resistencia|45|6|calentamiento">{{ sessions_form or '' }}</textarea>
-                </div>
-                <div class="campo">
-                    <label for="delete_session_ids">IDs de sesiones a eliminar (separados por coma, opcional)</label>
-                    <input type="text" id="delete_session_ids" name="delete_session_ids"
-                           value="{{ delete_form or '' }}" placeholder="12, 15">
-                    <p class="ayuda">Una sesión solo se borra si su ID está acá (borrado explícito). Si no la borrás y no la reescribís, se conserva.</p>
-                </div>
-                {% if parte and parte.sesiones %}
-                <div class="campo">
-                    <div class="lbl">Sesiones actuales</div>
-                    <ul class="lista-sesiones">
-                        {% for s in parte.sesiones %}
-                        <li>Sesión {{ s.id }}: {{ s.tipo_entrenamiento }} · {{ s.duracion_min }} min · RPE {{ s.rpe }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
-            </div>
         </div>
     </div>
 

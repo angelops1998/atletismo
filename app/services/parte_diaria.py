@@ -712,7 +712,12 @@ def save_daily_record(
     try:
         wellness = validate_and_normalize_wellness(payload)
         sessions = validate_and_normalize_sessions(
-            payload.get("sessions"), entreno_hoy=wellness["entreno_hoy"]
+            payload.get("sessions"),
+            # The structured principal workout is independent from legacy
+            # individual sessions. New /parte submissions may have no session rows.
+            entreno_hoy=(wellness["entreno_hoy"] and (
+                "entrenamiento_principal" not in payload or bool(payload.get("sessions"))
+            )),
         )
         principal = validate_principal_workout(
             payload.get("entrenamiento_principal"), entreno_hoy=wellness["entreno_hoy"]
