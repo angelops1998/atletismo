@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Entorno de demostración local del sistema de atletismo (un solo comando).
 .DESCRIPTION
@@ -27,6 +27,11 @@
 param()
 
 $ErrorActionPreference = "Stop"
+
+# Python and PowerShell 5.1 otherwise may disagree about the encoding used for
+# native-process output, corrupting Spanish diagnostics in the terminal.
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$env:PYTHONIOENCODING = "utf-8"
 
 function _RestringirAclAlUsuarioActual {
     param(
@@ -413,6 +418,26 @@ if ($LASTEXITCODE -ne 0) {
 # ---------------------------------------------------------------------------
 # 9. Iniciar la aplicación FastAPI en 127.0.0.1:8002 (bucle de primer plano)
 # ---------------------------------------------------------------------------
+try {
+    $existingResponse = Invoke-WebRequest -Uri "http://127.0.0.1:8002/auth/login" `
+        -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+    if ($existingResponse.StatusCode -eq 200 -and $existingResponse.Content -match "Entrar") {
+        Write-Host "La aplicación ya está disponible en http://127.0.0.1:8002/auth/login." -ForegroundColor Green
+        Write-Host "Se reutiliza la instancia existente; no se inicia otro Uvicorn." -ForegroundColor Yellow
+        exit 0
+    }
+} catch {
+    # No hay una instancia HTTP utilizable; verificar abajo si el puerto está ocupado.
+}
+
+$listener = Get-NetTCPConnection -LocalAddress "127.0.0.1" -LocalPort 8002 `
+    -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($listener) {
+    Write-Host "[ERROR] El puerto 8002 está ocupado por el proceso $($listener.OwningProcess), pero no responde la página de login esperada." -ForegroundColor Red
+    Write-Host "Cierra ese proceso manualmente o libera el puerto y vuelve a ejecutar el script. No se detuvo ningún proceso automáticamente." -ForegroundColor Yellow
+    exit 1
+}
+
 Write-Host "`nIniciando la aplicación en http://127.0.0.1:8002 ..." -ForegroundColor Cyan
 Write-Host "Presiona Ctrl+C para detener la aplicación.`n" -ForegroundColor Gray
 

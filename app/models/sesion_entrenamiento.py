@@ -63,18 +63,6 @@ class SesionEntrenamiento(Base):
     carga_sesion = Column(Integer, nullable=False)
     comentarios_entrenamiento = Column(Text, nullable=True)
 
-    # Estructura opcional de la parte principal; NULL para sesiones históricas.
-    estructura_tipo = Column(String(16), nullable=True)
-    series = Column(Integer, nullable=True)
-    repeticiones_por_serie = Column(Integer, nullable=True)
-    distancia_m = Column(Integer, nullable=True)
-    descanso_micro_min_s = Column(Integer, nullable=True)
-    descanso_micro_max_s = Column(Integer, nullable=True)
-    descanso_macro_min_s = Column(Integer, nullable=True)
-    descanso_macro_max_s = Column(Integer, nullable=True)
-    tiempo_rep_min_s = Column(Integer, nullable=True)
-    tiempo_rep_max_s = Column(Integer, nullable=True)
-
     creado = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

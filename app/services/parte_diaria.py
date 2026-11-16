@@ -24,6 +24,7 @@ from sqlalchemy.orm.exc import StaleDataError
 
 from ..models.parte_diaria import MOLESTIA_ZONAS, ParteDiaria
 from ..models.sesion_entrenamiento import SesionEntrenamiento, TIPOS_ENTRENAMIENTO
+from ..models.entrenamiento_principal import EntrenamientoPrincipal
 from ..tiempo import hoy, lunes_de
 from .parte_diaria_tokens import (
     issue_discard_token,
@@ -229,7 +230,44 @@ def serialize_parte(parte: ParteDiaria) -> dict[str, Any]:
         "comentarios": parte.comentarios,
         "entreno_hoy": bool(parte.entreno_hoy),
         "sessions": sesiones,
+        "entrenamiento_principal": ({
+            k: getattr(parte.entrenamiento_principal, k)
+            for k in ("estructura_tipo", "series", "repeticiones_por_serie", "distancia_m",
+                      "descanso_micro_min_s", "descanso_micro_max_s", "descanso_macro_min_s",
+                      "descanso_macro_max_s", "tiempo_rep_min_s", "tiempo_rep_max_s")
+        } if parte.entrenamiento_principal else None),
     }
+
+
+def validate_principal_workout(raw: Any, *, entreno_hoy: bool) -> Optional[dict[str, Any]]:
+    if not entreno_hoy:
+        return None
+    if not isinstance(raw, dict):
+        raise DomainValidationError(["Completá la estructura del entrenamiento principal."])
+    fields = ("series", "repeticiones_por_serie", "distancia_m", "descanso_micro_min_s",
+              "descanso_micro_max_s", "descanso_macro_min_s", "descanso_macro_max_s",
+              "tiempo_rep_min_s", "tiempo_rep_max_s")
+    if raw.get("estructura_tipo") not in ("aerobico", "velocidad"):
+        raise DomainValidationError(["Elegí Aeróbico o Velocidad."])
+    out = {"estructura_tipo": raw["estructura_tipo"]}
+    errors = []
+    for field in fields:
+        try:
+            value = int(raw.get(field))
+            minimum = 0 if field.endswith("_s") else 1
+            if str(raw.get(field)).strip() != str(value) or value < minimum or value > 86400:
+                raise ValueError
+            out[field] = value
+        except (TypeError, ValueError):
+            errors.append(f"{field}: ingresá un entero válido dentro del rango permitido.")
+    for low, high in (("descanso_micro_min_s", "descanso_micro_max_s"),
+                      ("descanso_macro_min_s", "descanso_macro_max_s"),
+                      ("tiempo_rep_min_s", "tiempo_rep_max_s")):
+        if low in out and high in out and out[low] > out[high]:
+            errors.append(f"{low}: el mínimo no puede superar el máximo.")
+    if errors:
+        raise DomainValidationError(errors)
+    return out
 
 
 def serialize_session(s: SesionEntrenamiento) -> dict[str, Any]:
@@ -593,7 +631,7 @@ def _apply_sessions(
 
 def _apply_wellness(parte: ParteDiaria, norm: dict[str, Any]) -> None:
     for k, v in norm.items():
-        if k == "sessions":
+        if k in ("sessions", "entrenamiento_principal"):
             continue
         setattr(parte, k, v)
 
@@ -676,6 +714,9 @@ def save_daily_record(
         sessions = validate_and_normalize_sessions(
             payload.get("sessions"), entreno_hoy=wellness["entreno_hoy"]
         )
+        principal = validate_principal_workout(
+            payload.get("entrenamiento_principal"), entreno_hoy=wellness["entreno_hoy"]
+        )
     except DomainValidationError as e:
         return ServiceResult(
             ok=False, status=STATUS_VALIDATION, message="Datos inválidos.", errors=e.errors
@@ -696,6 +737,8 @@ def save_daily_record(
                 sessions = []
             new = ParteDiaria(atleta_id=atleta_id, fecha=target_fecha)
             _apply_wellness(new, wellness)
+            if principal:
+                new.entrenamiento_principal = EntrenamientoPrincipal(**principal)
             db.add(new)
             # Add sessions
             if sessions:
@@ -793,6 +836,7 @@ def save_daily_record(
                 db.delete(s)
             parte.entreno_hoy = False
             _apply_wellness(parte, {**wellness, "entreno_hoy": False})
+            parte.entrenamiento_principal = None
             db.commit()
             db.refresh(parte)
             edit_tok2, discard_tok2 = _fresh_tokens(parte)
@@ -818,6 +862,14 @@ def save_daily_record(
                 pass
 
         _apply_wellness(parte, wellness)
+        if principal:
+            if parte.entrenamiento_principal is None:
+                parte.entrenamiento_principal = EntrenamientoPrincipal(**principal)
+            else:
+                for key, value in principal.items():
+                    setattr(parte.entrenamiento_principal, key, value)
+        else:
+            parte.entrenamiento_principal = None
         if wellness["entreno_hoy"]:
             _apply_sessions(
                 db,
