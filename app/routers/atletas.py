@@ -18,7 +18,7 @@ from ..models.user import User
 from ..models.marca import Marca
 from ..models.pago import Pago
 from ..models.asistencia import Asistencia
-from ..services import bienestar, alertas, cobranza, grafico, pruebas
+from ..services import bienestar, alertas, cobranza, grafico, pruebas, seguimiento_diario
 from ..tiempo import hoy, lunes_actual, fecha_razonable
 
 router = APIRouter(prefix="/atletas", tags=["atletas"])
@@ -141,7 +141,7 @@ def _obtener(db: Session, atleta_id: int) -> User:
 
 @router.get("", response_class=HTMLResponse)
 async def lista(request: Request, db: Session = Depends(get_db)):
-    """El padrón con un semáforo por atleta: parte, alertas y pago.
+    """Padrón, estado del parte diario elegido y situación de cuota.
 
     Es la pantalla que el profesor abre para saber a quién llamar, así que cada
     fila tiene que contestar eso sin entrar a la ficha.
@@ -163,30 +163,29 @@ async def lista(request: Request, db: Session = Depends(get_db)):
             .like(patron, escape="\\"))
     atletas = consulta.order_by(User.full_name, User.username).all()
 
-    semana = lunes_actual()
-    # Las series y los estados de cuenta de todo el padrón, en dos consultas. El
-    # parte de la semana en curso es la última fila de la serie, así que tampoco
-    # hace falta ir a buscarlo aparte.
-    series = bienestar.series_de(db, [a.id for a in atletas])
+    try:
+        fecha = seguimiento_diario.parsear_fecha_filtro(
+            request.query_params.get("fecha"), "fecha") or hoy()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    atleta_ids = [a.id for a in atletas]
+    reportes = seguimiento_diario.reportes_de_fecha(db, fecha, atleta_ids)
+    por_atleta = {r.atleta_id: r for r in reportes}
+    ultimas = seguimiento_diario.ultimas_fechas(db, atleta_ids)
     cuentas = cobranza.estados_de(db, atletas)
     filas = []
     for a in atletas:
-        serie = series[a.id]
-        parte = serie[-1]["parte"] if serie else None
-        sus_alertas = alertas.del_atleta(db, a, serie, cuentas[a.id])
+        parte = por_atleta.get(a.id)
         filas.append({
             "atleta": a,
             "parte": parte,
-            "semaforo": bienestar.semaforo(parte) if parte else None,
-            "bienestar": bienestar.bienestar_total(parte) if parte else None,
+            "ultima_fecha": ultimas.get(a.id),
             "cuenta": cuentas[a.id],
-            "alertas": [x for x in sus_alertas if x["nivel"] == "alta"],
         })
 
     return templates.TemplateResponse(request, "panel/atletas.html", {
-        "user": user, "filas": filas, "semana": semana,
+        "user": user, "filas": filas, "fecha": fecha,
         "ver_bajas": ver_bajas, "busqueda": busqueda,
-        "maximo": bienestar.MAXIMO,
     })
 
 
@@ -292,6 +291,30 @@ async def ficha(atleta_id: int, request: Request, db: Session = Depends(get_db))
     # redirect del alta o del reseteo sin pasar por la URL.
     password_nueva = request.cookies.get(_COOKIE_PASSWORD)
 
+    try:
+        desde = seguimiento_diario.parsear_fecha_filtro(
+            request.query_params.get("desde"), "desde")
+        hasta = seguimiento_diario.parsear_fecha_filtro(
+            request.query_params.get("hasta"), "hasta")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if desde and hasta and desde > hasta:
+        raise HTTPException(status_code=422, detail="La fecha inicial no puede ser posterior a la final.")
+    try:
+        pagina = int(request.query_params.get("pagina", "1"))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="El número de página no es válido.")
+    if pagina < 1 or pagina > 100_000:
+        raise HTTPException(status_code=422, detail="El número de página está fuera del rango permitido.")
+    por_pagina = 20
+    reportes_diarios, total_reportes_diarios = seguimiento_diario.historial_atleta(
+        db, atleta.id, desde=desde, hasta=hasta, pagina=pagina, por_pagina=por_pagina)
+    paginas_diarias = max(1, (total_reportes_diarios + por_pagina - 1) // por_pagina)
+    pagina = min(pagina, paginas_diarias)
+    if pagina > 1 and not reportes_diarios:
+        reportes_diarios, total_reportes_diarios = seguimiento_diario.historial_atleta(
+            db, atleta.id, desde=desde, hasta=hasta, pagina=pagina, por_pagina=por_pagina)
+
     serie = bienestar.serie_individual(db, atleta.id, SEMANAS_FICHA)
     marcas = (db.query(Marca).filter(Marca.atleta_id == atleta.id)
               .order_by(Marca.fecha.desc(), Marca.id.desc()).all())
@@ -327,7 +350,10 @@ async def ficha(atleta_id: int, request: Request, db: Session = Depends(get_db))
 
     respuesta = templates.TemplateResponse(request, "panel/atleta_ficha.html", {
         "user": user, "atleta": atleta, "serie": serie, "items": bienestar.ITEMS,
-        "alertas": alertas.del_atleta(db, atleta, serie),
+        "reportes_diarios": reportes_diarios,
+        "total_reportes_diarios": total_reportes_diarios,
+        "pagina_diaria": pagina, "paginas_diarias": paginas_diarias,
+        "por_pagina_diaria": por_pagina, "desde_diario": desde, "hasta_diario": hasta,
         "acwr": alertas.acwr(serie),
         "grafico_bienestar": grafico.linea([f["bienestar"] for f in serie],
                                            minimo=bienestar.MINIMO, maximo=bienestar.MAXIMO, alto=150),

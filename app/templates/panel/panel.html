@@ -1,13 +1,12 @@
 {% extends "base.html" %}
 {% from "_iconos.html" import icono %}
-{% from "_graficos.html" import linea, barras, barra_item %}
 {% block title %}Panel — {{ club.club_nombre }}{% endblock %}
 
 {% block barra %}
 <header class="barra">
     <div class="barra-izq">
         <h1>Panel</h1>
-        <div class="sub">{{ semana|semana|capitalize }}</div>
+        <div class="sub">Seguimiento diario · {{ fecha|fecha }}</div>
     </div>
     <div class="barra-acciones">
         <a href="/atletas/nuevo" class="btn btn-sm btn-primario">{{ icono('mas') }} Atleta</a>
@@ -16,16 +15,43 @@
 {% endblock %}
 
 {% block contenido %}
+<form method="get" action="/panel" class="filtros-fecha">
+    <label for="fecha-panel">Fecha del parte</label>
+    <input id="fecha-panel" type="date" name="fecha" value="{{ fecha.isoformat() }}" required>
+    <button type="submit" class="btn btn-sm btn-primario">Consultar día</button>
+    <a class="btn btn-sm" href="/panel">Hoy</a>
+</form>
+
 <div class="kpis">
+    <div class="kpi">
+        <div class="valor">{{ total_atletas }}</div>
+        <div class="etiqueta">Atletas activos</div>
+        <div class="detalle">denominador del padrón</div>
+    </div>
     <div class="kpi {{ 'kpi-ok' if cargados == total_atletas and total_atletas else 'kpi-atencion' }}">
         <div class="valor">{{ cargados }}/{{ total_atletas }}</div>
-        <div class="etiqueta">Partes de esta semana</div>
-        <div class="detalle">{{ sin_cargar|length }} sin cargar</div>
+        <div class="etiqueta">Partes diarios enviados</div>
+        <div class="detalle">para {{ fecha|fecha_corta }}</div>
+    </div>
+    <div class="kpi {{ 'kpi-atencion' if sin_cargar else '' }}">
+        <div class="valor">{{ sin_cargar|length }}</div>
+        <div class="etiqueta">Sin parte ese día</div>
+        <div class="detalle">de atletas activos</div>
     </div>
     <div class="kpi {{ 'kpi-mal' if con_molestias else '' }}">
-        <div class="valor">{{ con_molestias|length }}</div>
-        <div class="etiqueta">Con molestias</div>
-        <div class="detalle">reportadas esta semana</div>
+        <div class="valor">{{ con_molestias }}</div>
+        <div class="etiqueta">Reportes con molestia</div>
+        <div class="detalle">requieren lectura del detalle</div>
+    </div>
+    <div class="kpi {{ 'kpi-mal' if con_sintomas else '' }}">
+        <div class="valor">{{ con_sintomas }}</div>
+        <div class="etiqueta">Reportes con síntomas</div>
+        <div class="detalle">información declarada por el atleta</div>
+    </div>
+    <div class="kpi kpi-tartan">
+        <div class="valor">{{ entrenaron }}/{{ cargados }}</div>
+        <div class="etiqueta">Entrenaron</div>
+        <div class="detalle">{{ no_entrenaron }} indicaron que no</div>
     </div>
     <div class="kpi kpi-tartan">
         <div class="valor">{{ finanzas.cobrado_mes|monto }}</div>
@@ -39,116 +65,77 @@
     </div>
 </div>
 
-{# Las alertas van antes que cualquier gráfico: si el profesor abre el panel y lo
-   primero que ve son tendencias, se pierde al atleta que reportó dolor 8/10. #}
 <div class="seccion-titulo">
-    <h2>Para revisar</h2>
-    <a href="/estadisticas">Ver estadísticas</a>
+    <h2>Reportes para revisar</h2>
+    <a href="/estadisticas?desde={{ fecha.isoformat() }}&hasta={{ fecha.isoformat() }}">Estadísticas del día</a>
 </div>
-
-{% if alertas_club %}
-<div class="card">
-    {% for fila in alertas_club %}
-    <div class="alerta-grupo">
-        <div class="alerta-grupo-head">
-            <span class="avatar avatar-{{ 'mal' if fila.peor == 0 else ('atencion' if fila.peor == 1 else '') }}">
-                {{ fila.atleta.nombre[0] }}
-            </span>
-            <a href="/atletas/{{ fila.atleta.id }}" class="nom">{{ fila.atleta.nombre }}</a>
-            <span class="chip">{{ fila.alertas|length }}</span>
+{% if con_alerta %}
+<div class="lista-reportes">
+    {% for r in con_alerta %}
+    <article class="card reporte-resumen {{ 'reporte-alerta' if r.hay_molestia or r.sintomas_enfermedad }}">
+        <div class="card-head">
+                <a class="nombre-celda" href="/atletas/{{ r.atleta_id }}?desde={{ fecha.isoformat() }}&hasta={{ fecha.isoformat() }}#reporte-{{ r.id }}">
+                {{ atletas_por_id[r.atleta_id].nombre }}
+            </a>
+            <span class="tenue">{{ r.fecha|fecha_corta }}</span>
         </div>
-        {% for a in fila.alertas %}
-        <div class="alerta alerta-{{ a.nivel }}">
-            <span class="alerta-punto"></span>
-            <div>
-                <div class="alerta-titulo">{{ a.titulo }}</div>
-                <div class="alerta-detalle">{{ a.detalle }}</div>
+        <div class="card-body">
+            {% if r.hay_molestia %}
+            <div class="aviso aviso-error"><strong>Molestia declarada · dolor {{ r.molestia_dolor or '—' }}/10</strong>
+                <div>Zonas: {{ r.molestia_zona|join(', ') if r.molestia_zona else 'sin zona indicada' }}{% if r.molestia_zona_otra %} · {{ r.molestia_zona_otra }}{% endif %}</div>
+                <div>Impacto en el entrenamiento (0–3): {{ r.afecta_entrenamiento if r.afecta_entrenamiento is not none else '—' }}</div>
             </div>
+            {% endif %}
+            {% if r.sintomas_enfermedad %}
+            <div class="aviso aviso-atencion"><strong>Síntomas declarados</strong><div>{{ r.detalle_sintomas or 'Sin descripción adicional.' }}</div></div>
+            {% endif %}
+            {% if r.comentarios %}<p><strong>Comentario:</strong> {{ r.comentarios }}</p>{% endif %}
+            <a href="/atletas/{{ r.atleta_id }}?desde={{ fecha.isoformat() }}&hasta={{ fecha.isoformat() }}#reporte-{{ r.id }}">Ver parte completo</a>
         </div>
-        {% endfor %}
-    </div>
+    </article>
     {% endfor %}
 </div>
 {% else %}
-<div class="card"><div class="card-body">
-    <div class="vacio">
-        {{ icono('check') }}
-        <p>No hay nada para revisar: todos cargaron su parte, sin molestias ni deudas.</p>
-    </div>
+<div class="card"><div class="card-body"><div class="vacio">{{ icono('check') }}<p>No hay reportes de molestias ni síntomas para esta fecha.</p></div></div></div>
+{% endif %}
+
+<div class="seccion-titulo"><h2>Estado de entrenamiento</h2></div>
+{% if reportes %}
+<div class="card"><div class="lista">
+    {% for r in reportes %}
+    <a href="/atletas/{{ r.atleta_id }}?desde={{ fecha.isoformat() }}&hasta={{ fecha.isoformat() }}#reporte-{{ r.id }}" class="item">
+        <span class="avatar">{{ atletas_por_id[r.atleta_id].nombre[0] }}</span>
+        <div class="item-txt"><div class="item-nombre">{{ atletas_por_id[r.atleta_id].nombre }}</div>
+            <div class="item-sub">
+                {% if not r.entreno_hoy %}No entrenó{% elif r.entrenamiento_principal %}
+                    {{ r.entrenamiento_principal.estructura_tipo|capitalize }} · {{ r.entrenamiento_principal.series }} × {{ r.entrenamiento_principal.repeticiones_por_serie }} × {{ r.entrenamiento_principal.distancia_m }} m
+                {% else %}Entrenó · sin estructura principal guardada{% endif %}
+            </div>
+        </div>
+        <span class="item-fin">{{ r.fecha|fecha_corta }}</span>
+    </a>
+    {% endfor %}
 </div></div>
+{% else %}
+<div class="card"><div class="card-body"><div class="vacio"><p>No hay partes diarios enviados para {{ fecha|fecha_corta }}.</p></div></div></div>
 {% endif %}
 
 {% if sin_cargar %}
-<div class="seccion-titulo"><h2>Todavía no cargaron el parte</h2></div>
-<div class="card">
-    <div class="lista">
-        {% for a in sin_cargar %}
-        <a href="/atletas/{{ a.id }}" class="item">
-            <span class="avatar">{{ a.nombre[0] }}</span>
-            <div class="item-txt">
-                <div class="item-nombre">{{ a.nombre }}</div>
-                <div class="item-sub">{{ a.categoria or 'Sin categoría' }}</div>
-            </div>
-            <div class="item-fin">
-                {% if a.telefono %}
-                <a href="https://wa.me/{{ a.telefono|replace('+','')|replace(' ','')|replace('-','') }}?text=Hola%20{{ a.nombre.split()[0]|urlencode }},%20te%20falta%20cargar%20el%20parte%20de%20esta%20semana."
-                   class="btn btn-sm" target="_blank" rel="noopener">Recordar</a>
-                {% endif %}
-            </div>
-        </a>
-        {% endfor %}
-    </div>
-</div>
+<div class="seccion-titulo"><h2>Sin parte diario para {{ fecha|fecha_corta }}</h2></div>
+<div class="card"><div class="lista">
+    {% for a in sin_cargar %}
+    <a href="/atletas/{{ a.id }}" class="item">
+        <span class="avatar">{{ a.nombre[0] }}</span>
+        <div class="item-txt"><div class="item-nombre">{{ a.nombre }}</div><div class="item-sub">{{ a.categoria or 'Sin categoría' }}</div></div>
+    </a>
+    {% endfor %}
+</div></div>
 {% endif %}
 
-<div class="seccion-titulo"><h2>Cómo viene el grupo</h2></div>
-<div class="split">
-    <div class="card">
-        <div class="card-head"><h3>Bienestar promedio</h3></div>
-        <div class="card-body">
-            {{ linea(grafico_bienestar, 'hace ' ~ serie|length ~ ' semanas', 'esta semana', rango=true) }}
-            <p class="apunte">Promedio del club sobre {{ maximo }}, semana a semana.</p>
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-head"><h3>Qué está flojo esta semana</h3></div>
-        <div class="card-body">
-            {% for campo, etiqueta, pregunta in items %}
-            {{ barra_item(etiqueta, items_semana[campo]) }}
-            {% endfor %}
-            <p class="apunte">Promedio de cada pregunta, de 1 a 5. Lo que aparece bajo
-                acá es lo que conviene trabajar con todo el grupo.</p>
-        </div>
-    </div>
-</div>
-
-<div class="card">
-    <div class="card-head"><h3>Cuántos cargan el parte</h3></div>
-    <div class="card-body">
-        {{ barras(grafico_participacion, 'hace ' ~ serie|length ~ ' semanas', 'esta semana') }}
-        <p class="apunte">Porcentaje del club que cargó cada semana. Si esto baja,
-            los promedios de arriba están hechos con menos gente y no se comparan.</p>
-    </div>
-</div>
-
 <div class="seccion-titulo"><h2>Accesos</h2></div>
-<div class="card">
-    <div class="lista">
-        <a href="/marcas" class="item">
-            <span class="avatar">{{ icono('marcas') }}</span>
-            <div class="item-txt"><div class="item-nombre">Marcas y rankings</div>
-                <div class="item-sub">Cargar un test o una competencia</div></div>
-        </a>
-        <a href="/asistencia" class="item">
-            <span class="avatar">{{ icono('asistencia') }}</span>
-            <div class="item-txt"><div class="item-nombre">Tomar lista</div>
-                <div class="item-sub">Asistencia del día</div></div>
-        </a>
-        <a href="/atletas" class="item">
-            <span class="avatar">{{ icono('atletas') }}</span>
-            <div class="item-txt"><div class="item-nombre">Padrón de atletas</div>
-                <div class="item-sub">{{ total_atletas }} activos</div></div>
-        </a>
-    </div>
-</div>
+<div class="card"><div class="lista">
+    <a href="/marcas" class="item"><span class="avatar">{{ icono('marcas') }}</span><div class="item-txt"><div class="item-nombre">Marcas y rankings</div><div class="item-sub">Cargar un test o una competencia</div></div></a>
+    <a href="/asistencia" class="item"><span class="avatar">{{ icono('asistencia') }}</span><div class="item-txt"><div class="item-nombre">Tomar lista</div><div class="item-sub">Asistencia del día</div></div></a>
+    <a href="/atletas" class="item"><span class="avatar">{{ icono('atletas') }}</span><div class="item-txt"><div class="item-nombre">Padrón de atletas</div><div class="item-sub">{{ total_atletas }} activos</div></div></a>
+</div></div>
 {% endblock %}

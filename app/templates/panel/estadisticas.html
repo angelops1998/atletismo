@@ -1,165 +1,89 @@
 {% extends "base.html" %}
 {% from "_iconos.html" import icono %}
-{% from "_graficos.html" import linea, barras, dispersion %}
+{% from "_graficos.html" import linea %}
 {% block title %}Estadísticas — {{ club.club_nombre }}{% endblock %}
 
 {% block barra %}
-<header class="barra">
-    <div class="barra-izq">
-        <h1>Estadísticas</h1>
-        <div class="sub">Últimas {{ rango }} semanas</div>
-    </div>
-</header>
+<header class="barra"><div class="barra-izq"><h1>Estadísticas</h1><div class="sub">Partes diarios · {{ desde|fecha }} – {{ hasta|fecha }}</div></div></header>
 {% endblock %}
 
 {% block contenido %}
-<div class="acciones" style="margin-bottom:14px">
-    {% for r in rangos %}
-    <a href="/estadisticas?semanas={{ r }}" class="btn btn-sm {{ 'btn-primario' if r == rango }}">{{ r }} sem.</a>
+<form method="get" action="/estadisticas" class="filtros-fecha">
+    <label for="desde">Desde</label><input type="date" id="desde" name="desde" value="{{ desde.isoformat() }}" required>
+    <label for="hasta">Hasta</label><input type="date" id="hasta" name="hasta" value="{{ hasta.isoformat() }}" required>
+    <button class="btn btn-primario" type="submit">Aplicar período</button>
+</form>
+
+<p class="apunte">Período consultado: {{ (hasta - desde).days + 1 }} días calendario. La cobertura se calcula como partes enviados ÷ (atletas activos × días del período); los días sin parte no se convierten en valores de bienestar.</p>
+
+<div class="kpis">
+    <div class="kpi"><div class="valor">{{ resumen.total_reportes }}</div><div class="etiqueta">Partes diarios</div><div class="detalle">en el período</div></div>
+    <div class="kpi"><div class="valor">{{ resumen.atletas_con_reporte }}/{{ resumen.atletas_activos }}</div><div class="etiqueta">Atletas con algún parte</div><div class="detalle">{{ resumen.atletas_sin_reporte }} sin partes en el período</div></div>
+    <div class="kpi"><div class="valor">{{ resumen.cobertura_pct if resumen.cobertura_pct is not none else '—' }}{% if resumen.cobertura_pct is not none %}%{% endif %}</div><div class="etiqueta">Cobertura atleta-día</div><div class="detalle">{{ resumen.total_reportes }} / {{ resumen.atletas_dia_posibles }} oportunidades</div></div>
+    <div class="kpi {{ 'kpi-mal' if resumen.molestias else '' }}"><div class="valor">{{ resumen.molestias }}</div><div class="etiqueta">Reportes con molestia</div><div class="detalle">declaraciones en el período</div></div>
+    <div class="kpi {{ 'kpi-mal' if resumen.sintomas else '' }}"><div class="valor">{{ resumen.sintomas }}</div><div class="etiqueta">Reportes con síntomas</div><div class="detalle">declaraciones en el período</div></div>
+</div>
+
+<div class="seccion-titulo"><h2>Bienestar diario promedio</h2></div>
+<div class="card"><div class="tabla-scroll"><table>
+    <thead><tr><th>Indicador</th><th class="num">Promedio</th><th>Distribución de respuestas (valor: cantidad)</th></tr></thead>
+    <tbody>
+        {% for campo, etiqueta in indicadores %}<tr><th>{{ etiqueta }}</th><td class="num mono-num">{{ resumen.promedios[campo] if resumen.promedios[campo] is not none else '—' }}</td><td><div class="item-chips">{% for valor, cantidad in resumen.distribuciones[campo].items() if cantidad %}<span class="chip">{{ valor }}: {{ cantidad }}</span>{% endfor %}</div></td></tr>{% endfor %}
+        <tr><th>Horas de sueño</th><td class="num mono-num">{{ ('%.1f'|format(resumen.promedios.horas_sueno)) if resumen.promedios.horas_sueno is not none else '—' }}</td><td>horas por noche</td></tr>
+    </tbody>
+</table></div></div>
+
+<div class="seccion-titulo"><h2>Tendencias por fecha con reportes</h2></div>
+{% if tendencias %}
+<div class="split">
+    {% for campo, etiqueta in campos_grafico.items() %}
+    <div class="card"><div class="card-head"><h3>{{ etiqueta }}</h3><span class="tenue">{{ 'horas' if campo == 'horas_sueno' else 'escala 1–10' }}</span></div><div class="card-body">{{ linea(graficos[campo]) }}<p class="apunte">Cada punto corresponde a una fecha con partes; las fechas sin partes no se imputan.</p></div></div>
     {% endfor %}
 </div>
+{% else %}<div class="card"><div class="card-body"><div class="vacio">{{ icono('estadisticas') }}<p>No hay partes diarios en este período.</p></div></div></div>{% endif %}
 
-{% set ultima = serie[-1] %}
-<div class="kpis">
-    <div class="kpi">
-        <div class="valor">{{ ultima.bienestar or '—' }}</div>
-        <div class="etiqueta">Bienestar del club</div>
-        <div class="detalle">esta semana, sobre {{ maximo }}</div>
-    </div>
-    <div class="kpi">
-        <div class="valor">{{ ('%.1f'|format(ultima.sueno)) if ultima.sueno else '—' }}</div>
-        <div class="etiqueta">Horas de sueño</div>
-        <div class="detalle">promedio del grupo</div>
-    </div>
-    <div class="kpi {{ 'kpi-mal' if ultima.con_molestias else 'kpi-ok' }}">
-        <div class="valor">{{ ultima.con_molestias }}</div>
-        <div class="etiqueta">Con molestias</div>
-        <div class="detalle">esta semana</div>
-    </div>
-    <div class="kpi">
-        <div class="valor">{{ ultima.pct_cargados }}%</div>
-        <div class="etiqueta">Cargaron el parte</div>
-        <div class="detalle">{{ ultima.cargados }} de {{ ultima.total }}</div>
-    </div>
+<div class="split">
+    <div class="card"><div class="card-head"><h3>Actividad reportada</h3></div><div class="card-body">
+        <p><strong>{{ resumen.entrenaron }}</strong> partes indican entrenamiento · <strong>{{ resumen.no_entrenaron }}</strong> indican que no entrenaron.</p>
+        <p><strong>{{ resumen.sesiones.cantidad }}</strong> sesiones individuales: {{ resumen.sesiones.minutos }} minutos acumulados ({{ ('%.1f'|format(resumen.sesiones.duracion_promedio)) if resumen.sesiones.duracion_promedio is not none else '—' }} min por sesión en promedio), RPE promedio {{ ('%.1f'|format(resumen.sesiones.rpe_promedio)) if resumen.sesiones.rpe_promedio is not none else '—' }}, carga almacenada total {{ resumen.sesiones.carga }} (promedio {{ ('%.1f'|format(resumen.sesiones.carga_promedio)) if resumen.sesiones.carga_promedio is not none else '—' }} por sesión).</p>
+        <p class="apunte">Los minutos y la carga provienen de SesionEntrenamiento. No se estiman a partir de la estructura planificada.</p>
+    </div></div>
+    <div class="card"><div class="card-head"><h3>Estructuras principales planificadas</h3></div><div class="card-body">
+        {% if resumen.tipos %}<div class="item-chips">{% for tipo, cantidad in resumen.tipos %}<span class="chip">{{ 'Aeróbico' if tipo == 'aerobico' else 'Velocidad' }} · {{ cantidad }}</span>{% endfor %}</div>
+        {% else %}<p class="tenue">No hay estructuras principales guardadas en este período.</p>{% endif %}
+    </div></div>
 </div>
 
-<div class="seccion-titulo"><h2>Tendencias del grupo</h2></div>
 <div class="split">
-    <div class="card">
-        <div class="card-head"><h3>Bienestar</h3></div>
-        <div class="card-body">
-            {{ linea(grafico_bienestar, 'hace ' ~ rango ~ ' semanas', 'esta semana', rango=true) }}
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-head"><h3>Horas de sueño</h3></div>
-        <div class="card-body">{{ linea(grafico_sueno) }}</div>
-    </div>
+    <div class="card"><div class="card-head"><h3>Zonas de molestia declaradas</h3></div><div class="card-body">
+        {% if resumen.zonas %}<div class="item-chips">{% for zona, cantidad in resumen.zonas %}<span class="chip chip-atencion">{{ zona }} · {{ cantidad }}</span>{% endfor %}</div>
+        {% else %}<p class="tenue">No se declararon molestias en el período.</p>{% endif %}
+    </div></div>
+    <div class="card"><div class="card-head"><h3>Lectura de estos datos</h3></div><div class="card-body"><p>Son respuestas informadas por los atletas para seguimiento del entrenamiento. No constituyen una evaluación médica ni un diagnóstico.</p></div></div>
 </div>
-<div class="split">
-    <div class="card">
-        <div class="card-head"><h3>Carga de entrenamiento</h3></div>
-        <div class="card-body">
-            {{ barras(grafico_carga) }}
-            <p class="apunte">Promedio de esfuerzo × minutos de todo el club.</p>
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-head"><h3>Molestias reportadas</h3></div>
-        <div class="card-body">
-            {{ barras(grafico_molestias) }}
-            <p class="apunte">Cuántos atletas reportaron dolor cada semana. Si sube
-                justo después de una semana de carga alta, la carga fue demasiada.</p>
-        </div>
-    </div>
-</div>
-
-{# El cruce con las marcas es la razón de ser de todo el sistema: es lo que
-   convierte "cómo dormiste" en una decisión de entrenamiento. #}
-<div class="seccion-titulo"><h2>¿El bienestar se nota en las marcas?</h2></div>
-{% if cruce.muestras >= 4 %}
-<div class="split">
-    <div class="card">
-        <div class="card-head">
-            <h3>Bienestar y rendimiento</h3>
-            {% if r_bienestar is not none %}<span class="chip chip-tartan">r = {{ r_bienestar }}</span>{% endif %}
-        </div>
-        <div class="card-body">
-            {{ dispersion(dispersion_bienestar, 'bienestar de la semana →', '↑ % del récord personal') }}
-            <p class="apunte">{{ texto_bienestar }}</p>
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-head">
-            <h3>Sueño y rendimiento</h3>
-            {% if r_sueno is not none %}<span class="chip chip-tartan">r = {{ r_sueno }}</span>{% endif %}
-        </div>
-        <div class="card-body">
-            {{ dispersion(dispersion_sueno, 'horas de sueño →', '↑ % del récord personal') }}
-            <p class="apunte">{{ texto_sueno }}</p>
-        </div>
-    </div>
-</div>
-<p class="apunte" style="margin-top:10px">
-    Cada punto es una marca, comparada con el mejor registro personal de ese
-    atleta en esa prueba: así se pueden mirar juntos un velocista y un lanzador.
-    {{ cruce.muestras }} marcas con parte cargado esa misma semana.
-</p>
-{% else %}
-<div class="card"><div class="card-body">
-    <div class="vacio">
-        {{ icono('estadisticas') }}
-        <p>Hacen falta más marcas cargadas en semanas con parte para poder cruzarlas.
-            Van {{ cruce.muestras }}; con cuatro ya se puede empezar a mirar.</p>
-    </div>
-</div></div>
-{% endif %}
 
 <div class="seccion-titulo"><h2>Atleta por atleta</h2></div>
-<div class="card">
-    <div class="tabla-scroll">
-        <table>
-            <thead>
-            <tr>
-                <th>Atleta</th><th class="num">Promedio</th><th class="num">Esta semana</th>
-                <th>Tendencia</th><th class="num">Sueño</th><th class="num">Carga</th>
-                <th class="num">Ratio</th><th class="num">Cargó</th><th>Evolución</th>
-            </tr>
-            </thead>
-            <tbody>
-            {% for f in filas %}
-            <tr>
-                <td class="nombre-celda"><a href="/atletas/{{ f.atleta.id }}">{{ f.atleta.nombre }}</a></td>
-                <td class="num mono-num">{{ f.promedio or '—' }}</td>
-                <td class="num">
-                    {% if f.ultimo %}
-                    <span class="chip chip-{{ color_bienestar(f.ultimo) }}">{{ f.ultimo }}</span>
-                    {% else %}<span class="tenue">—</span>{% endif %}
-                </td>
-                <td>
-                    {% if f.tendencia == 'sube' %}<span class="chip chip-ok">▲ sube</span>
-                    {% elif f.tendencia == 'baja' %}<span class="chip chip-mal">▼ baja</span>
-                    {% elif f.tendencia %}<span class="chip">= igual</span>
-                    {% else %}<span class="tenue">—</span>{% endif %}
-                </td>
-                <td class="num mono-num">{{ ('%.1f'|format(f.sueno)) if f.sueno else '—' }}</td>
-                <td class="num mono-num">{{ f.carga|round|int if f.carga else '—' }}</td>
-                <td class="num mono-num">
-                    {% if f.acwr %}
-                    <span class="chip chip-{{ 'mal' if f.acwr > 1.5 or f.acwr < 0.8 else 'ok' }}">{{ f.acwr }}</span>
-                    {% else %}—{% endif %}
-                </td>
-                <td class="num tenue">{{ f.cargados }}/{{ f.posibles }}</td>
-                <td>{% if f.cargados %}<div class="chispa">{{ linea(f.chispa) }}</div>{% endif %}</td>
-            </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-<p class="apunte" style="margin-top:8px">
-    El <strong>ratio</strong> compara la carga de la última semana contra el promedio de
-    las cuatro anteriores. Por encima de 1.5 el atleta subió la carga de golpe, que es
-    el escenario clásico de lesión; por debajo de 0.8 viene entrenando menos que lo habitual.
-</p>
+<div class="card"><div class="tabla-scroll"><table>
+    <thead><tr><th>Atleta</th><th class="num">Partes</th><th class="num">Sueño</th><th class="num">Fatiga</th><th class="num">Dolor muscular</th><th class="num">Estrés</th><th class="num">Ánimo</th><th class="num">Horas sueño</th><th>Entrenó / no</th><th>Molestias</th><th>Síntomas</th><th class="num">Sesiones</th><th class="num">Minutos</th><th class="num">RPE prom.</th><th class="num">Carga guardada</th></tr></thead>
+    <tbody>
+    {% for f in resumen.filas_atletas %}<tr>
+        <td class="nombre-celda"><a href="/atletas/{{ f.atleta.id }}?desde={{ desde.isoformat() }}&hasta={{ hasta.isoformat() }}">{{ f.atleta.nombre }}</a></td>
+        <td class="num">{{ f.reportes }}</td>
+        <td class="num">{{ f.promedios.sueno_calidad if f.promedios.sueno_calidad is not none else '—' }}</td>
+        <td class="num">{{ f.promedios.fatiga if f.promedios.fatiga is not none else '—' }}</td>
+        <td class="num">{{ f.promedios.dolor_muscular if f.promedios.dolor_muscular is not none else '—' }}</td>
+        <td class="num">{{ f.promedios.estres if f.promedios.estres is not none else '—' }}</td>
+        <td class="num">{{ f.promedios.animo if f.promedios.animo is not none else '—' }}</td>
+        <td class="num">{{ ('%.1f'|format(f.horas_sueno)) if f.horas_sueno is not none else '—' }}</td>
+        <td>{{ f.entreno }} / {{ f.no_entreno }}</td><td>{{ f.molestias }}</td><td>{{ f.sintomas }}</td>
+        <td class="num">{{ f.sesiones }}</td><td class="num">{{ f.minutos_sesion }}</td><td class="num">{{ ('%.1f'|format(f.rpe_sesion)) if f.rpe_sesion is not none else '—' }}</td><td class="num">{{ f.carga_sesion }}</td>
+    </tr>{% endfor %}
+    </tbody>
+</table></div></div>
+
+<div class="seccion-titulo"><h2>Resumen por día</h2></div>
+{% if tendencias %}<div class="card"><div class="tabla-scroll"><table>
+    <thead><tr><th>Fecha</th><th class="num">Partes</th><th class="num">Sueño</th><th class="num">Fatiga</th><th class="num">Dolor muscular</th><th class="num">Estrés</th><th class="num">Ánimo</th><th class="num">Entrenó / no</th><th class="num">Molestias</th><th class="num">Síntomas</th></tr></thead>
+    <tbody>{% for d in tendencias %}<tr><td>{{ d.fecha|fecha_corta }}</td><td class="num">{{ d.reportes }}/{{ resumen.atletas_activos }}</td><td class="num">{{ d.sueno_calidad if d.sueno_calidad is not none else '—' }}</td><td class="num">{{ d.fatiga if d.fatiga is not none else '—' }}</td><td class="num">{{ d.dolor_muscular if d.dolor_muscular is not none else '—' }}</td><td class="num">{{ d.estres if d.estres is not none else '—' }}</td><td class="num">{{ d.animo if d.animo is not none else '—' }}</td><td class="num">{{ d.entreno }} / {{ d.no_entreno }}</td><td class="num">{{ d.molestias }}</td><td class="num">{{ d.sintomas }}</td></tr>{% endfor %}</tbody>
+</table></div></div>{% endif %}
 {% endblock %}

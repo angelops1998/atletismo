@@ -245,6 +245,23 @@ h3 { font-size: 16px; font-weight: 700; }
 .card-body { padding: 16px; }
 .card-body > * + * { margin-top: 12px; }
 
+.filtros-fecha {
+    display: flex; align-items: end; flex-wrap: wrap; gap: 8px;
+    margin: 0 0 14px; padding: 12px; background: var(--superficie);
+    border: 1px solid var(--linea); border-radius: var(--r);
+}
+.filtros-fecha label { font-size: 12px; font-weight: 700; color: var(--gris); }
+.filtros-fecha input { min-width: 145px; width: auto; flex: 1 1 150px; }
+.lista-reportes { display: grid; gap: 10px; }
+.reporte-alerta { border-left: 4px solid var(--mal); }
+.resumen-diario { justify-content: flex-start; flex-wrap: wrap; cursor: pointer; }
+.resumen-diario strong { margin-right: auto; }
+.tabla-detalle-diario th { width: 45%; }
+.lista-sesiones-diarias { display: grid; gap: 8px; }
+.sesion-diaria { padding: 12px; border: 1px solid var(--linea); border-radius: var(--r-sm); }
+.sesion-diaria p { margin-top: 6px; color: var(--gris); }
+.paginacion { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 16px 0; }
+
 /* ============================================================
    BOTONES
    ============================================================ */

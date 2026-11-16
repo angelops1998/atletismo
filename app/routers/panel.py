@@ -1,6 +1,6 @@
 """Las dos pantallas de inicio: la del profesor y la del atleta."""
 from datetime import timedelta
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -9,9 +9,8 @@ from ..database import get_db
 from ..auth import get_current_user, get_current_profesor
 from ..models.user import User
 from ..models.marca import Marca
-from ..models.parte import ParteSemanal
-from ..services import bienestar, alertas, cobranza, grafico, pruebas
-from ..tiempo import lunes_actual
+from ..services import bienestar, cobranza, grafico, pruebas, seguimiento_diario
+from ..tiempo import hoy, lunes_actual
 
 router = APIRouter(tags=["panel"])
 
@@ -27,36 +26,34 @@ async def panel(request: Request, db: Session = Depends(get_db)):
     profesor se queda mirando tendencias y no ve que hay un atleta con dolor 8/10.
     """
     user = get_current_profesor(request, db)
-    semana = lunes_actual()
+    try:
+        fecha = seguimiento_diario.parsear_fecha_filtro(
+            request.query_params.get("fecha"), "fecha") or hoy()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     atletas = (db.query(User)
                .filter(User.role == "atleta", User.is_active.is_(True))
                .order_by(User.full_name, User.username).all())
-    partes = {p.atleta_id: p for p in db.query(ParteSemanal)
-              .filter(ParteSemanal.semana == semana).all()}
-
-    sin_cargar = [a for a in atletas if a.id not in partes]
-    serie = bienestar.serie_grupo(db, SEMANAS_PANEL)
+    reportes = seguimiento_diario.reportes_de_fecha(db, fecha, [a.id for a in atletas])
+    por_atleta = {r.atleta_id: r for r in reportes}
+    sin_cargar = [a for a in atletas if a.id not in por_atleta]
+    con_alerta = [r for r in reportes if r.hay_molestia or r.sintomas_enfermedad]
     finanzas = cobranza.resumen_club(db)
 
     return templates.TemplateResponse(request, "panel/panel.html", {
         "user": user,
-        "semana": semana,
+        "fecha": fecha,
         "total_atletas": len(atletas),
-        "cargados": len(partes),
+        "reportes": reportes,
+        "atletas_por_id": {a.id: a for a in atletas},
+        "cargados": len(reportes),
         "sin_cargar": sin_cargar,
-        "con_molestias": [a for a in atletas
-                          if a.id in partes and partes[a.id].molestias],
-        "alertas_club": alertas.del_club(db),
-        "serie": serie,
-        # Escala automática: el promedio del club se mueve en un rango angosto y
-        # con la escala absoluta 4–20 la línea salía plana y no decía nada.
-        "grafico_bienestar": grafico.linea([f["bienestar"] for f in serie]),
-        "grafico_participacion": grafico.barras([f["pct_cargados"] for f in serie],
-                                                maximo=100, alto=120),
-        "items_semana": bienestar.promedio_items_grupo(db, semana),
-        "items": bienestar.ITEMS,
-        "maximo": bienestar.MAXIMO,
+        "con_alerta": con_alerta,
+        "con_molestias": sum(1 for r in reportes if r.hay_molestia),
+        "con_sintomas": sum(1 for r in reportes if r.sintomas_enfermedad),
+        "entrenaron": sum(1 for r in reportes if r.entreno_hoy),
+        "no_entrenaron": sum(1 for r in reportes if not r.entreno_hoy),
         "finanzas": finanzas,
     })
 
