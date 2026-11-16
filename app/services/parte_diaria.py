@@ -295,7 +295,7 @@ def current_session_fingerprint(parte: ParteDiaria) -> str:
 def _lock_today_query(db: Session, atleta_id: int, fecha: date):
     stmt = (
         select(ParteDiaria)
-        .options(selectinload(ParteDiaria.sesiones))
+        .options(selectinload(ParteDiaria.sesiones), selectinload(ParteDiaria.entrenamiento_principal))
         .where(ParteDiaria.atleta_id == atleta_id, ParteDiaria.fecha == fecha)
     )
     if _supports_for_update(db):
@@ -327,7 +327,7 @@ def load_today(db: Session, atleta_id: int, fecha: Optional[date] = None) -> Opt
     return (
         db.execute(
             select(ParteDiaria)
-            .options(selectinload(ParteDiaria.sesiones))
+            .options(selectinload(ParteDiaria.sesiones), selectinload(ParteDiaria.entrenamiento_principal))
             .where(ParteDiaria.atleta_id == atleta_id, ParteDiaria.fecha == f)
         )
         .scalars()

@@ -41,6 +41,12 @@ def _payload(**overrides):
         "sintomas_enfermedad": False,
         "entreno_hoy": False,
         "sessions": [],
+        "entrenamiento_principal": {
+            "estructura_tipo": "aerobico", "series": 3, "repeticiones_por_serie": 4,
+            "distancia_m": 400, "descanso_micro_min_s": 30, "descanso_micro_max_s": 60,
+            "descanso_macro_min_s": 180, "descanso_macro_max_s": 300,
+            "tiempo_rep_min_s": 100, "tiempo_rep_max_s": 120,
+        },
     }
     base.update(overrides)
     return base

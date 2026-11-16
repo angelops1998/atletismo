@@ -133,7 +133,36 @@
                 {{ binario('entreno_hoy', entreno, abre='bloque-entrenamiento') }}
             </div>
 
+            {% set principal = parte.entrenamiento_principal if parte else none %}
             <div id="bloque-entrenamiento" class="condicional {{ 'abierto' if entreno == 'si' }}">
+                <fieldset class="campo" style="border:0;padding:0;margin:0">
+                    <legend class="lbl">Estructura planificada del entrenamiento principal</legend>
+                    <p class="ayuda">Esto describe el bloque principal planificado. Las sesiones realizadas se registran aparte.</p>
+                    <label for="estructura_tipo">Tipo</label>
+                    {% set tipo_actual = form.get('estructura_tipo') if form else (principal.estructura_tipo if principal else '') %}
+                    <select id="estructura_tipo" name="estructura_tipo">
+                        <option value="">Elegí una opción</option>
+                        <option value="aerobico" {{ 'selected' if tipo_actual == 'aerobico' }}>Aeróbico</option>
+                        <option value="velocidad" {{ 'selected' if tipo_actual == 'velocidad' }}>Velocidad</option>
+                    </select>
+                </fieldset>
+                <div class="fila-3">
+                    {% for field, label in [('series','Series'),('repeticiones_por_serie','Repeticiones por serie'),('distancia_m','Distancia por repetición (m)')] %}
+                    <div class="campo"><label for="{{ field }}">{{ label }}</label><input type="number" min="1" max="100000" step="1" inputmode="numeric" id="{{ field }}" name="{{ field }}" value="{{ form.get(field,'') if form else (principal|attr(field) if principal else '') }}"></div>
+                    {% endfor %}
+                </div>
+                <div class="fila-3">
+                    {% for field, label in [('descanso_micro_min','Descanso micro mínimo'),('descanso_micro_max','Descanso micro máximo'),('descanso_macro_min','Descanso macro mínimo'),('descanso_macro_max','Descanso macro máximo'),('tiempo_rep_min','Tiempo por repetición mínimo'),('tiempo_rep_max','Tiempo por repetición máximo')] %}
+                    {% set stored = field ~ '_s' %}
+                    {% set raw_value = form.get(field,'') if form else (principal|attr(stored) if principal else none) %}
+                    {% if not form and raw_value is not none %}{% set raw_value = '%02d:%02d'|format(raw_value // 60, raw_value % 60) %}{% endif %}
+                    <div class="campo"><label for="{{ field }}">{{ label }} (MM:SS)</label><input type="text" id="{{ field }}" name="{{ field }}" inputmode="numeric" placeholder="00:30" pattern="[0-9]{2,3}:[0-5][0-9]" value="{{ raw_value if raw_value is not none else '' }}"><p class="ayuda">Minutos:segundos, por ejemplo 01:40.</p></div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div id="bloque-sesiones-individuales" class="condicional {{ 'abierto' if entreno == 'si' }}">
+                <h4>Sesiones realizadas</h4>
                 <div class="campo">
                     <label for="sessions">Sesiones (una por línea: id|orden|tipo|minutos|rpe|comentarios)</label>
                     <p class="apunte">Dejá el id en blanco para crear una sesión nueva; usá el id que aparece en "Sesiones actuales" para editar una existente.</p>

@@ -11,6 +11,18 @@ from app.models.parte import ParteSemanal
 from app.models.parte_diaria import ParteDiaria
 from app.services import parte_diaria as pd
 from conftest import con_csrf, crear_parte, crear_usuario, entrar
+from app.routers.parte import FormParseError, _mmss_seconds
+
+
+@pytest.mark.parametrize("value,seconds", [("00:30",30),("01:00",60),("01:40",100),("05:00",300),("00:12",12)])
+def test_mmss_conversion(value, seconds):
+    assert _mmss_seconds(value, name="test") == seconds
+
+
+@pytest.mark.parametrize("value", ["1:30", "01", "01:60", "-01:00", "abc", "", "1000:00"])
+def test_mmss_rejects_invalid_values(value):
+    with pytest.raises(FormParseError):
+        _mmss_seconds(value, name="test")
 
 
 def _session_str(items):
@@ -27,11 +39,24 @@ def completo(client, **campos):
         "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
         "dolor_muscular": "3", "estres": "4", "animo": "8",
         "entreno_hoy": "si",
+        "estructura_tipo": "aerobico", "series": "3", "repeticiones_por_serie": "4",
+        "distancia_m": "400", "descanso_micro_min": "00:30", "descanso_micro_max": "01:00",
+        "descanso_macro_min": "03:00", "descanso_macro_max": "05:00",
+        "tiempo_rep_min": "01:40", "tiempo_rep_max": "02:00",
         "sessions": _session_str([{"orden": 1, "tipo_entrenamiento": "resistencia",
                                    "duracion_min": 45, "rpe": 6}]),
     }
     datos.update(campos)
     return datos
+
+
+def entrenamiento_form(**overrides):
+    data = {"estructura_tipo": "aerobico", "series": "3", "repeticiones_por_serie": "4",
+            "distancia_m": "400", "descanso_micro_min": "00:30", "descanso_micro_max": "01:00",
+            "descanso_macro_min": "03:00", "descanso_macro_max": "05:00",
+            "tiempo_rep_min": "01:40", "tiempo_rep_max": "02:00"}
+    data.update(overrides)
+    return data
 
 
 def _get_edit_token(client):
@@ -572,6 +597,7 @@ class TestInputParsing:
             "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
             "dolor_muscular": "3", "estres": "4", "animo": "8",
             "entreno_hoy": "si",
+            **entrenamiento_form(),
             "sessions": ["|1|resistencia|45|6|", "|2|fuerza|30|8|"],
         }
         r = client.post("/parte", data=data, follow_redirects=False)
@@ -600,6 +626,7 @@ class TestInputParsing:
             "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
             "dolor_muscular": "3", "estres": "4", "animo": "9",
             "entreno_hoy": "si",
+            **entrenamiento_form(),
             "sessions": [line1, line2],
         }
         r = client.post("/parte", data=datos)
@@ -647,6 +674,7 @@ class TestInputParsing:
             "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
             "dolor_muscular": "3", "estres": "4", "animo": "abc",  # force 422
             "entreno_hoy": "si",
+            **entrenamiento_form(),
             "sessions": _session_str([{"id": ids[0], "orden": 1, "tipo_entrenamiento": "resistencia",
                                        "duracion_min": 45, "rpe": 6}]),
             "delete_session_ids": [str(ids[0]), str(ids[1])],
@@ -681,6 +709,7 @@ class TestInputParsing:
             "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
             "dolor_muscular": "3", "estres": "4", "animo": "9",
             "entreno_hoy": "si",
+            **entrenamiento_form(),
             "sessions": _session_str([{"id": ids[0], "orden": 1, "tipo_entrenamiento": "resistencia",
                                        "duracion_min": 45, "rpe": 6}]),
             "delete_session_ids": [str(ids[0]), str(ids[1])],

@@ -7,6 +7,7 @@ HTTP/controller layer and does not duplicate domain validation, locking or
 concurrency handling.
 """
 from datetime import date, timedelta
+import re
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -86,6 +87,13 @@ class FormParseError(ValueError):
     def __init__(self, message: str):
         super().__init__(message)
         self.message = message
+
+
+def _mmss_seconds(raw: str, *, name: str) -> int:
+    match = re.fullmatch(r"(\d{2,3}):(\d{2})", (raw or "").strip())
+    if not match or int(match.group(2)) > 59:
+        raise FormParseError(f"{name}: ingresá minutos y segundos como MM:SS (ejemplo 01:30).")
+    return int(match.group(1)) * 60 + int(match.group(2))
 
 
 def _parse_positive_int(raw: str, *, name: str) -> int:
@@ -226,6 +234,33 @@ def _session_payload(form) -> tuple:
         "entreno_hoy": _parse_bool(form.get("entreno_hoy")),
         "sessions": raw,
     }
+    if payload["entreno_hoy"]:
+        principal = {"estructura_tipo": form.get("estructura_tipo", "")}
+        for field in ("series", "repeticiones_por_serie", "distancia_m"):
+            try:
+                principal[field] = _parse_positive_int(form.get(field, ""), name=field)
+            except FormParseError as exc:
+                errors.append(exc.message)
+        for field in ("descanso_micro_min", "descanso_micro_max", "descanso_macro_min",
+                      "descanso_macro_max", "tiempo_rep_min", "tiempo_rep_max"):
+            try:
+                principal[field] = _mmss_seconds(form.get(field, ""), name=field)
+            except FormParseError as exc:
+                errors.append(exc.message)
+        for low, high in (("descanso_micro_min", "descanso_micro_max"),
+                          ("descanso_macro_min", "descanso_macro_max"),
+                          ("tiempo_rep_min", "tiempo_rep_max")):
+            if low in principal and high in principal and principal[low] > principal[high]:
+                errors.append(f"{low}: el mínimo no puede superar el máximo.")
+        payload["entrenamiento_principal"] = {
+            "estructura_tipo": principal.get("estructura_tipo"),
+            "series": principal.get("series"),
+            "repeticiones_por_serie": principal.get("repeticiones_por_serie"),
+            "distancia_m": principal.get("distancia_m"),
+            **{f"{field}_s": value for field, value in principal.items() if field.endswith(("_min", "_max"))},
+        }
+    else:
+        payload["entrenamiento_principal"] = None
     return payload, delete_ids, allow_replace, errors
 
 
