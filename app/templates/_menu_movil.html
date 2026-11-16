@@ -7,6 +7,9 @@
     <div class="menu-movil-panel">
         <a href="/club" target="_blank">{{ icono('lugar') }} Ver la página del club</a>
         <a href="/cuenta">{{ icono('cuenta') }} Mi cuenta</a>
-        <a href="/auth/logout">{{ icono('salir') }} Cerrar sesión</a>
+        <form method="post" action="/auth/logout" class="menu-movil-logout">
+            {{ csrf_input(request) }}
+            <button type="submit">{{ icono('salir') }} Cerrar sesión</button>
+        </form>
     </div>
 </details>

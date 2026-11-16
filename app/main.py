@@ -30,10 +30,6 @@ app = FastAPI(
     openapi_url=None,
 )
 
-# El login maneja su propio flujo: en el primer GET todavía no hay cookie contra
-# la cual firmar el formulario.
-_CSRF_EXENTA = {"/auth/login"}
-
 # Todo lo que puede cambiar algo tiene que traer el token. No alcanza con mirar
 # los POST con cuerpo de formulario: cualquier método que escriba entra acá.
 _METODOS_INSEGUROS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -59,7 +55,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         # campos de formulario tienen todos valor por defecto (borrar un pago,
         # resetear una contraseña, dar de baja a un atleta) se ejecutaban igual.
         content_type = request.headers.get("content-type", "")
-        if request.method in _METODOS_INSEGUROS and request.url.path not in _CSRF_EXENTA:
+        if request.method in _METODOS_INSEGUROS:
             body = await request.body()
 
             async def receive():

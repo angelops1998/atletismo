@@ -7,9 +7,11 @@ desechable verificada (ver informe de Fase 1).
 from datetime import date
 
 import pytest
-from sqlalchemy import inspect
+from sqlalchemy import inspect, UniqueConstraint
+from sqlalchemy.exc import IntegrityError
 
-from app.models import ParteDiaria, SesionEntrenamiento, ParteSemanal
+from app.models import (ParteDiaria, SesionEntrenamiento, ParteSemanal,
+                        EntrenamientoPrincipal)
 from app.models.parte_diaria import MOLESTIA_ZONAS
 from app.models.sesion_entrenamiento import TIPOS_ENTRENAMIENTO
 from conftest import crear_usuario
@@ -67,6 +69,73 @@ def test_relaciones_y_cascade_orm():
     assert "delete-orphan" in rel.cascade
     back = inspect(SesionEntrenamiento).relationships["parte_diaria"]
     assert back.mapper.class_ is ParteDiaria
+
+
+def test_entrenamiento_principal_unico_sin_indice_redundante():
+    tabla = EntrenamientoPrincipal.__table__
+    uniques = [constraint for constraint in tabla.constraints
+               if isinstance(constraint, UniqueConstraint)
+               and [column.name for column in constraint.columns] == ["parte_diaria_id"]]
+    assert len(uniques) == 1
+    assert not any(index.name == "ix_entrenamientos_principales_parte_diaria_id"
+                   for index in tabla.indexes)
+    fks = [fk for fk in tabla.foreign_keys if fk.parent.name == "parte_diaria_id"]
+    assert len(fks) == 1
+    assert fks[0].column.table.name == "partes_diarios"
+    assert fks[0].ondelete == "CASCADE"
+    relationship = inspect(ParteDiaria).relationships["entrenamiento_principal"]
+    assert relationship.uselist is False
+    assert "delete-orphan" in relationship.cascade
+
+
+def _principal(parte_diaria_id):
+    return EntrenamientoPrincipal(
+        parte_diaria_id=parte_diaria_id,
+        estructura_tipo="aerobico",
+        series=3,
+        repeticiones_por_serie=4,
+        distancia_m=400,
+        descanso_micro_min_s=30,
+        descanso_micro_max_s=60,
+        descanso_macro_min_s=180,
+        descanso_macro_max_s=300,
+        tiempo_rep_min_s=100,
+        tiempo_rep_max_s=120,
+    )
+
+
+def test_un_parte_no_admite_dos_entrenamientos_principales(db):
+    atleta = crear_usuario(db, username="principal_uq")
+    parte = ParteDiaria(
+        atleta_id=atleta.id, fecha=date(2026, 11, 7), sueno_calidad=7,
+        fatiga=4, dolor_muscular=3, estres=4, animo=8, horas_sueno=7.5,
+        hay_molestia=False, sintomas_enfermedad=False, entreno_hoy=True,
+    )
+    parte.entrenamiento_principal = _principal(None)
+    db.add(parte)
+    db.commit()
+    db.refresh(parte)
+    db.add(_principal(parte.id))
+    with pytest.raises(IntegrityError):
+        db.flush()
+    db.rollback()
+
+
+def test_eliminacion_del_parte_elimina_su_estructura_principal(db):
+    atleta = crear_usuario(db, username="principal_cascade")
+    parte = ParteDiaria(
+        atleta_id=atleta.id, fecha=date(2026, 11, 7), sueno_calidad=7,
+        fatiga=4, dolor_muscular=3, estres=4, animo=8, horas_sueno=7.5,
+        hay_molestia=False, sintomas_enfermedad=False, entreno_hoy=True,
+    )
+    parte.entrenamiento_principal = _principal(None)
+    db.add(parte)
+    db.commit()
+    assert db.query(EntrenamientoPrincipal).count() == 1
+    assert parte.entrenamiento_principal.id is not None
+    db.delete(parte)
+    db.commit()
+    assert db.query(EntrenamientoPrincipal).count() == 0
 
 
 def test_whitelists_dominio():

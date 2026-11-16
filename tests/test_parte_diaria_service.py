@@ -97,6 +97,53 @@ class TestLoadAndFingerprint:
         fp2 = record_state_fingerprint({**p, "molestia_zona": ["cuello", "rodillas"]}, s2)
         assert fp1 == fp2
 
+    @pytest.mark.parametrize("field,value", [
+        ("estructura_tipo", "velocidad"),
+        ("series", 4),
+        ("repeticiones_por_serie", 5),
+        ("distancia_m", 800),
+        ("descanso_micro_min_s", 31),
+        ("descanso_micro_max_s", 61),
+        ("descanso_macro_min_s", 181),
+        ("descanso_macro_max_s", 301),
+        ("tiempo_rep_min_s", 101),
+        ("tiempo_rep_max_s", 121),
+    ])
+    def test_fingerprint_incluye_cada_campo_del_entrenamiento_principal(self, field, value):
+        parte = {
+            "atleta_id": 7,
+            "fecha": date(2026, 11, 15),
+            "registro_id": 14,
+            "entreno_hoy": True,
+            "entrenamiento_principal": {
+                "estructura_tipo": "aerobico", "series": 3,
+                "repeticiones_por_serie": 4, "distancia_m": 400,
+                "descanso_micro_min_s": 30, "descanso_micro_max_s": 60,
+                "descanso_macro_min_s": 180, "descanso_macro_max_s": 300,
+                "tiempo_rep_min_s": 100, "tiempo_rep_max_s": 120,
+            },
+        }
+        changed = {**parte, "entrenamiento_principal": {
+            **parte["entrenamiento_principal"], field: value,
+        }}
+        assert record_state_fingerprint(parte, []) != record_state_fingerprint(changed, [])
+
+    def test_fingerprint_distingue_principal_ausente_de_existente(self):
+        parte = {"atleta_id": 7, "fecha": date(2026, 11, 15), "registro_id": 14}
+        principal = {
+            "estructura_tipo": "aerobico", "series": 3,
+            "repeticiones_por_serie": 4, "distancia_m": 400,
+            "descanso_micro_min_s": 30, "descanso_micro_max_s": 60,
+            "descanso_macro_min_s": 180, "descanso_macro_max_s": 300,
+            "tiempo_rep_min_s": 100, "tiempo_rep_max_s": 120,
+        }
+        assert record_state_fingerprint(parte, []) == record_state_fingerprint(
+            {**parte, "entrenamiento_principal": None}, []
+        )
+        assert record_state_fingerprint(parte, []) != record_state_fingerprint(
+            {**parte, "entrenamiento_principal": principal}, []
+        )
+
     def test_edit_state_token_verifies_and_rejects_tamper(self):
         fp = record_state_fingerprint(
             {"atleta_id": 1, "fecha": date(2026, 11, 8), "registro_id": 5, "sueno_calidad": 7, "horas_sueno": "7.5", "fatiga": 4, "dolor_muscular": 3, "estres": 4, "animo": 8, "hay_molestia": False, "molestia_zona": [], "molestia_zona_otra": None, "molestia_dolor": None, "afecta_entrenamiento": None, "sintomas_enfermedad": False, "detalle_sintomas": None, "comentarios": None, "entreno_hoy": False},
@@ -222,19 +269,48 @@ class TestServiceCRUD:
         db.refresh(r2.parte)
         assert r2.parte.animo == 7
 
-    def test_entreno_hoy_true_requires_session_and_saves_multi(self, db):
+    def test_entreno_hoy_requires_principal_and_accepts_no_individual_sessions(self, db):
         atleta = crear_usuario(db, username="pd3")
         fecha = date(2026, 11, 8)
-        bad = svc.save_daily_record(db, atleta_id=atleta.id, payload=_payload(entreno_hoy=True, sessions=[]), fecha=fecha)
-        assert not bad.ok and bad.status == svc.STATUS_VALIDATION
-        ok = svc.save_daily_record(
+        bad = svc.save_daily_record(
             db, atleta_id=atleta.id,
-            payload=_payload(entreno_hoy=True, sessions=[_session(duracion_min=60, rpe=8, orden=1), _session(duracion_min=45, rpe=6, orden=2, tipo_entrenamiento="fuerza")]),
+            payload=_payload(entreno_hoy=True, sessions=[], entrenamiento_principal=None),
             fecha=fecha,
         )
+        assert not bad.ok and bad.status == svc.STATUS_VALIDATION
+        assert db.query(ParteDiaria).count() == 0
+
+        ok = svc.save_daily_record(db, atleta_id=atleta.id,
+                                   payload=_payload(entreno_hoy=True, sessions=[]), fecha=fecha)
         assert ok.ok and ok.parte
-        assert len(ok.parte.sesiones) == 2
-        assert sum(s.carga_sesion for s in ok.parte.sesiones) == 750
+        assert ok.parte.entrenamiento_principal.distancia_m == 400
+        assert len(ok.parte.sesiones) == 0
+
+    def test_cambio_solo_del_principal_rechaza_token_obsoleto(self, db):
+        atleta = crear_usuario(db, username="pdprincipalstale")
+        fecha = date(2026, 11, 8)
+        inicial = svc.save_daily_record(
+            db, atleta_id=atleta.id,
+            payload=_payload(entreno_hoy=True, sessions=[]), fecha=fecha,
+        )
+        assert inicial.ok and inicial.edit_state_token
+
+        actualizado = svc.save_daily_record(
+            db, atleta_id=atleta.id,
+            payload=_payload(entreno_hoy=True, sessions=[], entrenamiento_principal={
+                **_payload()["entrenamiento_principal"], "distancia_m": 800,
+            }),
+            edit_state_token=inicial.edit_state_token, fecha=fecha,
+        )
+        assert actualizado.ok
+
+        obsoleto = svc.save_daily_record(
+            db, atleta_id=atleta.id, payload=_payload(entreno_hoy=True, sessions=[]),
+            edit_state_token=inicial.edit_state_token, fecha=fecha,
+        )
+        assert not obsoleto.ok and obsoleto.status == svc.STATUS_CONFLICT and obsoleto.stale
+        db.refresh(actualizado.parte)
+        assert actualizado.parte.entrenamiento_principal.distancia_m == 800
 
     def test_discard_requires_confirmation_and_preserves_on_missing(self, db):
         atleta = crear_usuario(db, username="pd4")

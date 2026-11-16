@@ -8,7 +8,10 @@
         <div class="sub">{{ user.nombre }}</div>
     </div>
     <div class="barra-acciones">
-        <a href="/auth/logout" class="btn btn-sm">Salir</a>
+        <form method="post" action="/auth/logout" class="logout-form">
+            {{ csrf_input(request) }}
+            <button type="submit" class="btn btn-sm">Salir</button>
+        </form>
     </div>
 </header>
 {% endblock %}

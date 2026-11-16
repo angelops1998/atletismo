@@ -129,12 +129,15 @@ class TestCreacionYActualizacion:
         assert parte.entreno_hoy is False
         assert len(parte.sesiones) == 0
 
-    def test_entreno_hoy_sin_sesiones_es_422(self, client, db, atleta):
+    def test_entreno_hoy_con_principal_y_sin_sesiones_individuales_es_valido(self, client, db, atleta):
         entrar(client, atleta)
         datos = completo(client, entreno_hoy="si", sessions="")
-        r = client.post("/parte", data=datos)
-        assert r.status_code == 422
-        assert db.query(ParteDiaria).count() == 0
+        r = client.post("/parte", data=datos, follow_redirects=False)
+        assert r.status_code == 302
+        parte = db.query(ParteDiaria).one()
+        assert parte.entrenamiento_principal is not None
+        assert parte.entrenamiento_principal.distancia_m == 400
+        assert parte.sesiones == []
 
     def test_actualizacion_persiste_en_nueva_sesion(self, client, db, atleta):
         entrar(client, atleta)
@@ -568,25 +571,15 @@ class TestInputParsing:
         db.expire_all()
         assert db.query(ParteDiaria).one().sesiones[0].rpe == 6
 
-    def test_repeated_sessions_fields_se_preservan(self, client, db, atleta):
+    def test_campos_estructurados_se_preservan_despues_de_422(self, client, db, atleta):
         entrar(client, atleta)
-        csrf = con_csrf(client, "/parte")
-        line1 = "|1|resistencia|45|6|a"
-        line2 = "|2|fuerza|30|8|b"
-        data = {
-            "csrf_token": csrf,
-            "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
-            "dolor_muscular": "3", "estres": "4", "animo": "abc",  # force 422
-            "entreno_hoy": "si",
-            "sessions": [line1, line2],
-        }
-        r = client.post("/parte", data=data)
+        r = client.post("/parte", data=completo(client, animo="abc", sessions=""))
         assert r.status_code == 422
-        # both submitted session lines preserved in form (rendered textarea)
-        assert line1 in r.text
-        assert line2 in r.text
-        assert line1 in r.text.split('name="sessions"', 1)[1]
-        assert line2 in r.text.split('name="sessions"', 1)[1]
+        assert 'name="estructura_tipo"' in r.text and 'value="aerobico"' in r.text
+        assert 'name="series"' in r.text and 'value="3"' in r.text
+        assert 'name="distancia_m"' in r.text and 'value="400"' in r.text
+        assert 'name="descanso_micro_min"' in r.text and 'value="00:30"' in r.text
+        assert 'name="tiempo_rep_max"' in r.text and 'value="02:00"' in r.text
         assert db.query(ParteDiaria).count() == 0
 
     def test_repeated_sessions_fields_crean_multiples(self, client, db, atleta):
@@ -605,60 +598,36 @@ class TestInputParsing:
         parte = db.query(ParteDiaria).one()
         assert len(parte.sesiones) == 2
 
-    def test_repeated_sessions_fields_surviven_409(self, client, db, atleta):
-        """Repeated sessions survive HTTP 409 conflict restoration."""
+    def test_entrenamiento_principal_obsoleto_devuelve_409_y_no_sobrescribe(self, client, db, atleta):
         entrar(client, atleta)
         client.post("/parte", data=completo(client), follow_redirects=False)
         parte = db.query(ParteDiaria).one()
+        session_ids = {s.id for s in parte.sesiones}
         r_get = client.get("/parte")
         import re
         m = re.search(r'name="edit_state_token" value="([^"]+)"', r_get.text)
         edit_tok = m.group(1) if m else ""
-        # Make token stale
-        parte.animo = 5
+        # Change only the principal structure; all other part state stays unchanged.
+        parte.entrenamiento_principal.distancia_m = 800
         db.commit()
-        csrf = con_csrf(client, "/parte")
-        line1 = "|1|resistencia|45|6|conflict-a"
-        line2 = "|2|fuerza|30|8|conflict-b"
-        datos = {
-            "csrf_token": csrf,
-            "edit_state_token": edit_tok,
-            "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
-            "dolor_muscular": "3", "estres": "4", "animo": "9",
-            "entreno_hoy": "si",
-            **entrenamiento_form(),
-            "sessions": [line1, line2],
-        }
+        datos = completo(client, edit_state_token=edit_tok, distancia_m="400", sessions="")
         r = client.post("/parte", data=datos)
         assert r.status_code == 409
-        sessions_area = r.text.split('name="sessions"', 1)[1].split("</textarea>", 1)[0]
-        assert line1 in sessions_area
-        assert line2 in sessions_area
+        assert 'name="distancia_m"' in r.text and 'value="400"' in r.text
         db.expire_all()
-        assert db.query(ParteDiaria).one().animo == 5
+        vigente = db.query(ParteDiaria).one()
+        assert vigente.entrenamiento_principal.distancia_m == 800
+        assert {s.id for s in vigente.sesiones} == session_ids
 
-    def test_newline_sessions_textarea_survives_422(self, client, db, atleta):
-        """Newline-separated textarea sessions retain prior behavior on 422."""
+    def test_tiempo_mmss_invalido_se_preserva_en_422(self, client, db, atleta):
         entrar(client, atleta)
-        csrf = con_csrf(client, "/parte")
-        line1 = "|1|resistencia|45|6|linea1"
-        line2 = "|2|fuerza|30|8|linea2"
-        datos = {
-            "csrf_token": csrf,
-            "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
-            "dolor_muscular": "3", "estres": "4", "animo": "abc",  # force 422
-            "entreno_hoy": "si",
-            "sessions": f"{line1}\n{line2}",
-        }
-        r = client.post("/parte", data=datos)
+        r = client.post("/parte", data=completo(client, descanso_micro_min="1:30", sessions=""))
         assert r.status_code == 422
-        sessions_area = r.text.split('name="sessions"', 1)[1].split("</textarea>", 1)[0]
-        assert line1 in sessions_area
-        assert line2 in sessions_area
+        assert 'name="descanso_micro_min"' in r.text and 'value="1:30"' in r.text
+        assert "MM:SS" in r.text or "minutos" in r.text.lower()
         assert db.query(ParteDiaria).count() == 0
 
-    def test_repeated_delete_ids_survive_422(self, client, db, atleta):
-        """Repeated delete_session_ids survive 422 and persisted state unchanged."""
+    def test_error_422_no_elimina_sesiones_individuales_existentes(self, client, db, atleta):
         entrar(client, atleta)
         client.post("/parte", data=completo(client, sessions=_session_str([
             {"orden": 1, "tipo_entrenamiento": "resistencia", "duracion_min": 45, "rpe": 6},
@@ -666,29 +635,14 @@ class TestInputParsing:
         ])), follow_redirects=False)
         parte = db.query(ParteDiaria).one()
         ids = [s.id for s in parte.sesiones]
-        edit_token = _get_edit_token(client)
-        csrf = con_csrf(client, "/parte")
-        datos = {
-            "csrf_token": csrf,
-            "edit_state_token": edit_token,
-            "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
-            "dolor_muscular": "3", "estres": "4", "animo": "abc",  # force 422
-            "entreno_hoy": "si",
-            **entrenamiento_form(),
-            "sessions": _session_str([{"id": ids[0], "orden": 1, "tipo_entrenamiento": "resistencia",
-                                       "duracion_min": 45, "rpe": 6}]),
-            "delete_session_ids": [str(ids[0]), str(ids[1])],
-        }
+        datos = completo(client, animo="abc", sessions="")
         r = client.post("/parte", data=datos)
         assert r.status_code == 422
-        delete_area = r.text.split('name="delete_session_ids"', 1)[1].split(">", 1)[0]
-        assert str(ids[0]) in delete_area
-        assert str(ids[1]) in delete_area
+        assert 'name="delete_session_ids"' not in r.text
         db.expire_all()
         assert {s.id for s in db.query(ParteDiaria).one().sesiones} == set(ids)
 
-    def test_repeated_delete_ids_survive_409(self, client, db, atleta):
-        """Repeated delete_session_ids survive 409 conflict restoration."""
+    def test_conflicto_no_elimina_sesiones_individuales_existentes(self, client, db, atleta):
         entrar(client, atleta)
         client.post("/parte", data=completo(client, sessions=_session_str([
             {"orden": 1, "tipo_entrenamiento": "resistencia", "duracion_min": 45, "rpe": 6},
@@ -700,28 +654,15 @@ class TestInputParsing:
         import re
         m = re.search(r'name="edit_state_token" value="([^"]+)"', r_get.text)
         edit_tok = m.group(1) if m else ""
-        parte.animo = 5
+        parte.entrenamiento_principal.distancia_m = 800
         db.commit()
-        csrf = con_csrf(client, "/parte")
-        datos = {
-            "csrf_token": csrf,
-            "edit_state_token": edit_tok,
-            "sueno_calidad": "7", "horas_sueno": "7.5", "fatiga": "4",
-            "dolor_muscular": "3", "estres": "4", "animo": "9",
-            "entreno_hoy": "si",
-            **entrenamiento_form(),
-            "sessions": _session_str([{"id": ids[0], "orden": 1, "tipo_entrenamiento": "resistencia",
-                                       "duracion_min": 45, "rpe": 6}]),
-            "delete_session_ids": [str(ids[0]), str(ids[1])],
-        }
+        datos = completo(client, edit_state_token=edit_tok, sessions="", distancia_m="400")
         r = client.post("/parte", data=datos)
         assert r.status_code == 409
-        delete_area = r.text.split('name="delete_session_ids"', 1)[1].split(">", 1)[0]
-        assert str(ids[0]) in delete_area
-        assert str(ids[1]) in delete_area
+        assert 'name="delete_session_ids"' not in r.text
         db.expire_all()
         persisted = db.query(ParteDiaria).one()
-        assert persisted.animo == 5
+        assert persisted.entrenamiento_principal.distancia_m == 800
         assert {s.id for s in persisted.sesiones} == set(ids)
 
     def test_parsing_failure_no_llama_service_ni_modifica(self, client, db, atleta):
@@ -809,8 +750,12 @@ class TestRenderizado:
                       "horas_sueno", "hay_molestia", "molestia_zona",
                       "molestia_dolor", "afecta_entrenamiento", "sintomas_enfermedad",
                       "detalle_sintomas", "comentarios", "entreno_hoy",
-                      "sessions", "delete_session_ids"]:
+                      "estructura_tipo", "series", "repeticiones_por_serie", "distancia_m",
+                      "descanso_micro_min", "descanso_micro_max", "descanso_macro_min",
+                      "descanso_macro_max", "tiempo_rep_min", "tiempo_rep_max"]:
             assert f'name="{campo}"' in r.text
+        assert 'name="sessions"' not in r.text
+        assert 'name="delete_session_ids"' not in r.text
 
     def test_escala_bienestar_1_a_10_con_requerido(self, client, db, atleta):
         entrar(client, atleta)

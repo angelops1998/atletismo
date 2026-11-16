@@ -152,13 +152,34 @@ def session_state_fingerprint(sessions: Iterable[dict[str, Any]]) -> str:
     return digest
 
 
+def normalize_principal_for_fingerprint(
+    principal: Optional[dict[str, Any]],
+) -> Optional[dict[str, Any]]:
+    """Canonicalize the planned main workout, preserving explicit absence."""
+    if principal is None:
+        return None
+    return {
+        "estructura_tipo": _norm_text(principal.get("estructura_tipo")),
+        "series": _norm_int(principal.get("series")),
+        "repeticiones_por_serie": _norm_int(principal.get("repeticiones_por_serie")),
+        "distancia_m": _norm_int(principal.get("distancia_m")),
+        "descanso_micro_min_s": _norm_int(principal.get("descanso_micro_min_s")),
+        "descanso_micro_max_s": _norm_int(principal.get("descanso_micro_max_s")),
+        "descanso_macro_min_s": _norm_int(principal.get("descanso_macro_min_s")),
+        "descanso_macro_max_s": _norm_int(principal.get("descanso_macro_max_s")),
+        "tiempo_rep_min_s": _norm_int(principal.get("tiempo_rep_min_s")),
+        "tiempo_rep_max_s": _norm_int(principal.get("tiempo_rep_max_s")),
+    }
+
+
 def record_state_fingerprint(
     parte: dict[str, Any], sessions: Iterable[dict[str, Any]]
 ) -> str:
     """Canonical record+session fingerprint for Policy A edit-state tokens.
 
-    Includes all relevant persisted record state (normalized) + normalized
-    sessions in stable order. Excludes volatile server timestamps.
+    Includes all relevant persisted record state (normalized), the planned
+    principal workout, and normalized sessions in stable order. Excludes
+    volatile server timestamps.
     """
     fecha = parte.get("fecha")
     if isinstance(fecha, date):
@@ -185,6 +206,9 @@ def record_state_fingerprint(
         "detalle_sintomas": _norm_text(parte.get("detalle_sintomas")),
         "comentarios": _norm_text(parte.get("comentarios")),
         "entreno_hoy": _norm_bool(parte.get("entreno_hoy")),
+        "entrenamiento_principal": normalize_principal_for_fingerprint(
+            parte.get("entrenamiento_principal")
+        ),
         "sessions": sorted_normalized_sessions(sessions),
     }
     canonical = _canonical_json(state)

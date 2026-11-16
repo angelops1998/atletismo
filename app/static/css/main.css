@@ -197,6 +197,15 @@ svg { display: block; }
 }
 .menu-movil-panel a svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; flex: 0 0 auto; }
 .menu-movil-panel a:hover, .menu-movil-panel a:active { background: var(--superficie-2); }
+.menu-movil-logout { margin: 0; }
+.menu-movil-logout button {
+    width: 100%; display: flex; align-items: center; gap: 9px;
+    padding: 11px 12px; border: 0; border-radius: 8px;
+    background: transparent; color: var(--tinta); text-align: left;
+    font-size: 14.5px; font-weight: 600;
+}
+.menu-movil-logout button:hover, .menu-movil-logout button:active { background: var(--superficie-2); }
+.menu-movil-logout button svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; flex: 0 0 auto; }
 
 /* ============================================================
    TIPOGRAFÍA Y BLOQUES
@@ -1092,6 +1101,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     .rail-usuario .rol { font-size: 11.5px; color: var(--tartan); font-weight: 700; text-transform: capitalize; }
     .rail-usuario a { display: block; font-size: 13px; color: var(--gris); margin-top: 7px; font-weight: 600; }
     .rail-usuario a:hover { color: var(--tartan); }
+    .rail-usuario .rail-logout { margin: 0; }
+    .rail-usuario .rail-logout button {
+        display: block; margin-top: 7px; padding: 0; border: 0;
+        background: transparent; color: var(--gris); font-size: 13px;
+        font-weight: 600; text-align: left;
+    }
+    .rail-usuario .rail-logout button:hover { color: var(--tartan); }
 
     .nav-publica { padding: 14px 32px; }
     .nav-publica .enlaces { display: flex; align-items: center; gap: 26px; }

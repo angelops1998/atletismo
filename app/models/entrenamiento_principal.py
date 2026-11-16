@@ -15,7 +15,7 @@ class EntrenamientoPrincipal(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    parte_diaria_id = Column(Integer, ForeignKey("partes_diarios.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    parte_diaria_id = Column(Integer, ForeignKey("partes_diarios.id", ondelete="CASCADE"), nullable=False, unique=True)
     estructura_tipo = Column(String(16), nullable=False)
     series = Column(Integer, nullable=False)
     repeticiones_por_serie = Column(Integer, nullable=False)

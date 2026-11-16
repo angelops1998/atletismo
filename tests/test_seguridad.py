@@ -154,6 +154,69 @@ class TestRedirecciones:
             "csrf_token": token, "next": "/mis-datos",
         }, follow_redirects=False)
         assert r.headers["location"] == "/mis-datos"
+        assert "access_token=" in r.headers["set-cookie"]
+
+    def test_login_anonimo_requiere_csrf(self, client, atleta):
+        r = client.post("/auth/login", data={
+            "identificador": "atleta1", "password": "claveprueba1",
+        }, follow_redirects=False)
+        assert r.status_code == 403
+        assert client.cookies.get("access_token") is None
+        assert "access_token=" not in r.headers.get("set-cookie", "")
+
+    def test_login_rechaza_token_csrf_manipulado(self, client, atleta):
+        token = con_csrf(client)
+        r = client.post("/auth/login", data={
+            "identificador": "atleta1", "password": "claveprueba1",
+            "csrf_token": token + "x",
+        }, follow_redirects=False)
+        assert r.status_code == 403
+        assert client.cookies.get("access_token") is None
+
+
+class TestLogout:
+    def test_get_logout_no_termina_la_sesion(self, client, profe):
+        entrar(client, profe)
+        original = client.cookies.get("access_token")
+        r = client.get("/auth/logout", follow_redirects=False)
+        assert r.status_code == 405
+        assert client.cookies.get("access_token") == original
+        assert client.get("/panel").status_code == 200
+
+    @pytest.mark.parametrize("csrf_mode", ["missing", "invalid"])
+    def test_post_logout_requiere_csrf(self, client, profe, csrf_mode):
+        entrar(client, profe)
+        original = client.cookies.get("access_token")
+        token = ""
+        if csrf_mode == "invalid":
+            token = con_csrf(client, "/cuenta") + "x"
+        r = client.post("/auth/logout", data={"csrf_token": token}, follow_redirects=False)
+        assert r.status_code == 403
+        assert client.cookies.get("access_token") == original
+
+    def test_post_logout_valido_borra_cookie_y_requiere_login(self, client, profe):
+        token_login = con_csrf(client)
+        login = client.post("/auth/login", data={
+            "identificador": profe.username, "password": "claveprueba1",
+            "csrf_token": token_login,
+        }, follow_redirects=False)
+        assert login.status_code == 302
+        assert client.cookies.get("access_token")
+        token = con_csrf(client, "/cuenta")
+        r = client.post("/auth/logout", data={"csrf_token": token}, follow_redirects=False)
+        assert r.status_code == 302
+        assert r.headers["location"] == "/auth/login"
+        assert "access_token=" in r.headers.get("set-cookie", "")
+        assert client.cookies.get("access_token") is None
+        assert client.get("/panel", follow_redirects=False).status_code == 302
+
+    def test_navegacion_renderiza_logout_como_post_csrf(self, client, profe):
+        entrar(client, profe)
+        for ruta in ("/panel", "/cuenta"):
+            html = client.get(ruta).text
+            assert '<form method="post" action="/auth/logout"' in html
+            assert 'name="csrf_token"' in html
+        assert 'href="/auth/logout"' not in client.get("/panel").text
 
 
 class TestFuerzaBruta:
