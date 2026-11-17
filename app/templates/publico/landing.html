@@ -10,7 +10,7 @@
 
 <header class="nav-publica">
     <a href="/" class="marca">
-        <span class="escudo">{{ icono('corredor') }}</span>
+        <span class="escudo"><img src="{{ static('img/delta-logo-blanco.png') }}" alt=""></span>
         {{ club.club_nombre }}
     </a>
     <nav class="enlaces">
@@ -135,17 +135,16 @@
     <div class="seccion-cabecera">
         <span class="antetitulo">Lo que nos diferencia</span>
         <h2>Entrenamos con datos, no con corazonadas</h2>
-        <p>Cada atleta del club carga una vez por semana cómo durmió, cómo comió y
-            cómo se sintió entrenando. Con eso el profesor ajusta la carga de la
-            semana siguiente: sube cuando el cuerpo está listo y afloja antes de
-            que aparezca la lesión.</p>
+        <p>Cada atleta registra a diario cómo durmió, cómo se siente y si entrenó.
+            El profesor puede seguir su bienestar y las molestias declaradas para
+            acompañar su proceso de entrenamiento.</p>
     </div>
     <div class="grilla grilla-3">
         <div class="pilar">
             <div class="icono">{{ icono('parte') }}</div>
-            <h3>Parte semanal</h3>
-            <p>Dos minutos desde el celular: sueño, alimentación, molestias y cómo
-                resultó la semana de entrenamiento.</p>
+            <h3>Parte diario</h3>
+            <p>Desde el celular: descanso, bienestar, estructura del entrenamiento,
+                molestias y síntomas declarados por el atleta.</p>
         </div>
         <div class="pilar">
             <div class="icono">{{ icono('estadisticas') }}</div>
@@ -297,13 +296,14 @@
             </a>
             {% endif %}
             <p class="apunte" style="color:rgba(255,255,255,.6); margin-top:12px">
-                ¿Ya sos del club? <a href="/auth/login" style="color:var(--tartan-2); font-weight:700">Entrá a cargar tu parte semanal</a>.
+                ¿Ya sos del club? <a href="/auth/login" style="color:var(--tartan-2); font-weight:700">Entrá a registrar tu parte diario</a>.
             </p>
         </div>
     </div>
 </section>
 
 <footer class="pie">
+    <a href="/" class="marca-pie" aria-label="{{ club.club_nombre }}"><img src="{{ static('img/delta-logo-blanco.png') }}" alt="Logotipo DELTA Club de Atletismo"></a>
     <div class="enlaces">
         {% if club.club_instagram %}<a href="{{ club.club_instagram }}" target="_blank" rel="noopener">Instagram</a>{% endif %}
         {% if club.club_facebook %}<a href="{{ club.club_facebook }}" target="_blank" rel="noopener">Facebook</a>{% endif %}

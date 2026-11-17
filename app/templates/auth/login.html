@@ -1,14 +1,13 @@
 {% extends "base.html" %}
-{% from "_iconos.html" import icono %}
 {% block title %}Entrar — {{ club.club_nombre }}{% endblock %}
 
 {% block cuerpo %}
 <div class="login-pantalla">
     <div class="login-caja">
         <div class="login-marca">
-            <div class="escudo">{{ icono('corredor') }}</div>
+            <div class="escudo"><img src="{{ static('img/delta-logo-blanco.png') }}" alt="Logotipo DELTA Club de Atletismo"></div>
             <h1>{{ club.club_nombre }}</h1>
-            <p>Entrá para cargar tu parte semanal</p>
+            <p>Entrá para registrar tu parte diario</p>
         </div>
 
         {% if error %}<div class="aviso aviso-error" style="margin-bottom:14px">{{ error }}</div>{% endif %}

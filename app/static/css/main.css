@@ -9,34 +9,50 @@
    ============================================================ */
 
 :root {
-    /* Pista de tartán: el naranja quemado es el color de la pista */
-    --tartan:       #C2410C;
-    --tartan-2:     #EA580C;
-    --tartan-tint:  #FDEBE0;
-    --carbon:       #17191D;
-    --papel:        #F7F5F2;
-    --superficie:   #FFFFFF;
-    --superficie-2: #FBF9F7;
-    --tinta:        #17191D;
-    --gris:         #6B6F76;
-    --tenue:        #9AA0A6;
-    --linea:        #E7E3DE;
-    --linea-fuerte: #D5D0C9;
+    color-scheme: dark;
+
+    /* Identidad DELTA: base oscura y rojo de competición. */
+    --brand-black:      #171516;
+    --brand-graphite:   #252326;
+    --brand-red:        #F52B4E;
+    --brand-crimson:    #C81438;
+    --brand-wine:       #650014;
+    --brand-white:      #F7F6F5;
+    --brand-muted:      #B7B2B5;
+    --brand-border:     #403A3E;
+    --surface-primary:  var(--brand-graphite);
+    --surface-secondary:#302D31;
+    --brand-red-soft:   rgba(245,43,78,.14);
+    --brand-gradient:   linear-gradient(125deg, var(--brand-black) 12%, var(--brand-wine) 58%, var(--brand-crimson) 100%);
+
+    /* Alias conservados para los componentes existentes. */
+    --tartan:       var(--brand-red);
+    --tartan-2:     #FF536A;
+    --tartan-tint:  var(--brand-red-soft);
+    --carbon:       var(--brand-black);
+    --papel:        var(--brand-black);
+    --superficie:   var(--surface-primary);
+    --superficie-2: var(--surface-secondary);
+    --tinta:        var(--brand-white);
+    --gris:         var(--brand-muted);
+    --tenue:        #A9A2A7;
+    --linea:        #393438;
+    --linea-fuerte: var(--brand-border);
 
     /* Semáforo del bienestar */
-    --ok:           #157F5B;
-    --ok-tint:      #E4F2EC;
-    --atencion:     #A97207;
-    --atencion-tint:#FBF0DA;
-    --mal:          #B3261E;
-    --mal-tint:     #F8E3E1;
-    --info:         #1D4E89;
-    --info-tint:    #E7EEF7;
+    --ok:           #64D6A5;
+    --ok-tint:      #173A30;
+    --atencion:     #F2C66D;
+    --atencion-tint:#40351E;
+    --mal:          #FF6A78;
+    --mal-tint:     #451E27;
+    --info:         #8CC8FF;
+    --info-tint:    #1D3041;
 
-    --sombra:       0 1px 2px rgba(23,25,29,.04), 0 8px 20px rgba(23,25,29,.06);
-    --sombra-alta:  0 8px 30px rgba(23,25,29,.14);
-    --r:            14px;
-    --r-sm:         10px;
+    --sombra:       0 2px 5px rgba(0,0,0,.22), 0 12px 30px rgba(0,0,0,.16);
+    --sombra-alta:  0 12px 34px rgba(0,0,0,.42);
+    --r:            12px;
+    --r-sm:         8px;
     --sans:         "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --display:      "Barlow Condensed", var(--sans);
 
@@ -49,7 +65,7 @@
 html { -webkit-text-size-adjust: 100%; }
 body {
     font-family: var(--sans);
-    background: var(--papel);
+    background: radial-gradient(ellipse at 15% 0%, rgba(101,0,20,.22), transparent 38%), var(--papel);
     color: var(--tinta);
     font-size: 16px;
     line-height: 1.5;
@@ -81,14 +97,26 @@ svg { display: block; }
     position: sticky;
     top: 0;
     z-index: 30;
-    background: var(--superficie);
+    background: rgba(37,35,38,.96);
+    backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--linea);
     padding: 10px 16px;
     display: flex;
     align-items: center;
     gap: 12px;
     min-height: 56px;
+    overflow: hidden;
 }
+.barra::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: min(30vw, 240px);
+    background: url('/static/img/delta-geometria.svg') right 42% / auto 210% no-repeat;
+    opacity: .3;
+    pointer-events: none;
+}
+.barra > * { position: relative; z-index: 1; }
 .barra h1 { font-size: 19px; font-weight: 700; line-height: 1.2; }
 .barra .sub { font-size: 13px; color: var(--tenue); font-weight: 500; }
 .barra-izq { flex: 1; min-width: 0; }
@@ -168,7 +196,7 @@ svg { display: block; }
     display: grid;
     place-items: center;
     border-radius: 50%;
-    background: var(--tinta);
+    background: linear-gradient(145deg, var(--brand-red), var(--brand-crimson));
     color: #fff;
     box-shadow: var(--sombra-alta);
 }
@@ -212,6 +240,7 @@ svg { display: block; }
    ============================================================ */
 h2 { font-size: 20px; font-weight: 700; line-height: 1.25; }
 h3 { font-size: 16px; font-weight: 700; }
+.barra h1, .seccion-titulo h2, .card-head h3 { font-family: var(--display); letter-spacing: .015em; }
 .seccion-titulo {
     display: flex;
     align-items: baseline;
@@ -231,7 +260,9 @@ h3 { font-size: 16px; font-weight: 700; }
     border-radius: var(--r);
     box-shadow: var(--sombra);
     overflow: hidden;
+    position: relative;
 }
+.card-head { background: linear-gradient(100deg, rgba(245,43,78,.035), transparent 48%); }
 .card + .card { margin-top: 12px; }
 .card-head {
     padding: 14px 16px;
@@ -278,16 +309,20 @@ h3 { font-size: 16px; font-weight: 700; }
     color: var(--tinta);
     font-weight: 600;
     font-size: 15px;
-    transition: background .12s, border-color .12s, transform .06s;
+    transition: background .16s, border-color .16s, transform .12s, box-shadow .16s;
 }
 .btn:active { transform: translateY(1px); }
+.btn:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 3px solid rgba(255,83,106,.75);
+    outline-offset: 2px;
+}
 .btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
 .btn-primario {
-    background: var(--tartan);
-    border-color: var(--tartan);
+    background: linear-gradient(120deg, var(--brand-crimson), #A90E2F);
+    border-color: var(--brand-crimson);
     color: #fff;
 }
-.btn-primario:hover { background: var(--tartan-2); border-color: var(--tartan-2); }
+.btn-primario:hover { background: #A90E2F; border-color: #A90E2F; box-shadow: 0 5px 18px rgba(245,43,78,.25); }
 .btn-fantasma { background: transparent; border-color: transparent; color: var(--gris); }
 .btn-fantasma:hover { background: var(--superficie-2); color: var(--tinta); }
 .btn-peligro { color: var(--mal); border-color: var(--mal-tint); background: var(--mal-tint); }
@@ -325,10 +360,10 @@ h3 { font-size: 16px; font-weight: 700; }
     line-height: 1.45;
     border: 1px solid transparent;
 }
-.aviso-ok { background: var(--ok-tint); color: var(--ok); border-color: #C6E4D8; }
-.aviso-error { background: var(--mal-tint); color: var(--mal); border-color: #EFC9C6; }
-.aviso-info { background: var(--info-tint); color: var(--info); border-color: #CBDCEF; }
-.aviso-atencion { background: var(--atencion-tint); color: var(--atencion); border-color: #EDDCB4; }
+.aviso-ok { background: var(--ok-tint); color: var(--ok); border-color: #28674F; }
+.aviso-error { background: var(--mal-tint); color: var(--mal); border-color: #71313B; }
+.aviso-info { background: var(--info-tint); color: var(--info); border-color: #31506A; }
+.aviso-atencion { background: var(--atencion-tint); color: var(--atencion); border-color: #67552E; }
 .aviso ul { margin: 6px 0 0 18px; }
 .aviso strong { font-weight: 700; }
 
@@ -345,7 +380,7 @@ h3 { font-size: 16px; font-weight: 700; }
    ============================================================ */
 .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .kpi {
-    background: var(--superficie);
+    background: #1B191C;
     border: 1px solid var(--linea);
     border-radius: var(--r);
     padding: 13px 14px;
@@ -389,11 +424,13 @@ textarea { min-height: 84px; resize: vertical; line-height: 1.5; }
 input:focus, select:focus, textarea:focus {
     outline: none;
     border-color: var(--tartan);
-    box-shadow: 0 0 0 3px var(--tartan-tint);
+    box-shadow: 0 0 0 3px rgba(245,43,78,.22);
 }
+input::placeholder, textarea::placeholder { color: #898187; opacity: 1; }
+option { background: var(--brand-graphite); color: var(--brand-white); }
 select {
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B6F76' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23B7B2B5' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 12px center;
     background-size: 18px;
@@ -413,9 +450,8 @@ fieldset { border: none; }
     border-bottom: 1px solid var(--linea);
 }
 
-/* --- Escala 1–5 del parte semanal ---
-   El control central de toda la app: es lo que el atleta toca cinco veces por
-   semana desde el celular. Son radios reales (funciona sin JavaScript y el
+/* --- Escalas del parte ---
+   Son radios reales (funciona sin JavaScript y el
    navegador valida solo), con las etiquetas convertidas en botones grandes. */
 .escala { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .escala input { position: absolute; opacity: 0; pointer-events: none; }
@@ -456,15 +492,13 @@ fieldset { border: none; }
 .escala-10 label { min-height: 46px; }
 .escala-10 label .n { font-size: 17px; }
 
-/* RPE: cada número lleva su descriptor y el color de su franja de intensidad,
-   igual que la escala impresa del club (gris → azul → verde → naranja → rojo).
-   El color va en un borde superior para que el botón elegido se siga viendo
-   con el estilo naranja de :checked. */
+/* RPE: cada número lleva su descriptor y el color de su franja de intensidad.
+   El color va en un borde superior para conservar la lectura de cada franja. */
 :root {
     --rpe-1: #6B7280;
     --rpe-2: #3B82C4;
     --rpe-3: #3F8F78;
-    --rpe-4: #D97A2B;
+    --rpe-4: #E2BE68;
     --rpe-5: #C2245A;
 }
 .escala-rpe label { min-height: 58px; border-top-width: 4px; }
@@ -541,14 +575,16 @@ th {
     font-size: 11px;
     letter-spacing: .06em;
     text-transform: uppercase;
-    color: var(--tenue);
+    color: #D2CBD0;
     font-weight: 700;
     padding: 9px 12px;
-    border-bottom: 1px solid var(--linea);
+    border-bottom: 1px solid var(--linea-fuerte);
+    background: #211E22;
     white-space: nowrap;
 }
 td { padding: 11px 12px; border-bottom: 1px solid var(--linea); vertical-align: middle; }
 tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: rgba(255,255,255,.025); }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .nombre-celda { font-weight: 600; }
 
@@ -676,34 +712,42 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     flex-direction: column;
     justify-content: center;
     padding: 28px 20px calc(28px + env(safe-area-inset-bottom));
-    background: var(--papel);
+    background: var(--brand-gradient);
+    position: relative;
+    overflow: hidden;
 }
+.login-pantalla::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: url('/static/img/delta-geometria.svg') 50% 100% / min(100%, 760px) auto no-repeat;
+    opacity: .25;
+    pointer-events: none;
+}
+.login-caja { position: relative; z-index: 1; }
 .login-caja { width: 100%; max-width: 380px; margin: 0 auto; }
-.login-marca { text-align: center; margin-bottom: 26px; }
+.login-marca { text-align: center; margin-bottom: 26px; color: var(--brand-white); }
 .login-marca .escudo {
-    width: 62px;
-    height: 62px;
-    margin: 0 auto 12px;
-    border-radius: 18px;
-    background: var(--tartan);
-    display: grid;
-    place-items: center;
+    width: 136px;
+    height: 136px;
+    margin: 0 auto 5px;
+    filter: drop-shadow(0 8px 24px rgba(0,0,0,.35));
 }
-.login-marca .escudo svg { width: 34px; height: 34px; stroke: #fff; fill: none; stroke-width: 1.8; }
+.login-marca .escudo img { width: 100%; height: 100%; object-fit: contain; }
 .login-marca h1 { font-family: var(--display); font-size: 30px; font-weight: 700; letter-spacing: -.01em; line-height: 1.05; }
-.login-marca p { font-size: 14px; color: var(--gris); margin-top: 4px; }
+.login-marca p { font-size: 14px; color: rgba(247,246,245,.78); margin-top: 4px; }
 .login-pie { text-align: center; margin-top: 20px; font-size: 13px; color: var(--tenue); }
-.login-pie a { color: var(--tartan); font-weight: 600; }
+.login-pie a { color: var(--tartan-2); font-weight: 700; }
 
 /* ============================================================
    PÁGINA PÚBLICA (promoción del club)
    ============================================================ */
-.publico { background: var(--superficie); }
+.publico { background: var(--brand-black); color: var(--brand-white); }
 .nav-publica {
     position: sticky;
     top: 0;
     z-index: 50;
-    background: rgba(255,255,255,.94);
+    background: rgba(23,21,22,.94);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--linea);
     display: flex;
@@ -723,40 +767,30 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     min-width: 0;
 }
 .nav-publica .marca .escudo {
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
-    background: var(--tartan);
-    display: grid;
-    place-items: center;
+    width: 48px;
+    height: 48px;
+    display: block;
     flex: 0 0 auto;
 }
-.nav-publica .marca .escudo svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2; }
+.nav-publica .marca .escudo img { width: 100%; height: 100%; object-fit: contain; }
 .nav-publica .enlaces { display: none; }
 
 .hero {
     position: relative;
     padding: 44px 20px 40px;
     background:
-        radial-gradient(120% 90% at 80% 0%, rgba(234,88,12,.16) 0%, rgba(234,88,12,0) 60%),
-        linear-gradient(180deg, #1B1D22 0%, #232630 100%);
+        var(--brand-gradient);
     color: #fff;
     overflow: hidden;
 }
-/* Las calles de la pista, dibujadas con gradientes: da la textura de tartán sin
-   depender de ninguna imagen (la página tiene que abrir rápido con datos móviles). */
+/* Red angular ligera inspirada en la geometría lateral de la camiseta DELTA. */
 .hero::after {
     content: "";
     position: absolute;
     inset: auto 0 0 0;
-    height: 90px;
-    background: repeating-linear-gradient(
-        90deg,
-        rgba(234,88,12,.30) 0 44px,
-        rgba(255,255,255,.06) 44px 46px);
-    transform: skewY(-3deg);
-    transform-origin: bottom left;
-    opacity: .5;
+    height: 100%;
+    background: url('/static/img/delta-geometria.svg') right bottom / min(86vw, 900px) auto no-repeat;
+    opacity: .28;
     pointer-events: none;
 }
 .hero-contenido { position: relative; z-index: 1; max-width: 720px; }
@@ -769,7 +803,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     font-weight: 700;
     letter-spacing: .1em;
     text-transform: uppercase;
-    color: var(--tartan-2);
+    color: #FF7184;
     margin-bottom: 12px;
 }
 .hero h1 {
@@ -784,7 +818,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .hero p { font-size: 16px; line-height: 1.55; color: rgba(255,255,255,.78); margin-top: 14px; }
 .hero .acciones { margin-top: 22px; }
 .hero .btn { border-color: rgba(255,255,255,.28); background: rgba(23,25,29,.55); color: #fff; }
-.hero .btn-primario { background: var(--tartan-2); border-color: var(--tartan-2); }
+.hero .btn-primario { background: var(--brand-crimson); border-color: var(--brand-crimson); }
 
 .seccion { padding: 40px 20px; }
 .seccion-oscura { background: var(--carbon); color: #fff; }
@@ -831,7 +865,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .pilar p { font-size: 14.5px; color: var(--gris); line-height: 1.55; }
 .seccion-oscura .pilar { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.1); }
 .seccion-oscura .pilar p { color: rgba(255,255,255,.68); }
-.seccion-oscura .pilar .icono { background: rgba(234,88,12,.18); }
+.seccion-oscura .pilar .icono { background: rgba(245,43,78,.16); }
 .seccion-oscura .pilar .icono svg { stroke: var(--tartan-2); }
 
 .disciplina {
@@ -979,7 +1013,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .prueba-gratis .antetitulo { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--tartan-2); display: block; margin-bottom: 6px; }
 .prueba-gratis h3 { font-family: var(--display); font-size: 26px; text-transform: uppercase; line-height: 1.05; }
 .prueba-gratis p { color: rgba(255,255,255,.72); margin-top: 8px; line-height: 1.55; font-size: 15px; }
-.prueba-gratis .btn-primario { background: var(--tartan-2); border-color: var(--tartan-2); justify-self: start; }
+.prueba-gratis .btn-primario { background: var(--brand-crimson); border-color: var(--brand-crimson); justify-self: start; }
 
 .contacto-item {
     display: flex;
@@ -1003,6 +1037,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .pie .enlaces { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin-bottom: 14px; }
 .pie .enlaces a { color: rgba(255,255,255,.7); font-weight: 600; }
+.pie .marca-pie { display: flex; justify-content: center; margin: 0 auto 16px; }
+.pie .marca-pie img { width: 82px; height: 82px; object-fit: contain; }
 
 /* Botón flotante de WhatsApp: en el celular es la forma real en que alguien
    pregunta por el club. */
@@ -1055,7 +1091,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
         display: flex;
         flex-direction: column;
         gap: 3px;
-        background: var(--superficie);
+        background: #1C1A1D;
         border-right: 1px solid var(--linea);
         padding: 18px 13px;
         position: sticky;
@@ -1070,15 +1106,12 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
         padding: 2px 6px 18px;
     }
     .rail .marca .escudo {
-        width: 36px;
-        height: 36px;
-        border-radius: 11px;
-        background: var(--tartan);
-        display: grid;
-        place-items: center;
+        width: 48px;
+        height: 48px;
+        display: block;
         flex: 0 0 auto;
     }
-    .rail .marca .escudo svg { width: 21px; height: 21px; stroke: #fff; fill: none; stroke-width: 2; }
+    .rail .marca .escudo img { width: 100%; height: 100%; object-fit: contain; }
     .rail .marca b { font-family: var(--display); font-size: 20px; line-height: 1; display: block; }
     .rail .marca span { font-size: 12px; color: var(--tenue); font-weight: 600; }
     .rail nav { display: flex; flex-direction: column; gap: 2px; }
@@ -1095,7 +1128,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     }
     .rail nav a svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; flex: 0 0 auto; }
     .rail nav a:hover { background: var(--superficie-2); color: var(--tinta); }
-    .rail nav a.activo { background: var(--tartan-tint); color: var(--tartan); font-weight: 700; }
+    .rail nav a.activo { background: var(--tartan-tint); color: #FF7184; font-weight: 700; box-shadow: inset 3px 0 var(--brand-red); }
     .rail nav a .globo {
         margin-left: auto;
         min-width: 20px;
@@ -1152,4 +1185,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     .app { display: block; }
     .card { box-shadow: none; break-inside: avoid; }
     .pantalla { padding: 0; max-width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }

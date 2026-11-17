@@ -3,7 +3,7 @@
    la barra inferior (_tabbar.html), que es donde llega el pulgar. #}
 <aside class="rail">
     <a href="{{ '/panel' if user.role == 'profesor' else '/inicio' }}" class="marca">
-        <span class="escudo">{{ icono('corredor') }}</span>
+        <span class="escudo"><img src="{{ static('img/delta-logo-blanco.png') }}" alt=""></span>
         <span>
             <b>{{ club.club_nombre }}</b>
             <span>{{ 'Panel del profesor' if user.role == 'profesor' else 'Mi seguimiento' }}</span>
