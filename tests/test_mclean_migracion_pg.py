@@ -59,13 +59,18 @@ def isolated_connection():
     tx = conn.begin()
     try:
         schema = "mclean_test_" + uuid.uuid4().hex
+        assert conn.execute(text("SELECT to_regnamespace(:name)"), {"name": schema}).scalar_one() is None
+        conn.info["mclean_test_schema"] = schema
         conn.execute(text(f'CREATE SCHEMA "{schema}"'))
         conn.execute(text(f'SET LOCAL search_path TO "{schema}"'))
         yield conn
     finally:
         tx.rollback()
-        conn.close()
-        engine.dispose()
+        try:
+            assert conn.execute(text("SELECT to_regnamespace(:name)"), {"name": schema}).scalar_one() is None, "El esquema de prueba sobrevivió al rollback"
+        finally:
+            conn.close()
+            engine.dispose()
 
 
 def _schema_snapshot(conn):
@@ -158,3 +163,36 @@ def test_full_chain_preserves_schema_history_and_existing_flow(isolated_connecti
         assert result.ok
         assert len(result.parte.sesiones) == 2
         assert sorted(s.carga_sesion for s in result.parte.sesiones) == [150, 999]
+
+
+
+def test_real_alembic_upgrade_tracks_revision_in_rolled_back_schema(isolated_connection, monkeypatch):
+    """Execute env.py and Alembic's revision runner on the verified connection."""
+    from contextlib import nullcontext
+    from alembic import command
+    from alembic.config import Config
+    import sqlalchemy
+
+    conn = isolated_connection
+    # env.py normally creates its own engine. Bind it to the already verified,
+    # transaction-scoped connection so neither commits nor changes reach public.
+    class BoundEngine:
+        def connect(self):
+            return nullcontext(conn)
+
+    monkeypatch.setattr(sqlalchemy, "engine_from_config", lambda *args, **kwargs: BoundEngine())
+    root = VERSIONS.parent.parent
+    config = Config(str(root / "alembic.ini"))
+    config.set_main_option("script_location", str(root / "alembic"))
+    command.upgrade(config, "e8a4f670c11d")
+    assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "e8a4f670c11d"
+    conn.execute(text("INSERT INTO users (id,username,hashed_password) VALUES (1,'alembic_prueba','x')"))
+    conn.execute(text("""INSERT INTO partes_diarios (id,atleta_id,fecha,sueno_calidad,fatiga,dolor_muscular,estres,animo,horas_sueno,comentarios,entreno_hoy)
+        VALUES (1,1,'2026-11-23',10,9,8,7,6,7.5,'conservar',false)"""))
+    command.upgrade(config, "head")
+    assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "f2a7c94b1d30"
+    assert tuple(conn.execute(text("SELECT sueno_calidad, fatiga, comentarios, version_cuestionario FROM partes_diarios WHERE id=1")).one()) == (10, 9, "conservar", "historico_1_10")
+    # Actual downgrade command must fail and must not replace the revision.
+    with pytest.raises(RuntimeError, match="Downgrade no disponible"):
+        command.downgrade(config, "e8a4f670c11d")
+    assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "f2a7c94b1d30"

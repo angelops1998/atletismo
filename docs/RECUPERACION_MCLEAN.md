@@ -1,6 +1,6 @@
 # Recuperación de la migración McLean f2a7c94b1d30
 
-La migración no admite `downgrade`: eliminar sus columnas descartaría respuestas McLean o la semántica registrada para una duración. No modificar esa protección ni marcar manualmente una revisión para sortearla. La validación de la migración completa en PostgreSQL continúa pendiente mientras no exista un destino aislado verificado.
+La migración no admite `downgrade`: eliminar sus columnas descartaría respuestas McLean o la semántica registrada para una duración. No modificar esa protección ni marcar manualmente una revisión para sortearla. La cadena y la migración se verificaron en PostgreSQL 16 desechable y aislado; esa prueba no verifica el estado de ninguna base real.
 
 Si fuera necesario recuperar el servicio, el responsable de la base debe evaluar y autorizar un procedimiento específico:
 
@@ -10,4 +10,4 @@ Si fuera necesario recuperar el servicio, el responsable de la base debe evaluar
 4. Si es imprescindible volver a un esquema anterior, diseñar y revisar una migración de recuperación específica que conserve íntegramente los datos y su significado en un destino de archivo verificable, sin convertir ni sobrescribir respuestas. La copia anterior por sí sola no recupera los datos escritos después de ella.
 5. Ensayar el procedimiento completo en la copia aislada: recuentos, contenido, relaciones, restricciones, lectura por la aplicación, permisos y recuperación desde el respaldo. Documentar las diferencias y obtener autorización explícita antes de cualquier acción sobre la base real.
 
-No se proporciona un comando de reversión universal: la recuperación segura depende de los datos presentes y del destino. Esta guía no sustituye la validación PostgreSQL pendiente ni autoriza cambios en producción.
+No se proporciona un comando de reversión universal: la recuperación segura depende de los datos presentes y del destino. Esta guía no verifica el estado de una base real ni autoriza cambios en producción.

@@ -1,4 +1,4 @@
-﻿"""PG-disposable concurrency tests for Phase 2 / 2.2 Policy A (daily tracking).
+"""PG-disposable concurrency tests for Phase 2 / 2.2 Policy A (daily tracking).
 
 SAFETY GATE (mandatory): these tests run ONLY when a disposable, isolated
 PostgreSQL target is independently verified with Docker+DB evidence.
@@ -43,7 +43,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base
-from app.models import ParteDiaria, SesionEntrenamiento, User
+from app.models import EntrenamientoPrincipal, ParteDiaria, SesionEntrenamiento, User
 from app.services import parte_diaria as svc
 
 
@@ -377,7 +377,7 @@ def pg_engine():
         pytest.skip(str(e))
     except Exception as e:
         pytest.skip(f"{BLOCKED} Cannot connect/verify: {type(e).__name__}.")
-    Base.metadata.create_all(engine, tables=[User.__table__, ParteDiaria.__table__, SesionEntrenamiento.__table__])
+    Base.metadata.create_all(engine, tables=[User.__table__, ParteDiaria.__table__, SesionEntrenamiento.__table__, EntrenamientoPrincipal.__table__])
     engine._atle_marker = marker  # type: ignore[attr-defined]
     yield engine
     engine.dispose()
@@ -424,6 +424,13 @@ def _payload(**overrides):
         "entreno_hoy": False, "sessions": [],
     }
     base.update(overrides)
+    if base["entreno_hoy"] and "entrenamiento_principal" not in base:
+        base["entrenamiento_principal"] = {
+            "estructura_tipo": "aerobico", "series": 3, "repeticiones_por_serie": 4,
+            "distancia_m": 400, "descanso_micro_min_s": 30, "descanso_micro_max_s": 60,
+            "descanso_macro_min_s": 180, "descanso_macro_max_s": 300,
+            "tiempo_rep_min_s": 100, "tiempo_rep_max_s": 120,
+        }
     return base
 
 
@@ -980,3 +987,65 @@ def test_pg_discard_under_concurrent_modification_conflict_sessions_preserved(pg
         }, sort_keys=True))
     finally:
         verify.close()
+
+
+@pytest.mark.pg
+def test_pg_persisted_mclean_change_rejects_stale_edit(pg_session_factory, tracked):
+    """A separately committed McLean update invalidates an earlier edit token."""
+    atleta_id = _create_user(pg_session_factory, "mcleanstale", tracked)
+    fecha = date(2026, 11, 21)
+    with pg_session_factory() as db:
+        record = ParteDiaria(atleta_id=atleta_id, fecha=fecha, horas_sueno=8,
+            entreno_hoy=False, version_cuestionario="mclean_1_5", mclean_sueno=1,
+            mclean_fatiga=2, mclean_dolor_muscular=3, mclean_estres=4, mclean_animo=5)
+        db.add(record)
+        db.commit()
+        tracked.track_parte(record)
+        record, stale, _ = svc.get_today_state(db, atleta_id, fecha)
+    with pg_session_factory() as other:
+        record = other.execute(select(ParteDiaria).where(ParteDiaria.atleta_id == atleta_id)).scalar_one()
+        record.mclean_sueno = 5
+        other.commit()
+    with pg_session_factory() as db:
+        result = svc.save_daily_record(db, atleta_id=atleta_id, fecha=fecha,
+                                       payload=_payload(), edit_state_token=stale)
+        assert result.status == svc.STATUS_CONFLICT and result.stale
+    with pg_session_factory() as db:
+        record = db.execute(select(ParteDiaria).where(ParteDiaria.atleta_id == atleta_id)).scalar_one()
+        assert record.version_cuestionario == "mclean_1_5" and record.mclean_sueno == 5
+        assert record.sueno_calidad is None
+
+
+@pytest.mark.pg
+def test_pg_persisted_duration_change_invalidates_edit_and_discard(pg_session_factory, tracked):
+    """An independently committed semantic change cannot be overwritten or discarded."""
+    atleta_id = _create_user(pg_session_factory, "durationstale", tracked)
+    fecha = date(2026, 11, 22)
+    with pg_session_factory() as db:
+        record = ParteDiaria(atleta_id=atleta_id, fecha=fecha, horas_sueno=8, entreno_hoy=True,
+            sueno_calidad=7, fatiga=4, dolor_muscular=3, estres=4, animo=8)
+        record.sesiones.append(SesionEntrenamiento(orden=1, tipo_entrenamiento="fuerza",
+            duracion_min=30, rpe=6, carga_sesion=180))
+        db.add(record)
+        db.commit()
+        tracked.track_parte(record)
+        _, old_edit, old_discard = svc.get_today_state(db, atleta_id, fecha)
+    with pg_session_factory() as other:
+        session = other.execute(select(SesionEntrenamiento).where(
+            SesionEntrenamiento.parte_diaria_id == record.id)).scalar_one()
+        session.tipo_duracion = "trabajo_principal"
+        other.commit()
+    with pg_session_factory() as db:
+        result = svc.save_daily_record(db, atleta_id=atleta_id, fecha=fecha,
+                                       payload=_payload(entreno_hoy=False), edit_state_token=old_edit)
+        assert result.status == svc.STATUS_CONFLICT and result.stale
+        _, fresh_edit, _ = svc.get_today_state(db, atleta_id, fecha)
+        result = svc.save_daily_record(db, atleta_id=atleta_id, fecha=fecha,
+            payload=_payload(entreno_hoy=False), edit_state_token=fresh_edit,
+            discard_token=old_discard, confirm_discard_sessions=True)
+        assert result.status == svc.STATUS_CONFLICT and result.stale
+    with pg_session_factory() as db:
+        record = db.execute(select(ParteDiaria).where(ParteDiaria.atleta_id == atleta_id)).scalar_one()
+        assert record.entreno_hoy and len(record.sesiones) == 1
+        assert record.sesiones[0].tipo_duracion == "trabajo_principal"
+        assert record.sesiones[0].carga_sesion == 180
