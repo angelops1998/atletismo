@@ -125,6 +125,7 @@ def normalize_session_for_fingerprint(session: dict[str, Any]) -> dict[str, Any]
         "orden": _norm_int(session.get("orden")),
         "tipo_entrenamiento": _norm_text(session.get("tipo_entrenamiento")),
         "duracion_min": _norm_int(session.get("duracion_min")),
+        "tipo_duracion": _norm_text(session.get("tipo_duracion")),
         "rpe": _norm_int(session.get("rpe")),
         "carga_sesion": _norm_int(session.get("carga_sesion")),
         "comentarios_entrenamiento": _norm_text(
@@ -191,6 +192,8 @@ def record_state_fingerprint(
         "atleta_id": _norm_int(parte.get("atleta_id")),
         "fecha": fecha_iso,
         "registro_id": _norm_int(parte.get("registro_id") or parte.get("id")),
+        "version_cuestionario": _norm_text(parte.get("version_cuestionario")),
+        **{name: _norm_int(parte.get(name)) for name in ("mclean_sueno", "mclean_fatiga", "mclean_dolor_muscular", "mclean_estres", "mclean_animo")},
         "sueno_calidad": _norm_int(parte.get("sueno_calidad")),
         "horas_sueno": _norm_decimal(parte.get("horas_sueno")),
         "fatiga": _norm_int(parte.get("fatiga")),

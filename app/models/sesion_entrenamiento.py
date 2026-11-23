@@ -39,6 +39,7 @@ class SesionEntrenamiento(Base):
     __table_args__ = (
         Index("ix_sesiones_entrenamiento_parte_diaria", "parte_diaria_id"),
         CheckConstraint("duracion_min > 0", name="ck_sesiones_entrenamiento_duracion_min"),
+        CheckConstraint("tipo_duracion IN ('no_especificada', 'trabajo_principal')", name="ck_sesiones_tipo_duracion"),
         CheckConstraint("rpe BETWEEN 1 AND 10", name="ck_sesiones_entrenamiento_rpe"),
         CheckConstraint("carga_sesion >= 0", name="ck_sesiones_entrenamiento_carga_sesion"),
         CheckConstraint(
@@ -59,6 +60,7 @@ class SesionEntrenamiento(Base):
     orden = Column(Integer, nullable=False)
     tipo_entrenamiento = Column(String(40), nullable=False)
     duracion_min = Column(Integer, nullable=False)
+    tipo_duracion = Column(String(20), nullable=False, server_default="no_especificada")
     rpe = Column(Integer, nullable=False)
     carga_sesion = Column(Integer, nullable=False)
     comentarios_entrenamiento = Column(Text, nullable=True)
