@@ -1024,6 +1024,8 @@ def test_pg_persisted_duration_change_invalidates_edit_and_discard(pg_session_fa
     with pg_session_factory() as db:
         record = ParteDiaria(atleta_id=atleta_id, fecha=fecha, horas_sueno=8, entreno_hoy=True,
             sueno_calidad=7, fatiga=4, dolor_muscular=3, estres=4, animo=8)
+        record.entrenamiento_principal = EntrenamientoPrincipal(
+            **_payload(entreno_hoy=True)["entrenamiento_principal"])
         record.sesiones.append(SesionEntrenamiento(orden=1, tipo_entrenamiento="fuerza",
             duracion_min=30, rpe=6, carga_sesion=180))
         db.add(record)
@@ -1049,3 +1051,38 @@ def test_pg_persisted_duration_change_invalidates_edit_and_discard(pg_session_fa
         assert record.entreno_hoy and len(record.sesiones) == 1
         assert record.sesiones[0].tipo_duracion == "trabajo_principal"
         assert record.sesiones[0].carga_sesion == 180
+
+
+@pytest.mark.pg
+def test_pg_mclean_sessions_service_preserves_committed_winner(pg_session_factory, tracked):
+    atleta_id = _create_user(pg_session_factory, "mcleanservice", tracked)
+    fecha = date(2026, 11, 23)
+    answers = {"version_cuestionario": "mclean_1_5", "mclean_sueno": 1,
+               "mclean_fatiga": 2, "mclean_dolor_muscular": 3, "mclean_estres": 4, "mclean_animo": 5,
+               "horas_sueno": "8", "hay_molestia": False, "sintomas_enfermedad": False,
+               "entreno_hoy": True, "sessions": [_session()]}
+    with pg_session_factory() as db:
+        created = svc.save_daily_record(db, atleta_id=atleta_id, fecha=fecha, payload=answers)
+        assert created.ok
+        tracked.track_parte(created.parte)
+        assert created.parte.entrenamiento_principal is None
+        assert created.parte.sesiones[0].tipo_duracion == "trabajo_principal"
+        assert svc.resumen_mclean(created.parte) == {"suma": 15, "promedio": 3.0}
+        stale_token = created.edit_state_token
+        session_id = created.parte.sesiones[0].id
+    with pg_session_factory() as winner:
+        current, token, _ = svc.get_today_state(winner, atleta_id, fecha)
+        update = {**answers, "mclean_sueno": 5,
+                  "sessions": [_session(id=session_id, duracion_min=50, rpe=7)]}
+        result = svc.save_daily_record(winner, atleta_id=atleta_id, fecha=fecha,
+                                       payload=update, edit_state_token=token)
+        assert result.ok and result.parte.sesiones[0].carga_sesion == 350
+    with pg_session_factory() as loser:
+        result = svc.save_daily_record(loser, atleta_id=atleta_id, fecha=fecha,
+                                       payload=answers, edit_state_token=stale_token)
+        assert result.status == svc.STATUS_CONFLICT and result.stale
+    with pg_session_factory() as check:
+        record = check.execute(select(ParteDiaria).where(ParteDiaria.atleta_id == atleta_id)).scalar_one()
+        assert record.mclean_sueno == 5 and record.sueno_calidad is None
+        assert record.sesiones[0].tipo_duracion == "trabajo_principal"
+        assert record.sesiones[0].carga_sesion == 350
