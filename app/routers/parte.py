@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..auth import get_current_user
 from ..database import get_db
 from ..services import bienestar, parte_diaria as pd
@@ -62,6 +63,17 @@ DAILY_DESCRIPTORES = {
         7: "Bueno", 8: "Bueno", 9: "Excelente", 10: "Excelente",
     },
 }
+
+
+# Descriptores de la tabla McLean (página 175 del PDF facilitado).
+MCLEAN_ITEMS = [
+    ("mclean_fatiga", "Fatiga", {1: "Muy cansado", 2: "Más cansado de lo normal", 3: "Normal", 4: "Recuperado", 5: "Muy recuperado"}),
+    ("mclean_sueno", "Calidad del sueño", {1: "Insomnio", 2: "Sueño inquieto", 3: "Dificultad para conciliar el sueño", 4: "Bueno", 5: "Muy reparador"}),
+    ("mclean_dolor_muscular", "Dolor muscular", {1: "Mucho dolor", 2: "Dolor y rigidez muscular", 3: "Normal", 4: "Bien", 5: "En perfecto estado"}),
+    ("mclean_estres", "Estrés", {1: "Altamente estresado", 2: "Estresado", 3: "Normal", 4: "Relajado", 5: "Muy relajado"}),
+    ("mclean_animo", "Humor", {1: "Muy enfadado, irritado. Desanimado", 2: "Enfadado o irritado", 3: "Menos interés en otros y/o en otras actividades de lo normal", 4: "Bien en general", 5: "Muy positivo"}),
+]
+MCLEAN_TYPES = (("aerobico", "Aeróbico"), ("lactico", "Láctico"), ("velocidad", "Velocidad"), ("fuerza", "Fuerza"))
 
 
 def _athlete_required(user) -> None:
@@ -322,6 +334,77 @@ def _render_form(request, user, db, *, parte=None, form=None, errors=None,
     }, status_code=status_code)
 
 
+def _mclean_rows(form, parte):
+    if form is not None:
+        fields = [form.getlist(name) for name in ("sesion_id", "sesion_tipo", "sesion_minutos", "sesion_rpe")]
+        count = max((len(items) for items in fields), default=0)
+        return [dict(zip(("id", "tipo", "minutos", "rpe"),
+                         (items[i] if i < len(items) else "" for items in fields)))
+                for i in range(count)]
+    rows = [{"id": str(s.id), "tipo": s.tipo_entrenamiento, "minutos": str(s.duracion_min), "rpe": str(s.rpe)}
+            for s in (parte.sesiones if parte else []) if s.tipo_duracion == "trabajo_principal"]
+    return rows + [{"id": "", "tipo": "", "minutos": "", "rpe": ""} for _ in range(3)]
+
+
+def _render_mclean(request, user, parte, *, form=None, errors=None, message=None,
+                   conflict=False, edit_state_token=None, discard_token=None, status_code=200):
+    return templates.TemplateResponse(request, "atleta/parte_mclean.html", {
+        **_base_context(user, parte=parte, form=form, errors=errors, message=message,
+                        conflict=conflict, edit_state_token=edit_state_token, discard_token=discard_token),
+        "mclean_items": MCLEAN_ITEMS, "session_types": MCLEAN_TYPES,
+        "rows": _mclean_rows(form, parte),
+        "historical_sessions": [s for s in (parte.sesiones if parte else []) if s.tipo_duracion == "no_especificada"],
+    }, status_code=status_code)
+
+
+def _parse_mclean_form(form, parte):
+    errors = []
+    payload = {name: form.get(name, "") for name, _, _ in MCLEAN_ITEMS}
+    payload.update({name: form.get(name, "") for name in (
+        "horas_sueno", "molestia_zona_otra", "molestia_dolor", "afecta_entrenamiento", "detalle_sintomas", "comentarios")})
+    payload.update(version_cuestionario="mclean_1_5", molestia_zona=_parse_zonas(form.get("molestia_zona", "")))
+    for name in ("hay_molestia", "sintomas_enfermedad", "entreno_hoy"):
+        payload[name] = _parse_bool(form.get(name))
+    delete_ids = []
+    for raw in form.getlist("delete_session_ids"):
+        try:
+            value = _parse_positive_int(raw, name="ID de sesión a eliminar")
+            if value in delete_ids:
+                raise FormParseError("ID de sesión a eliminar duplicado.")
+            delete_ids.append(value)
+        except FormParseError as exc:
+            errors.append(exc.message)
+    fields = [form.getlist(name) for name in ("sesion_id", "sesion_tipo", "sesion_minutos", "sesion_rpe")]
+    if len({len(items) for items in fields}) != 1 or len(fields[0]) > 100:
+        errors.append("Las sesiones enviadas son inválidas.")
+        payload["sessions"] = []
+        return payload, delete_ids, errors
+    sessions = []
+    seen = set()
+    existing = {s.id: s for s in (parte.sesiones if parte else [])}
+    for index, (sid, tipo, minutos, rpe) in enumerate(zip(*fields), 1):
+        if not any((sid, tipo, minutos, rpe)):
+            continue
+        try:
+            sid = _parse_positive_int(sid, name="ID de sesión") if sid else None
+            if sid and sid in seen:
+                raise FormParseError("ID de sesión duplicado.")
+            if sid:
+                seen.add(sid)
+            if sid in delete_ids:
+                continue
+            if tipo not in dict(MCLEAN_TYPES) and not (sid in existing and existing[sid].tipo_entrenamiento == tipo):
+                raise FormParseError(f"Sesión {index}: tipo inválido.")
+            sessions.append({"id": sid, "orden": index, "tipo_entrenamiento": tipo,
+                "duracion_min": _parse_positive_int(minutos, name=f"Sesión {index}: minutos"),
+                "rpe": _parse_positive_int(rpe, name=f"Sesión {index}: RPE"),
+                "comentarios_entrenamiento": existing[sid].comentarios_entrenamiento if sid in existing else None})
+        except FormParseError as exc:
+            errors.append(exc.message)
+    payload["sessions"] = sessions if payload["entreno_hoy"] else []
+    return payload, delete_ids, errors
+
+
 @router.get("", response_class=HTMLResponse)
 async def formulario(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -330,6 +413,10 @@ async def formulario(request: Request, db: Session = Depends(get_db)):
     target_date = hoy()
     parte, edit_token, discard_token = pd.get_today_state(db, user.id, target_date)
 
+    if parte and parte.version_cuestionario == "mclean_1_5" and not get_settings().formulario_mclean_habilitado:
+        raise HTTPException(status_code=503, detail="El formulario de este parte no está disponible.")
+    if get_settings().formulario_mclean_habilitado and (parte is None or parte.version_cuestionario == "mclean_1_5"):
+        return _render_mclean(request, user, parte, edit_state_token=edit_token, discard_token=discard_token)
     return _render_form(request, user, db, parte=parte,
                        edit_state_token=edit_token, discard_token=discard_token)
 
@@ -344,9 +431,26 @@ async def guardar(
 
     target_date = hoy()
     form = await request.form()
-    payload, delete_ids, allow_replace, parse_errors = _session_payload(form)
-
     parte, edit_token, discard_token = pd.get_today_state(db, user.id, target_date)
+    if parte and parte.version_cuestionario == "mclean_1_5" and not get_settings().formulario_mclean_habilitado:
+        raise HTTPException(status_code=503, detail="El formulario de este parte no está disponible.")
+    if get_settings().formulario_mclean_habilitado and (parte is None or parte.version_cuestionario == "mclean_1_5"):
+        payload, delete_ids, parse_errors = _parse_mclean_form(form, parte)
+        if parse_errors:
+            return _render_mclean(request, user, parte, form=form, errors=parse_errors,
+                                  edit_state_token=form.get("edit_state_token"),
+                                  discard_token=form.get("discard_token"), status_code=422)
+        result = pd.save_daily_record(db, atleta_id=user.id, payload=payload,
+            edit_state_token=form.get("edit_state_token"), discard_token=form.get("discard_token"),
+            confirm_discard_sessions=_parse_bool(form.get("confirm_discard_sessions")),
+            explicit_delete_session_ids=delete_ids or None, contrato_sesiones="trabajo_principal", fecha=target_date)
+        if result.ok:
+            return RedirectResponse(url="/parte?ok=1", status_code=302)
+        return _render_mclean(request, user, result.parte or parte, form=form, errors=result.errors,
+            message=result.message, conflict=result.conflict,
+            edit_state_token=result.edit_state_token or form.get("edit_state_token"),
+            discard_token=result.discard_token or form.get("discard_token"), status_code=result.status)
+    payload, delete_ids, allow_replace, parse_errors = _session_payload(form)
     if parse_errors:
         return _render_form(
             request, user, db,

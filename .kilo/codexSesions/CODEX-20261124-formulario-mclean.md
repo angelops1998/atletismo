@@ -1,0 +1,8 @@
+# Formulario McLean
+
+- Se implementó el formulario optativo de McLean con los cinco indicadores y descriptores de la página 175 del PDF facilitado. La opción de configuración está desactivada por defecto; no se activó ni desplegó en producción.
+- Se agregaron sesiones múltiples con tipo, RPE y minutos de trabajo principal, con tres filas nuevas por guardado. Los partes y sesiones históricos conservan su versión, semántica y cargas; las sesiones históricas se muestran sin editar sus valores.
+- Se mantuvieron CSRF, pertenencia, tokens, manejo de 422/409 y confirmaciones explícitas. Un error de validación conserva el token enviado para no ocultar conflictos posteriores.
+- Pruebas: suite general 626 aprobadas y 12 omitidas sin configuración PostgreSQL; las 12 marcadas PostgreSQL se ejecutaron después en una instancia desechable verificada y pasaron. Pruebas focalizadas finales del formulario: 13 aprobadas. Advertencias de dependencias Starlette y Alembic.
+- Playwright con viewport 390x844 y SQLite en memoria: inicio de sesión, selección de escalas y guardado de dos sesiones correctos. Se ajustó CSS para legibilidad móvil. Se detuvieron la instancia temporal y el contenedor PostgreSQL; no quedaron filas ni esquemas de prueba comprobados.
+- Pendiente adaptar paneles y estadísticas del profesor antes de activar el formulario; revisar la procedencia de las duraciones históricas previamente marcadas. No se modificaron bases de producción.
