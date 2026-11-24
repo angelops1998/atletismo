@@ -300,6 +300,28 @@ def verify_edit_state_token(
     return res
 
 
+def issue_conflict_review_token(*, atleta_id: int, fecha: date, registro_id: int,
+                                fingerprint: str) -> str:
+    """Authorize review of one exact server state; never an edit token."""
+    return _issue_token({"purpose": "mclean_conflict_review", "atleta_id": int(atleta_id),
+                         "fecha": fecha.isoformat(), "registro_id": int(registro_id),
+                         "fingerprint": fingerprint}, DEFAULT_EDIT_EXP_SECONDS)
+
+
+def verify_conflict_review_token(token: str, *, atleta_id: int, fecha: date,
+                                 registro_id: int, current_fingerprint: str) -> TokenVerification:
+    result = _verify_token(token, "mclean_conflict_review")
+    if not result.ok or not result.payload:
+        return result
+    data = result.payload
+    if (data.get("atleta_id") != atleta_id or data.get("fecha") != fecha.isoformat()
+            or data.get("registro_id") != registro_id):
+        return TokenVerification(False, reason="binding_mismatch")
+    if not hmac.compare_digest(str(data.get("fingerprint", "")), current_fingerprint):
+        return TokenVerification(False, reason="fingerprint_mismatch")
+    return result
+
+
 def issue_discard_token(
     *,
     atleta_id: int,

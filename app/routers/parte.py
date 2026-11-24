@@ -17,6 +17,9 @@ from ..config import get_settings
 from ..auth import get_current_user
 from ..database import get_db
 from ..services import bienestar, parte_diaria as pd
+from ..services.parte_diaria_tokens import (
+    issue_conflict_review_token, verify_conflict_review_token, issue_edit_state_token,
+)
 from ..templates_config import templates
 from ..tiempo import hoy, lunes_actual, lunes_de
 
@@ -347,11 +350,12 @@ def _mclean_rows(form, parte):
 
 
 def _render_mclean(request, user, parte, *, form=None, errors=None, message=None,
-                   conflict=False, edit_state_token=None, discard_token=None, status_code=200):
+                   conflict=False, edit_state_token=None, discard_token=None, review_token=None, status_code=200):
     return templates.TemplateResponse(request, "atleta/parte_mclean.html", {
         **_base_context(user, parte=parte, form=form, errors=errors, message=message,
                         conflict=conflict, edit_state_token=edit_state_token, discard_token=discard_token),
         "mclean_items": MCLEAN_ITEMS, "session_types": MCLEAN_TYPES,
+        "review_token": review_token,
         "rows": _mclean_rows(form, parte),
         "historical_sessions": [s for s in (parte.sesiones if parte else []) if s.tipo_duracion == "no_especificada"],
     }, status_code=status_code)
@@ -375,7 +379,7 @@ def _parse_mclean_form(form, parte):
         except FormParseError as exc:
             errors.append(exc.message)
     fields = [form.getlist(name) for name in ("sesion_id", "sesion_tipo", "sesion_minutos", "sesion_rpe")]
-    if len({len(items) for items in fields}) != 1 or len(fields[0]) > 100:
+    if len({len(items) for items in fields}) != 1:
         errors.append("Las sesiones enviadas son inválidas.")
         payload["sessions"] = []
         return payload, delete_ids, errors
@@ -401,6 +405,8 @@ def _parse_mclean_form(form, parte):
                 "comentarios_entrenamiento": existing[sid].comentarios_entrenamiento if sid in existing else None})
         except FormParseError as exc:
             errors.append(exc.message)
+    if sum(1 for session in sessions if session["id"] is None) > 3:
+        errors.append("Podés añadir como máximo tres sesiones nuevas por guardado.")
     payload["sessions"] = sessions if payload["entreno_hoy"] else []
     return payload, delete_ids, errors
 
@@ -436,20 +442,45 @@ async def guardar(
         raise HTTPException(status_code=503, detail="El formulario de este parte no está disponible.")
     if get_settings().formulario_mclean_habilitado and (parte is None or parte.version_cuestionario == "mclean_1_5"):
         payload, delete_ids, parse_errors = _parse_mclean_form(form, parte)
+        original_token = form.get("edit_state_token") or ""
+        review_token = form.get("review_token") or ""
         if parse_errors:
             return _render_mclean(request, user, parte, form=form, errors=parse_errors,
-                                  edit_state_token=form.get("edit_state_token"),
-                                  discard_token=form.get("discard_token"), status_code=422)
+                conflict=bool(review_token), review_token=review_token or None,
+                edit_state_token=original_token, discard_token=form.get("discard_token"), status_code=422)
+
+        effective_token = original_token
+        if review_token:
+            fingerprint = pd.current_fingerprint(parte) if parte else ""
+            verified = (verify_conflict_review_token(review_token, atleta_id=user.id, fecha=target_date,
+                        registro_id=parte.id, current_fingerprint=fingerprint) if parte else None)
+            if not verified or not verified.ok or form.get("confirmar_revision") != "si":
+                fresh_review = (issue_conflict_review_token(atleta_id=user.id, fecha=target_date,
+                                registro_id=parte.id, fingerprint=fingerprint) if parte else None)
+                return _render_mclean(request, user, parte, form=form, conflict=True,
+                    message="Revisá el registro actual y confirmá antes de guardar.",
+                    review_token=fresh_review, edit_state_token=original_token,
+                    discard_token=form.get("discard_token"), status_code=409)
+            effective_token = issue_edit_state_token(atleta_id=user.id, fecha=target_date,
+                              registro_id=parte.id, fingerprint=fingerprint)
+
         result = pd.save_daily_record(db, atleta_id=user.id, payload=payload,
-            edit_state_token=form.get("edit_state_token"), discard_token=form.get("discard_token"),
+            edit_state_token=effective_token, discard_token=form.get("discard_token"),
             confirm_discard_sessions=_parse_bool(form.get("confirm_discard_sessions")),
             explicit_delete_session_ids=delete_ids or None, contrato_sesiones="trabajo_principal", fecha=target_date)
         if result.ok:
             return RedirectResponse(url="/parte?ok=1", status_code=302)
-        return _render_mclean(request, user, result.parte or parte, form=form, errors=result.errors,
-            message=result.message, conflict=result.conflict,
-            edit_state_token=result.edit_state_token or form.get("edit_state_token"),
-            discard_token=result.discard_token or form.get("discard_token"), status_code=result.status)
+        current = result.parte or parte
+        if result.status == pd.STATUS_CONFLICT:
+            fresh_review = (issue_conflict_review_token(atleta_id=user.id, fecha=target_date,
+                            registro_id=current.id, fingerprint=pd.current_fingerprint(current)) if current else None)
+            return _render_mclean(request, user, current, form=form, errors=result.errors,
+                message=result.message, conflict=True, review_token=fresh_review,
+                edit_state_token=original_token, discard_token=form.get("discard_token"), status_code=409)
+        return _render_mclean(request, user, current, form=form, errors=result.errors,
+            message=result.message, conflict=bool(review_token), review_token=review_token or None,
+            edit_state_token=original_token, discard_token=form.get("discard_token") or result.discard_token,
+            status_code=result.status)
     payload, delete_ids, allow_replace, parse_errors = _session_payload(form)
     if parse_errors:
         return _render_form(

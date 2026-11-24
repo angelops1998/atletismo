@@ -19,6 +19,7 @@
 {% endblock %}
 
 {% block contenido %}
+<noscript><style>#bloque-entrenamiento, #bloque-molestia, #bloque-sintomas { display: block; }</style><p class="apunte">Sin JavaScript, todos los apartados están visibles. Completá los detalles solo cuando respondas Sí.</p></noscript>
 {% if errores %}
 <div class="aviso aviso-error" style="margin-bottom:14px">
     <strong>Corregí los errores antes de guardar:</strong>
@@ -30,12 +31,6 @@
 <div class="aviso aviso-error" style="margin-bottom:14px">
     <strong>{{ message or "Tu información está desactualizada." }}</strong>
     <p style="margin:6px 0 0">Los datos que cargaste no se guardaron: el registro cambió mientras lo editabas. Los valores que enviaste se mantienen en el formulario; a continuación ves el registro actual del servidor. Los datos del servidor son los autoritativos y nunca se sobresalieron con tu envío.</p>
-    {% if edit_state_token %}
-    <input type="hidden" name="edit_state_token" value="{{ edit_state_token }}">
-    {% endif %}
-    {% if discard_token %}
-    <input type="hidden" name="discard_token" value="{{ discard_token }}">
-    {% endif %}
 </div>
 
 {% if parte %}
@@ -58,6 +53,22 @@
             <div class="campo"><div class="lbl">¿Entrenó hoy?</div><div class="ayuda">{{ 'Sí' if parte.entreno_hoy else 'No' }}</div></div>
             <div class="campo"><div class="lbl">¿Molestia?</div><div class="ayuda">{{ 'Sí' if parte.hay_molestia else 'No' }}</div></div>
         </div>
+        <div class="campo"><div class="lbl">Molestias y enfermedad</div><div class="ayuda">
+            Zonas: {{ parte.molestia_zona|join(', ') if parte.molestia_zona else '—' }};
+            otra zona: {{ parte.molestia_zona_otra or '—' }};
+            dolor: {{ parte.molestia_dolor if parte.molestia_dolor is not none else '—' }};
+            afecta entrenamiento: {{ parte.afecta_entrenamiento if parte.afecta_entrenamiento is not none else '—' }};
+            síntomas: {{ 'Sí' if parte.sintomas_enfermedad else 'No' }};
+            detalle: {{ parte.detalle_sintomas or '—' }}.
+        </div></div>
+        <div class="campo"><div class="lbl">Comentarios</div><div class="ayuda">{{ parte.comentarios or '—' }}</div></div>
+        <div class="campo"><div class="lbl">Sesiones guardadas</div>
+            {% for s in parte.sesiones %}<div class="ayuda">Sesión {{ s.orden }} · {{ s.tipo_entrenamiento }} · {{ s.duracion_min }} min · RPE {{ s.rpe }} · {{ s.tipo_duracion }} · carga {{ s.carga_sesion }} · {{ s.comentarios_entrenamiento or '—' }}</div>
+            {% else %}<div class="ayuda">Sin sesiones guardadas.</div>{% endfor %}
+        </div>
+        {% if parte.entrenamiento_principal %}<div class="campo"><div class="lbl">Planificación guardada</div>
+            <div class="ayuda">{{ parte.entrenamiento_principal.estructura_tipo }} · {{ parte.entrenamiento_principal.series }} series · {{ parte.entrenamiento_principal.repeticiones_por_serie }} repeticiones · {{ parte.entrenamiento_principal.distancia_m }} m · descansos micro {{ parte.entrenamiento_principal.descanso_micro_min_s }}–{{ parte.entrenamiento_principal.descanso_micro_max_s }} s · descansos macro {{ parte.entrenamiento_principal.descanso_macro_min_s }}–{{ parte.entrenamiento_principal.descanso_macro_max_s }} s · tiempo por repetición {{ parte.entrenamiento_principal.tiempo_rep_min_s }}–{{ parte.entrenamiento_principal.tiempo_rep_max_s }} s</div>
+        </div>{% endif %}
     </div>
 </div>
 {% endif %}
@@ -72,6 +83,13 @@
 <form method="post" action="/parte">
     {{ csrf_input(request) }}
     <input type="hidden" name="edit_state_token" value="{{ edit_state_token or '' }}">
+    {% if review_token %}
+    <input type="hidden" name="review_token" value="{{ review_token }}">
+    <div class="aviso aviso-info" style="margin-bottom:14px">
+        <label><input type="checkbox" name="confirmar_revision" value="si">
+            Revisé el registro actual y confirmo que quiero guardar mi borrador.</label>
+    </div>
+    {% endif %}
     {% if discard_token %}
     <input type="hidden" name="discard_token" value="{{ discard_token }}">
     {% endif %}
