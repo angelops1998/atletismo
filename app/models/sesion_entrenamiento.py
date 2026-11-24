@@ -23,6 +23,9 @@ from ..database import Base
 
 # Tipos de entrenamiento permitidos (whitelist de dominio).
 TIPOS_ENTRENAMIENTO = (
+    "aerobico",
+    "lactico",
+    "velocidad",
     "velocidad_sprint",
     "resistencia",
     "fuerza",
@@ -44,6 +47,7 @@ class SesionEntrenamiento(Base):
         CheckConstraint("carga_sesion >= 0", name="ck_sesiones_entrenamiento_carga_sesion"),
         CheckConstraint(
             "tipo_entrenamiento IN ("
+            "'aerobico','lactico','velocidad',"
             "'velocidad_sprint','resistencia','fuerza','tecnica_coordinacion',"
             "'movilidad_recuperacion','competencia','entrenamiento_mixto','otro'"
             ")",

@@ -227,13 +227,15 @@ class TestSesiones:
                                                  "tipo_entrenamiento": "fuerza",
                                                  "duracion_min": 30, "rpe": 8}]),
                          edit_state_token=edit_token)
-        client.post("/parte", data=datos, follow_redirects=False)
+        response = client.post("/parte", data=datos, follow_redirects=False)
+        assert response.status_code == 422
         db.expire_all()
         parte = db.query(ParteDiaria).one()
         assert len(parte.sesiones) == 1
         assert parte.sesiones[0].id == sid
-        assert parte.sesiones[0].tipo_entrenamiento == "fuerza"
-        assert parte.sesiones[0].carga_sesion == 240
+        assert parte.sesiones[0].tipo_entrenamiento == "resistencia"
+        assert parte.sesiones[0].tipo_duracion == "no_especificada"
+        assert parte.sesiones[0].carga_sesion == 270
 
     def test_nueva_sesion_sin_id(self, client, db, atleta):
         entrar(client, atleta)

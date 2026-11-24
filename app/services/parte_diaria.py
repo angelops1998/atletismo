@@ -598,6 +598,7 @@ def _apply_sessions(
     *,
     allow_delete_omitted: bool = False,
     explicit_delete_ids: Optional[set[int]] = None,
+    contrato_sesiones: str = "historico",
 ) -> None:
     """Apply explicit session operations. Default: no implicit delete by omission."""
     explicit_delete_ids = explicit_delete_ids or set()
@@ -608,6 +609,9 @@ def _apply_sessions(
     for ref_id in desired_ids | explicit_delete_ids:
         if ref_id not in current_by_id:
             raise DomainValidationError([f"Sesión {ref_id} no pertenece al registro actual."])
+
+    if desired_ids & explicit_delete_ids:
+        raise DomainValidationError(["Una sesión no puede actualizarse y eliminarse simultáneamente."])
 
     # Deletes: explicit only, unless validated full replacement mode.
     if allow_delete_omitted:
@@ -637,9 +641,14 @@ def _apply_sessions(
                 if obj.duracion_min != ds["duracion_min"] or obj.rpe != ds["rpe"]:
                     raise DomainValidationError(["No se pueden modificar duración o RPE de una sesión histórica sin semántica especificada."])
             else:
-                obj.duracion_min = ds["duracion_min"]
-                obj.rpe = ds["rpe"]
-                obj.carga_sesion = ds["carga_sesion"]
+                if contrato_sesiones != "trabajo_principal" and (
+                    obj.duracion_min != ds["duracion_min"] or obj.rpe != ds["rpe"]
+                ):
+                    raise DomainValidationError(["La edición de minutos de trabajo principal requiere el contrato correspondiente."])
+                if contrato_sesiones == "trabajo_principal":
+                    obj.duracion_min = ds["duracion_min"]
+                    obj.rpe = ds["rpe"]
+                    obj.carga_sesion = ds["carga_sesion"]
             obj.comentarios_entrenamiento = ds["comentarios_entrenamiento"]
         elif sid is None:
             parte.sesiones.append(
@@ -647,7 +656,7 @@ def _apply_sessions(
                     orden=ds["orden"],
                     tipo_entrenamiento=ds["tipo_entrenamiento"],
                     duracion_min=ds["duracion_min"],
-                    tipo_duracion="trabajo_principal",
+                    tipo_duracion=("trabajo_principal" if contrato_sesiones == "trabajo_principal" else "no_especificada"),
                     rpe=ds["rpe"],
                     carga_sesion=ds["carga_sesion"],
                     comentarios_entrenamiento=ds["comentarios_entrenamiento"],
@@ -720,6 +729,7 @@ def save_daily_record(
     confirm_discard_sessions: bool = False,
     explicit_delete_session_ids: Optional[Iterable[int]] = None,
     allow_full_session_replacement: bool = False,
+    contrato_sesiones: str = "historico",
     fecha: Optional[date] = None,
     # Test-only concurrency coordination (Phase 2.2). No effect in production.
     _test_after_create_observed_missing: Any = None,
@@ -739,6 +749,8 @@ def save_daily_record(
     explicit_delete_ids = {int(x) for x in (explicit_delete_session_ids or [])}
 
     try:
+        if contrato_sesiones not in ("historico", "trabajo_principal"):
+            raise DomainValidationError(["Contrato de sesiones inválido."])
         wellness = validate_and_normalize_wellness(payload)
         sessions = validate_and_normalize_sessions(
             payload.get("sessions"),
@@ -784,7 +796,7 @@ def save_daily_record(
                             orden=ds["orden"],
                             tipo_entrenamiento=ds["tipo_entrenamiento"],
                             duracion_min=ds["duracion_min"],
-                            tipo_duracion="trabajo_principal",
+                            tipo_duracion=("trabajo_principal" if contrato_sesiones == "trabajo_principal" else "no_especificada"),
                             rpe=ds["rpe"],
                             carga_sesion=ds["carga_sesion"],
                             comentarios_entrenamiento=ds["comentarios_entrenamiento"],
@@ -916,8 +928,14 @@ def save_daily_record(
                 sessions,
                 allow_delete_omitted=allow_full_session_replacement,
                 explicit_delete_ids=explicit_delete_ids,
+                contrato_sesiones=contrato_sesiones,
             )
             parte.entreno_hoy = True
+            remaining = db.query(SesionEntrenamiento.id).filter(
+                SesionEntrenamiento.parte_diaria_id == parte.id
+            ).first()
+            if not remaining and not parte.entrenamiento_principal:
+                raise DomainValidationError(["Agregá una sesión o conservá una planificación antes de guardar entrenamiento."])
         else:
             # entreno_hoy false and no discard-needed case (no existing sessions)
             for s in list(parte.sesiones or []):

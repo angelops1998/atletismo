@@ -190,9 +190,32 @@ def test_real_alembic_upgrade_tracks_revision_in_rolled_back_schema(isolated_con
     conn.execute(text("""INSERT INTO partes_diarios (id,atleta_id,fecha,sueno_calidad,fatiga,dolor_muscular,estres,animo,horas_sueno,comentarios,entreno_hoy)
         VALUES (1,1,'2026-11-23',10,9,8,7,6,7.5,'conservar',false)"""))
     command.upgrade(config, "head")
-    assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "f2a7c94b1d30"
+    assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "a82d51f4c930"
     assert tuple(conn.execute(text("SELECT sueno_calidad, fatiga, comentarios, version_cuestionario FROM partes_diarios WHERE id=1")).one()) == (10, 9, "conservar", "historico_1_10")
-    # Actual downgrade command must fail and must not replace the revision.
+    # The new types downgrade is safe when unused; McLean downgrade remains blocked.
+    command.downgrade(config, "f2a7c94b1d30")
+    assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "f2a7c94b1d30"
     with pytest.raises(RuntimeError, match="Downgrade no disponible"):
         command.downgrade(config, "e8a4f670c11d")
     assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "f2a7c94b1d30"
+
+
+def test_new_type_migration_preserves_history_and_guards_downgrade(isolated_connection, monkeypatch):
+    conn = isolated_connection
+    for revision in CHAIN:
+        _upgrade(revision, conn, monkeypatch)
+    conn.execute(text("INSERT INTO users (id,username,hashed_password) VALUES (1,'tipos_migracion','x')"))
+    conn.execute(text("""INSERT INTO partes_diarios (id,atleta_id,fecha,sueno_calidad,fatiga,dolor_muscular,estres,animo,horas_sueno,entreno_hoy)
+        VALUES (1,1,'2026-11-24',10,9,8,7,6,8,true)"""))
+    conn.execute(text("""INSERT INTO sesiones_entrenamiento (id,parte_diaria_id,orden,tipo_entrenamiento,duracion_min,rpe,carga_sesion,comentarios_entrenamiento)
+        VALUES (1,1,1,'resistencia',45,6,999,'histórica')"""))
+    before = dict(conn.execute(text("SELECT * FROM sesiones_entrenamiento WHERE id=1")).mappings().one())
+    migration = _upgrade("a82d51f4c930", conn, monkeypatch)
+    assert dict(conn.execute(text("SELECT * FROM sesiones_entrenamiento WHERE id=1")).mappings().one()) == before
+    for idx, name in enumerate(("aerobico", "lactico", "velocidad", "fuerza"), start=2):
+        conn.execute(text("""INSERT INTO sesiones_entrenamiento (id,parte_diaria_id,orden,tipo_entrenamiento,duracion_min,rpe,carga_sesion)
+            VALUES (:id,1,:id,:tipo,30,5,150)"""), {"id": idx, "tipo": name})
+    _assert_rejected(conn, "UPDATE sesiones_entrenamiento SET tipo_entrenamiento='invalido' WHERE id=1")
+    with pytest.raises(RuntimeError, match="Downgrade bloqueado"):
+        migration.downgrade()
+    assert conn.execute(text("SELECT count(*) FROM sesiones_entrenamiento")).scalar_one() == 5
