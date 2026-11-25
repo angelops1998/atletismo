@@ -58,9 +58,15 @@ Guardá esa cadena: la vas a pegar dos veces (paso 3 y paso 5).
 
 ## 2. Subir el código
 
-Render está configurado para desplegar desde `main`. Antes de incorporar código
-o permitir un despliegue, verificar el servicio efectivo y completar las
-autorizaciones y condiciones de [despliegue seguro](docs/DESPLIEGUE_SEGURO_MCLEAN.md).
+**Antes del primer arranque, del merge o de activar el despliegue:**
+
+1. Verificar mediante [controles de solo lectura](docs/DESPLIEGUE_SEGURO_MCLEAN.md#verificación-de-solo-lectura) el servicio real, su rama y comandos efectivos, la identidad de Supabase y la revisión Alembic **inicial observada**. No asumir que el Blueprint de esta rama ya está aplicado.
+2. Obtener autorización para el respaldo y ensayar su restauración en un destino aislado, siguiendo el [procedimiento](docs/DESPLIEGUE_SEGURO_MCLEAN.md#respaldo-y-restauración-a-ensayar). Confirmar el inventario y las diferencias antes de continuar.
+3. Comparar la revisión inicial observada con la **revisión objetivo `a82d51f4c930`**. Si no coincide, detenerse: una migración es una operación separada que requiere destino identificado y autorización expresa. La primera revisión de la cadena del repositorio, `d61e48816ec5`, no demuestra cuál es la revisión inicial de la base real; una base nueva puede no tener aún `alembic_version`.
+4. Solo tras la migración autorizada, si fuera necesaria, verificar por separado que el destino tenga la revisión objetivo y que el esquema sea compatible. Obtener autorización para incorporar a `main` y desplegar. Render está configurado para desplegar desde `main`; coordinar antes cualquier despliegue automático.
+
+No aplicar el Blueprint ni iniciar esta versión mientras el esquema compatible y
+las autorizaciones anteriores no estén verificados.
 
 ---
 
@@ -79,25 +85,24 @@ autorizaciones y condiciones de [despliegue seguro](docs/DESPLIEGUE_SEGURO_MCLEA
 
    `SECRET_KEY` **no te la pide**: la genera Render sola y no la ve nadie.
 
-4. **Apply**. El primer deploy tarda unos minutos e instala las dependencias.
+4. **Solo después de completar el paso 2**, y con autorización para desplegar,
+   **Apply**. Puede iniciar el primer deploy inmediatamente.
 
-El build instala dependencias; **no ejecuta migraciones**. El esquema debe estar
-actualizado mediante el procedimiento autorizado descrito más abajo antes de
-poner esta versión en servicio. Un primer despliegue sin esquema migrado no es
-operativo.
+El build instala dependencias; **no ejecuta migraciones**. El esquema objetivo
+debe estar verificado antes de pulsar Apply o permitir el primer arranque.
 
 Cuando termine, arriba tenés la URL: `https://atletismo.onrender.com` (o con un
 sufijo si el nombre estaba tomado).
 
 ---
 
-## 4. Revisar que el esquema se haya creado
+## 4. Confirmar el esquema después del arranque
 
 En Supabase: **Table Editor**. Tienen que estar las tablas `users`,
 `partes_semanales`, `marcas`, `asistencias`, `pagos` y `alembic_version`.
 
-Si no están, detener el despliegue y comprobar la revisión y el destino antes de
-ejecutar ninguna migración.
+Esta comprobación complementa la verificación anterior; ver tablas no demuestra
+por sí solo la revisión ni las restricciones. Si hay discrepancias, detenerse.
 
 ---
 
@@ -231,6 +236,12 @@ ya está en `true`, así que no hay nada más que tocar.
 ## Checklist final
 
 - [ ] Proyecto de Supabase creado, password guardada en el gestor
+- [ ] Identidad de servicio y base verificadas sin exponer credenciales
+- [ ] Revisión inicial observada registrada y comparada con `a82d51f4c930`
+- [ ] Respaldo real consistente, protegido y restaurado con éxito en entorno aislado
+- [ ] Autorización expresa para respaldo, eventual migración, merge y despliegue; activación McLean por decisión separada
+- [ ] Revisión objetivo y compatibilidad del esquema confirmadas **antes del primer arranque**
+- [ ] Comandos efectivos de Render revisados sin migración automática y `FORMULARIO_MCLEAN_HABILITADO=false` efectivo
 - [ ] `DATABASE_URL` es la del **Session pooler**, con `?sslmode=require`
 - [ ] Supabase y Render en la misma región (`us-east` / Virginia)
 - [ ] Blueprint aplicado en Render y build en verde
