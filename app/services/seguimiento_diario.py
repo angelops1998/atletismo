@@ -25,6 +25,30 @@ INDICADORES = (
 )
 
 
+INDICADORES_MCLEAN = (
+    ("mclean_sueno", "Calidad del sueño"), ("mclean_fatiga", "Fatiga"),
+    ("mclean_dolor_muscular", "Dolor muscular"), ("mclean_estres", "Estrés"),
+    ("mclean_animo", "Ánimo"),
+)
+TIPOS_DURACION = ("no_especificada", "trabajo_principal")
+
+
+def resumen_sesiones(sesiones):
+    """Agrega cada semántica por separado, usando siempre la carga guardada."""
+    grupos = {}
+    for tipo in TIPOS_DURACION:
+        items = [s for s in sesiones if s.tipo_duracion == tipo]
+        n = len(items)
+        grupos[tipo] = {
+            "cantidad": n, "minutos": sum(s.duracion_min for s in items),
+            "duracion_promedio": round(mean(s.duracion_min for s in items), 1) if n else None,
+            "rpe_promedio": round(mean(s.rpe for s in items), 1) if n else None,
+            "carga": sum(s.carga_sesion for s in items),
+            "carga_promedio": round(mean(s.carga_sesion for s in items), 1) if n else None,
+        }
+    return grupos
+
+
 def parsear_fecha_filtro(valor: str | None, nombre: str) -> date | None:
     if not valor:
         return None
@@ -83,9 +107,11 @@ def resumen_diario_atleta(
     calcular tarjetas y gráficas. Cada sesión cuenta una vez; minutos y carga
     son sumas de los campos ya guardados en ``SesionEntrenamiento``.
     """
-    campos = ["sueno_calidad", "fatiga", "dolor_muscular", "estres", "animo", "horas_sueno"]
+    campos = [campo for campo, _ in INDICADORES] + [campo for campo, _ in INDICADORES_MCLEAN] + ["mclean_suma", "mclean_promedio", "horas_sueno"]
     query = db.query(
         ParteDiaria.fecha.label("fecha"),
+        ParteDiaria.version_cuestionario.label("version_cuestionario"),
+        *[getattr(ParteDiaria, campo).label(campo) for campo, _ in INDICADORES_MCLEAN],
         ParteDiaria.sueno_calidad.label("sueno_calidad"),
         ParteDiaria.fatiga.label("fatiga"),
         ParteDiaria.dolor_muscular.label("dolor_muscular"),
@@ -101,9 +127,15 @@ def resumen_diario_atleta(
     if hasta:
         query = query.filter(ParteDiaria.fecha <= hasta)
     observaciones = [dict(row._mapping) for row in query.order_by(ParteDiaria.fecha).all()]
+    for reporte in observaciones:
+        valores = [reporte[campo] for campo, _ in INDICADORES_MCLEAN]
+        suma = sum(valores) if reporte["version_cuestionario"] == "mclean_1_5" and all(v is not None for v in valores) else None
+        reporte["mclean_suma"] = suma
+        reporte["mclean_promedio"] = suma / 5 if suma is not None else None
 
     sesiones_query = (db.query(
         ParteDiaria.fecha.label("fecha"),
+        SesionEntrenamiento.tipo_duracion.label("tipo_duracion"),
         func.count(SesionEntrenamiento.id).label("cantidad"),
         func.sum(SesionEntrenamiento.duracion_min).label("minutos"),
         func.sum(SesionEntrenamiento.rpe).label("suma_rpe"),
@@ -114,26 +146,30 @@ def resumen_diario_atleta(
         sesiones_query = sesiones_query.filter(ParteDiaria.fecha >= desde)
     if hasta:
         sesiones_query = sesiones_query.filter(ParteDiaria.fecha <= hasta)
-    sesiones_por_fecha = {
-        row.fecha: {
-            "cantidad": int(row.cantidad or 0),
-            "minutos": int(row.minutos or 0),
-            "suma_rpe": int(row.suma_rpe or 0),
-            "carga": int(row.carga or 0),
+    agrupadas = sesiones_query.group_by(ParteDiaria.fecha, SesionEntrenamiento.tipo_duracion).all()
+    sesiones_por_fecha = defaultdict(dict)
+    for row in agrupadas:
+        sesiones_por_fecha[row.fecha][row.tipo_duracion] = {
+            "cantidad": int(row.cantidad or 0), "minutos": int(row.minutos or 0),
+            "suma_rpe": int(row.suma_rpe or 0), "carga": int(row.carga or 0),
         }
-        for row in sesiones_query.group_by(ParteDiaria.fecha).all()
-    }
     for reporte in observaciones:
-        reporte["sesiones"] = sesiones_por_fecha.get(reporte["fecha"], {
-            "cantidad": 0, "minutos": 0, "suma_rpe": 0, "carga": 0,
-        })
+        reporte["sesiones"] = sesiones_por_fecha.get(reporte["fecha"], {})
 
     def promedio(campo: str) -> float | None:
         valores = [float(reporte[campo]) for reporte in observaciones if reporte[campo] is not None]
         return round(mean(valores), 1) if valores else None
 
-    cantidad_sesiones = sum(r["sesiones"]["cantidad"] for r in observaciones)
-    suma_rpe = sum(r["sesiones"]["suma_rpe"] for r in observaciones)
+    por_tipo_sesiones = {}
+    for tipo in TIPOS_DURACION:
+        rows = [r for r in agrupadas if r.tipo_duracion == tipo]
+        n = sum(int(r.cantidad or 0) for r in rows)
+        por_tipo_sesiones[tipo] = {
+            "cantidad": n, "minutos": sum(int(r.minutos or 0) for r in rows),
+            "rpe_promedio": round(sum(int(r.suma_rpe or 0) for r in rows) / n, 1) if n else None,
+            "carga": sum(int(r.carga or 0) for r in rows),
+        }
+    cantidad_sesiones = sum(v["cantidad"] for v in por_tipo_sesiones.values())
     fechas = [r["fecha"] for r in observaciones]
     series = {}
     for campo in campos:
@@ -157,12 +193,7 @@ def resumen_diario_atleta(
         "sintomas": sum(1 for r in observaciones if r["sintomas_enfermedad"]),
         "entrenaron": sum(1 for r in observaciones if r["entreno_hoy"]),
         "no_entrenaron": sum(1 for r in observaciones if not r["entreno_hoy"]),
-        "sesiones": {
-            "cantidad": cantidad_sesiones,
-            "minutos": sum(r["sesiones"]["minutos"] for r in observaciones),
-            "rpe_promedio": round(suma_rpe / cantidad_sesiones, 1) if cantidad_sesiones else None,
-            "carga": sum(r["sesiones"]["carga"] for r in observaciones),
-        },
+        "sesiones": {"cantidad": cantidad_sesiones, "por_tipo": por_tipo_sesiones},
         "observaciones": observaciones,
         "series": series,
     }
@@ -186,6 +217,12 @@ def reportes_del_periodo(
 def _promedio(reportes: list[ParteDiaria], campo: str) -> float | None:
     valores = [float(getattr(r, campo)) for r in reportes if getattr(r, campo) is not None]
     return round(mean(valores), 1) if valores else None
+
+
+def _promedios_totales_mclean(reportes: list[ParteDiaria]) -> tuple[float | None, float | None]:
+    totales = [sum(getattr(r, campo) for campo, _ in INDICADORES_MCLEAN)
+               for r in reportes if r.version_cuestionario == "mclean_1_5"]
+    return (round(mean(totales), 1), round(mean(totales) / 5, 1)) if totales else (None, None)
 
 
 def resumen_reportes(reportes: list[ParteDiaria], atletas: list[User], desde: date, hasta: date) -> dict:
@@ -212,6 +249,11 @@ def resumen_reportes(reportes: list[ParteDiaria], atletas: list[User], desde: da
     posibles = len(atletas) * dias
     promedios = {campo: _promedio(reportes, campo) for campo, _ in INDICADORES}
     promedios["horas_sueno"] = _promedio(reportes, "horas_sueno")
+    promedios_mclean = {campo: _promedio(reportes, campo) for campo, _ in INDICADORES_MCLEAN}
+    mclean_reportes = [r for r in reportes if r.version_cuestionario == "mclean_1_5"]
+    promedios_mclean["suma"], promedios_mclean["promedio"] = _promedios_totales_mclean(reportes)
+    distribuciones_mclean = {campo: {v: sum(1 for r in mclean_reportes if getattr(r, campo) == v)
+                                    for v in range(1, 6)} for campo, _ in INDICADORES_MCLEAN}
     distribuciones = {}
     for campo, _ in INDICADORES:
         conteo = Counter(getattr(r, campo) for r in reportes if getattr(r, campo) is not None)
@@ -224,15 +266,16 @@ def resumen_reportes(reportes: list[ParteDiaria], atletas: list[User], desde: da
             "atleta": atleta,
             "reportes": len(rows),
             "promedios": {campo: _promedio(rows, campo) for campo, _ in INDICADORES},
+            "promedios_mclean": {campo: _promedio(rows, campo) for campo, _ in INDICADORES_MCLEAN},
+            "mclean_suma": _promedios_totales_mclean(rows)[0],
+            "mclean_promedio": _promedios_totales_mclean(rows)[1],
+            "sesiones_por_tipo": resumen_sesiones(sesiones_atleta),
             "horas_sueno": _promedio(rows, "horas_sueno"),
             "entreno": sum(1 for r in rows if r.entreno_hoy),
             "no_entreno": sum(1 for r in rows if not r.entreno_hoy),
             "molestias": sum(1 for r in rows if r.hay_molestia),
             "sintomas": sum(1 for r in rows if r.sintomas_enfermedad),
             "sesiones": len(sesiones_atleta),
-            "minutos_sesion": sum(s.duracion_min for s in sesiones_atleta),
-            "rpe_sesion": round(mean(s.rpe for s in sesiones_atleta), 1) if sesiones_atleta else None,
-            "carga_sesion": sum(s.carga_sesion for s in sesiones_atleta),
         })
     resumen_atletas.sort(key=lambda fila: (fila["reportes"] == 0, fila["reportes"], fila["atleta"].nombre.lower()))
 
@@ -242,6 +285,9 @@ def resumen_reportes(reportes: list[ParteDiaria], atletas: list[User], desde: da
             "fecha": dia,
             "reportes": len(rows),
             **{campo: _promedio(rows, campo) for campo, _ in INDICADORES},
+            **{campo: _promedio(rows, campo) for campo, _ in INDICADORES_MCLEAN},
+            "mclean_suma": _promedios_totales_mclean(rows)[0],
+            "mclean_promedio": _promedios_totales_mclean(rows)[1],
             "horas_sueno": _promedio(rows, "horas_sueno"),
             "molestias": sum(1 for r in rows if r.hay_molestia),
             "sintomas": sum(1 for r in rows if r.sintomas_enfermedad),
@@ -258,6 +304,8 @@ def resumen_reportes(reportes: list[ParteDiaria], atletas: list[User], desde: da
         "atletas_dia_posibles": posibles,
         "cobertura_pct": round(100 * len(reportes) / posibles, 1) if posibles else None,
         "promedios": promedios,
+        "promedios_mclean": promedios_mclean,
+        "distribuciones_mclean": distribuciones_mclean,
         "distribuciones": distribuciones,
         "molestias": sum(1 for r in reportes if r.hay_molestia),
         "sintomas": sum(1 for r in reportes if r.sintomas_enfermedad),
@@ -265,14 +313,7 @@ def resumen_reportes(reportes: list[ParteDiaria], atletas: list[User], desde: da
         "no_entrenaron": sum(1 for r in reportes if not r.entreno_hoy),
         "zonas": zonas.most_common(),
         "tipos": sorted(tipos.items()),
-        "sesiones": {
-            "cantidad": len(sesiones),
-            "minutos": sum(s.duracion_min for s in sesiones),
-            "duracion_promedio": round(mean(s.duracion_min for s in sesiones), 1) if sesiones else None,
-            "rpe_promedio": round(mean(s.rpe for s in sesiones), 1) if sesiones else None,
-            "carga": sum(s.carga_sesion for s in sesiones),
-            "carga_promedio": round(mean(s.carga_sesion for s in sesiones), 1) if sesiones else None,
-        },
+        "sesiones": {"cantidad": len(sesiones), "por_tipo": resumen_sesiones(sesiones)},
         "tendencia": tendencia,
         "filas_atletas": resumen_atletas,
     }

@@ -1,3 +1,4 @@
+{% from "panel/_bienestar_diario.html" import bienestar_diario %}
 {% extends "base.html" %}
 {% from "_iconos.html" import icono %}
 {% block title %}Atletas — {{ club.club_nombre }}{% endblock %}
@@ -44,11 +45,7 @@
                 <div class="item-chips">
                     {% if f.parte %}
                     <span class="chip chip-ok">Parte enviado · {{ f.parte.fecha|fecha_corta }}</span>
-                    <span class="chip">Sueño {{ f.parte.sueno_calidad }}/10</span>
-                    <span class="chip">Fatiga {{ f.parte.fatiga }}/10</span>
-                    <span class="chip">Dolor muscular {{ f.parte.dolor_muscular }}/10</span>
-                    <span class="chip">Estrés {{ f.parte.estres }}/10</span>
-                    <span class="chip">Ánimo {{ f.parte.animo }}/10</span>
+                    {{ bienestar_diario(f.parte) }}
                     <span class="chip">{{ 'Entrenó' if f.parte.entreno_hoy else 'No entrenó' }}</span>
                     {% if f.parte.hay_molestia %}
                     <span class="chip chip-mal">Molestia · {{ f.parte.molestia_dolor or '—' }}/10 · {{ f.parte.molestia_zona|join(', ') if f.parte.molestia_zona else 'zona no indicada' }}{% if f.parte.molestia_zona_otra %} ({{ f.parte.molestia_zona_otra }}){% endif %}</span>

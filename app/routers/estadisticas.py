@@ -42,16 +42,19 @@ async def estadisticas(request: Request, db: Session = Depends(get_db)):
         "estres": "Estrés",
         "animo": "Ánimo",
         "horas_sueno": "Horas de sueño",
+        **{campo: etiqueta + " · McLean" for campo, etiqueta in seguimiento_diario.INDICADORES_MCLEAN},
+        "mclean_suma": "Suma · McLean", "mclean_promedio": "Promedio · McLean",
     }
     tendencias = resumen["tendencia"]
     graficos = {
-        campo: grafico.linea([dia[campo] for dia in tendencias], minimo=1 if campo != "horas_sueno" else 0,
-                             maximo=10 if campo != "horas_sueno" else 24, ancho=500, alto=120)
+        campo: grafico.linea([dia[campo] for dia in tendencias], minimo=0 if campo == "horas_sueno" else (5 if campo == "mclean_suma" else 1),
+                             maximo=24 if campo == "horas_sueno" else (25 if campo == "mclean_suma" else (5 if campo.startswith("mclean_") else 10)), ancho=500, alto=120)
         for campo in campos_grafico
     }
     return templates.TemplateResponse(request, "panel/estadisticas.html", {
         "user": user, "desde": desde, "hasta": hasta,
         "resumen": resumen, "indicadores": seguimiento_diario.INDICADORES,
+        "indicadores_mclean": seguimiento_diario.INDICADORES_MCLEAN,
         "campos_grafico": campos_grafico, "graficos": graficos,
         "tendencias": tendencias,
     })

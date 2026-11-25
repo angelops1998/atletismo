@@ -1,3 +1,4 @@
+{% from "panel/_bienestar_diario.html" import bienestar_diario %}
 {% extends "base.html" %}
 {% from "_iconos.html" import icono %}
 {% from "_graficos.html" import linea %}
@@ -64,9 +65,20 @@
 
 <div class="card"><div class="card-head"><h3>Sesiones individuales registradas</h3></div><div class="card-body">
     {% if resumen_diario.sesiones.cantidad %}
-    <p>{{ resumen_diario.sesiones.cantidad }} sesiones · {{ resumen_diario.sesiones.minutos }} min guardados · RPE promedio {{ '%.1f'|format(resumen_diario.sesiones.rpe_promedio) }} · carga almacenada total {{ resumen_diario.sesiones.carga }}.</p>
-    <p class="apunte">Minutos, RPE y carga se agregan desde las sesiones individuales. La estructura principal planificada se presenta por separado en cada parte.</p>
+    {% for tipo, etiqueta in [('no_especificada', 'Duración no especificada'), ('trabajo_principal', 'Trabajo principal')] %}
+    {% set grupo = resumen_diario.sesiones.por_tipo[tipo] %}
+    {% if grupo.cantidad %}<p>{{ etiqueta }}: {{ grupo.cantidad }} sesiones · {{ grupo.minutos }} min guardados · RPE promedio {{ '%.1f'|format(grupo.rpe_promedio) }} · carga almacenada total {{ grupo.carga }}.</p>{% endif %}
+    {% endfor %}
+    <p class="apunte">Los grupos se calculan por separado con los valores guardados. La estructura planificada se presenta aparte.</p>
     {% else %}<p>— · No hay sesiones individuales en este período.</p>{% endif %}
+</div></div>
+
+<div class="card"><div class="card-head"><h3>Bienestar McLean · escala 1–5</h3></div><div class="card-body">
+{% for campo, etiqueta in [('mclean_sueno','Sueño'), ('mclean_fatiga','Fatiga'), ('mclean_dolor_muscular','Dolor muscular'), ('mclean_estres','Estrés'), ('mclean_animo','Ánimo')] %}
+<span class="chip">{{ etiqueta }}: {{ resumen_diario.promedios[campo] if resumen_diario.promedios[campo] is not none else '—' }}/5</span>
+{% endfor %}
+<span class="chip">Suma promedio: {{ resumen_diario.promedios.mclean_suma if resumen_diario.promedios.mclean_suma is not none else '—' }}/25</span>
+<span class="chip">Promedio de respuestas: {{ resumen_diario.promedios.mclean_promedio if resumen_diario.promedios.mclean_promedio is not none else '—' }}/5</span>
 </div></div>
 
 <div class="seccion-titulo"><h2>Evolución diaria</h2></div>
@@ -87,9 +99,10 @@
 <div class="card"><div class="tabla-scroll"><table class="tabla-historial-diario">
     <thead><tr><th>Fecha</th><th class="num">Sueño</th><th class="num">Fatiga</th><th class="num">Dolor muscular</th><th class="num">Estrés</th><th class="num">Ánimo</th><th class="num">Horas</th><th>Entrenamiento</th><th class="num">Sesiones</th><th>Molestia</th><th>Síntomas</th><th>Comentario</th><th></th></tr></thead>
     <tbody>{% for r in reportes_diarios %}<tr>
-        <td>{{ r.fecha|fecha_corta }}</td><td class="num">{{ r.sueno_calidad if r.sueno_calidad is not none else '—' }}</td>
-        <td class="num">{{ r.fatiga if r.fatiga is not none else '—' }}</td><td class="num">{{ r.dolor_muscular if r.dolor_muscular is not none else '—' }}</td>
-        <td class="num">{{ r.estres if r.estres is not none else '—' }}</td><td class="num">{{ r.animo if r.animo is not none else '—' }}</td>
+        <td>{{ r.fecha|fecha_corta }} · {{ 'McLean 1–5' if r.version_cuestionario == 'mclean_1_5' else 'Histórico 1–10' }}</td>
+        {% for campo in ['sueno', 'fatiga', 'dolor_muscular', 'estres', 'animo'] %}
+        {% set nombre = ('mclean_' ~ campo) if r.version_cuestionario == 'mclean_1_5' else ('sueno_calidad' if campo == 'sueno' else campo) %}
+        <td class="num">{{ r|attr(nombre) if r|attr(nombre) is not none else '—' }}</td>{% endfor %}
         <td class="num">{{ ('%.1f'|format(r.horas_sueno)) if r.horas_sueno is not none else '—' }}</td>
         <td>{% if not r.entreno_hoy %}No entrenó{% elif r.entrenamiento_principal %}{{ 'Aeróbico' if r.entrenamiento_principal.estructura_tipo == 'aerobico' else 'Velocidad' }} · {{ r.entrenamiento_principal.series }}×{{ r.entrenamiento_principal.repeticiones_por_serie }}×{{ r.entrenamiento_principal.distancia_m }} m{% else %}Entrenó{% endif %}</td>
         <td class="num">{{ r.sesiones|length }}</td>
@@ -109,20 +122,13 @@
             {% if r.sintomas_enfermedad %}<span class="chip chip-mal">Síntomas declarados</span>{% endif %}
         </summary>
         <div class="card-body">
-            <div class="seccion-titulo"><h3>Bienestar diario (escala 1–10)</h3></div>
-            <div class="item-chips">
-                <span class="chip">Calidad del sueño: {{ r.sueno_calidad }}/10</span>
-                <span class="chip">Fatiga: {{ r.fatiga }}/10</span>
-                <span class="chip">Dolor muscular: {{ r.dolor_muscular }}/10</span>
-                <span class="chip">Estrés: {{ r.estres }}/10</span>
-                <span class="chip">Ánimo: {{ r.animo }}/10</span>
+            <div class="seccion-titulo"><h3>Bienestar diario · {{ 'McLean 1–5' if r.version_cuestionario == 'mclean_1_5' else 'histórico 1–10' }}</h3></div>
+            <div class="item-chips">{{ bienestar_diario(r) }}
                 <span class="chip">Horas de sueño: {{ '%.1f'|format(r.horas_sueno) }}</span>
             </div>
 
             <div class="seccion-titulo"><h3>Entrenamiento principal planificado</h3></div>
-            {% if not r.entreno_hoy %}
-            <p>El atleta indicó que no entrenó. No se registra una estructura principal.</p>
-            {% elif r.entrenamiento_principal %}
+            {% if r.entrenamiento_principal %}
             {% set p = r.entrenamiento_principal %}
             <div class="tabla-scroll"><table class="tabla-detalle-diario"><tbody>
                 <tr><th>Estructura</th><td>{{ 'Aeróbico' if p.estructura_tipo == 'aerobico' else 'Velocidad' }}</td></tr>
@@ -132,13 +138,14 @@
                 <tr><th>Descanso macro</th><td>{{ p.descanso_macro_min_s|mmss }}–{{ p.descanso_macro_max_s|mmss }}</td></tr>
                 <tr><th>Tiempo estimado por repetición</th><td>{{ p.tiempo_rep_min_s|mmss }}–{{ p.tiempo_rep_max_s|mmss }}</td></tr>
             </tbody></table></div>
+            {% elif not r.entreno_hoy %}<p>El atleta indicó que no entrenó. No se registra una estructura principal.</p>
             {% else %}<p class="tenue">Entrenó, sin estructura principal guardada en este registro.</p>{% endif %}
 
             <div class="seccion-titulo"><h3>Sesiones individuales realizadas</h3></div>
             {% if r.sesiones %}
             <div class="lista-sesiones-diarias">{% for s in r.sesiones %}
                 <section class="sesion-diaria"><strong>Sesión {{ s.orden }} · {{ s.tipo_entrenamiento|replace('_', ' ')|capitalize }}</strong>
-                    <div>{{ s.duracion_min }} min · RPE {{ s.rpe }}/10 · carga almacenada {{ s.carga_sesion }}</div>
+                    <div>{{ s.duracion_min }} min · RPE {{ s.rpe }}/10 · carga almacenada {{ s.carga_sesion }} · {{ 'trabajo principal' if s.tipo_duracion == 'trabajo_principal' else 'duración no especificada' }}</div>
                     {% if s.comentarios_entrenamiento %}<p>{{ s.comentarios_entrenamiento }}</p>{% endif %}
                 </section>
             {% endfor %}</div>

@@ -1,3 +1,4 @@
+{% from "panel/_bienestar_diario.html" import bienestar_diario %}
 {% extends "base.html" %}
 {% from "_iconos.html" import icono %}
 {% block title %}Panel — {{ club.club_nombre }}{% endblock %}
@@ -106,6 +107,7 @@
     <a href="/atletas/{{ r.atleta_id }}?desde={{ fecha.isoformat() }}&hasta={{ fecha.isoformat() }}#reporte-{{ r.id }}" class="item">
         <span class="avatar">{{ atletas_por_id[r.atleta_id].nombre[0] }}</span>
         <div class="item-txt"><div class="item-nombre">{{ atletas_por_id[r.atleta_id].nombre }}</div>
+            <div class="item-chips">{{ bienestar_diario(r) }}</div>
             <div class="item-sub">
                 {% if not r.entreno_hoy %}No entrenó{% elif r.entrenamiento_principal %}
                     {{ r.entrenamiento_principal.estructura_tipo|capitalize }} · {{ r.entrenamiento_principal.series }} × {{ r.entrenamiento_principal.repeticiones_por_serie }} × {{ r.entrenamiento_principal.distancia_m }} m
