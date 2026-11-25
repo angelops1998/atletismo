@@ -58,11 +58,9 @@ Guardá esa cadena: la vas a pegar dos veces (paso 3 y paso 5).
 
 ## 2. Subir el código
 
-```bash
-git push origin main
-```
-
-Render despliega desde `main`, así que lo que no esté ahí no se publica.
+Render está configurado para desplegar desde `main`. Antes de incorporar código
+o permitir un despliegue, verificar el servicio efectivo y completar las
+autorizaciones y condiciones de [despliegue seguro](docs/DESPLIEGUE_SEGURO_MCLEAN.md).
 
 ---
 
@@ -81,8 +79,12 @@ Render despliega desde `main`, así que lo que no esté ahí no se publica.
 
    `SECRET_KEY` **no te la pide**: la genera Render sola y no la ve nadie.
 
-4. **Apply**. El primer deploy tarda unos minutos: instala las dependencias y
-   corre `alembic upgrade head` contra Supabase.
+4. **Apply**. El primer deploy tarda unos minutos e instala las dependencias.
+
+El build instala dependencias; **no ejecuta migraciones**. El esquema debe estar
+actualizado mediante el procedimiento autorizado descrito más abajo antes de
+poner esta versión en servicio. Un primer despliegue sin esquema migrado no es
+operativo.
 
 Cuando termine, arriba tenés la URL: `https://atletismo.onrender.com` (o con un
 sufijo si el nombre estaba tomado).
@@ -94,8 +96,8 @@ sufijo si el nombre estaba tomado).
 En Supabase: **Table Editor**. Tienen que estar las tablas `users`,
 `partes_semanales`, `marcas`, `asistencias`, `pagos` y `alembic_version`.
 
-Si no están, mirá **Logs** en Render: el error de `alembic` sale en el log del
-build, no en el de la app.
+Si no están, detener el despliegue y comprobar la revisión y el destino antes de
+ejecutar ninguna migración.
 
 ---
 
@@ -184,28 +186,18 @@ scp root@IP_DEL_VPS:/root/atletismo_final.dump .
 
 ## Actualizar la app a futuro
 
-```bash
-git push origin main
-```
-
-Nada más. Render detecta el push, instala, corre `alembic upgrade head` y
-reemplaza la versión anterior. Si el build falla, la versión vieja sigue
-sirviendo: no se cae la app.
+Antes de incorporar cambios a `main`, seguir [el procedimiento de preparación](docs/DESPLIEGUE_SEGURO_MCLEAN.md).
+La migración es independiente del build y requiere verificación y autorización
+expresas. Confirmar primero que el servicio efectivo de Render tiene el build
+actualizado y no tiene comandos de predeploy o inicio que migren la base; el
+archivo de la rama por sí solo no cambia la configuración ya desplegada.
 
 ---
 
 ## Backups
 
-Supabase hace backups diarios automáticos (**Database → Backups**). En el plan
-free se retienen pocos días y **no se pueden restaurar desde el panel**, así que
-una vez por mes, o antes de cualquier cambio grande, bajate una copia vos:
-
-```bash
-pg_dump "$DATABASE_URL" -Fc -f atletismo_$(date +%Y%m%d).dump
-```
-
-Guardala fuera de la máquina (los `.dump` están en `.gitignore`: son datos de
-menores de edad y no van al repo).
+El alcance y la disponibilidad de las copias dependen del plan y de la
+configuración de Supabase. Seguir [el procedimiento de respaldo y ensayo](docs/DESPLIEGUE_SEGURO_MCLEAN.md): incluye roles, esquema, datos y recursos externos, y exige comprobar la restauración aislada. No guardar copias ni credenciales en el repositorio.
 
 > **La otra siesta:** en el plan free de Supabase, un proyecto **sin ninguna
 > consulta durante 7 días se pausa** y hay que despertarlo a mano desde el

@@ -18,10 +18,9 @@ services:
     region: virginia
     branch: main
 
-    # Las migraciones corren en el build y no al arrancar: si una falla, el
-    # deploy se cae antes de reemplazar la versión que está andando, en vez de
-    # dejar la app arriba contra un esquema a medio migrar.
-    buildCommand: pip install -r requirements-prod.txt && alembic upgrade head
+    # Las migraciones son una operación manual separada, previa verificación,
+    # respaldo restaurable y autorización. Ver DEPLOY.md.
+    buildCommand: pip install -r requirements-prod.txt
     startCommand: >-
       gunicorn app.main:app
       --worker-class uvicorn.workers.UvicornWorker

@@ -199,6 +199,34 @@ def test_existing_mclean_record_blocked_when_flag_disabled(client, db, monkeypat
     assert record.version_cuestionario == "mclean_1_5" and record.mclean_animo == 4
 
 
+def test_desactivar_y_restaurar_mclean_conserva_datos_y_acceso_docente(client, db, monkeypatch, enabled):
+    athlete = crear_usuario(db, username="ui_cambio_flag")
+    teacher = crear_usuario(db, username="ui_cambio_flag_profesor", role="profesor")
+    entrar(client, athlete)
+    body = data(client)
+    assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
+    record = db.query(ParteDiaria).one()
+    original = (record.mclean_sueno, record.mclean_fatiga, record.mclean_dolor_muscular,
+                record.mclean_estres, record.mclean_animo, record.comentarios,
+                [(s.tipo_duracion, s.carga_sesion) for s in record.sesiones])
+    edit_token = token(client)
+    body.update(edit_state_token=edit_token, sesion_id=[str(s.id) for s in record.sesiones])
+    monkeypatch.setattr(get_settings(), "formulario_mclean_habilitado", False)
+    assert client.get("/parte").status_code == 503
+    assert client.post("/parte", data=body, follow_redirects=False).status_code == 503
+    entrar(client, teacher)
+    ficha = client.get(f"/atletas/{athlete.id}")
+    assert ficha.status_code == 200 and "Sueño 4/5" in ficha.text and "Suma 15/25" in ficha.text
+    entrar(client, athlete)
+    monkeypatch.setattr(get_settings(), "formulario_mclean_habilitado", True)
+    assert client.get("/parte").status_code == 200
+    db.expire_all()
+    assert (record.mclean_sueno, record.mclean_fatiga, record.mclean_dolor_muscular,
+            record.mclean_estres, record.mclean_animo, record.comentarios,
+            [(s.tipo_duracion, s.carga_sesion) for s in record.sesiones]) == original
+    assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
+
+
 def test_historical_record_can_be_edited_without_conversion(client, db, enabled):
     from test_parte import completo
     athlete = crear_usuario(db, username="ui_historical_edit")
