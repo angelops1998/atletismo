@@ -72,6 +72,42 @@ def test_same_day_mixed_group_averages_are_separate(db):
     assert summary["filas_atletas"][0]["sesiones_por_tipo"]["trabajo_principal"]["cantidad"] == 0
 
 
+def test_estadisticas_corta_fechas_ausentes_y_cuenta_sesiones(client, db, monkeypatch):
+    from app.routers import estadisticas
+    from app.services.grafico import linea
+
+    teacher = crear_usuario(db, username="profe_cortes", role="profesor")
+    athlete = crear_usuario(db, username="atleta_cortes")
+    old = parte(db, athlete, DIA)
+    new = parte(db, athlete, DIA + timedelta(days=2), mclean=True)
+    another = parte(db, athlete, DIA + timedelta(days=4), mclean=True)
+    for index, tipo in enumerate(("aerobico", "lactico", "velocidad", "fuerza", "otro"), 1):
+        db.add(SesionEntrenamiento(parte_diaria_id=new.id, orden=index, tipo_entrenamiento=tipo,
+            tipo_duracion="trabajo_principal", duracion_min=10, rpe=5, carga_sesion=50))
+    db.commit()
+    tendencias = sd.resumen_reportes([old, new, another], [athlete], DIA, DIA + timedelta(days=4))["tendencia"]
+    assert estadisticas._serie_con_cortes(tendencias, "mclean_sueno") == [None, None, 1.0, None, 1.0]
+    assert linea(estadisticas._serie_con_cortes(tendencias, "mclean_sueno"))["segmentos"] == []
+    consecutivos = [{"fecha": DIA, "valor": 1}, {"fecha": DIA + timedelta(days=1), "valor": 2}]
+    assert len(linea(estadisticas._serie_con_cortes(consecutivos, "valor"))["segmentos"]) == 1
+    graficos = []
+    def registrar(valores, **kwargs):
+        resultado = linea(valores, **kwargs)
+        graficos.append((valores, resultado))
+        return resultado
+    monkeypatch.setattr(estadisticas.grafico, "linea", registrar)
+    entrar(client, teacher)
+    response = client.get("/estadisticas", params={"desde": DIA.isoformat(), "hasta": (DIA + timedelta(days=4)).isoformat()})
+    assert response.status_code == 200
+    assert graficos[6][0] == [None, None, 1.0, None, 1.0]
+    assert graficos[6][1]["segmentos"] == []
+    assert "Sesiones realizadas por tipo" in response.text
+    assert "Estructuras principales planificadas" in response.text
+    for etiqueta in ("Aeróbico · 1", "Láctico · 1", "Velocidad · 1", "Fuerza · 1"):
+        assert etiqueta in response.text
+    assert "5</strong> sesiones individuales" in response.text
+
+
 def test_teacher_views_show_mclean_history_and_separate_durations(client, db):
     teacher = crear_usuario(db, username="profe_mixto", role="profesor")
     athlete = crear_usuario(db, username="atleta_mixto")

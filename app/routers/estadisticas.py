@@ -15,6 +15,18 @@ from ..tiempo import hoy
 router = APIRouter(prefix="/estadisticas", tags=["estadisticas"])
 
 
+def _serie_con_cortes(tendencias, campo):
+    """Corta la línea cuando faltan días, sin rellenar el período completo."""
+    valores = []
+    anterior = None
+    for dia in tendencias:
+        if anterior is not None and (dia["fecha"] - anterior).days > 1:
+            valores.append(None)
+        valores.append(dia[campo])
+        anterior = dia["fecha"]
+    return valores
+
+
 @router.get("", response_class=HTMLResponse)
 async def estadisticas(request: Request, db: Session = Depends(get_db)):
     user = get_current_profesor(request, db)
@@ -47,7 +59,7 @@ async def estadisticas(request: Request, db: Session = Depends(get_db)):
     }
     tendencias = resumen["tendencia"]
     graficos = {
-        campo: grafico.linea([dia[campo] for dia in tendencias], minimo=0 if campo == "horas_sueno" else (5 if campo == "mclean_suma" else 1),
+        campo: grafico.linea(_serie_con_cortes(tendencias, campo), minimo=0 if campo == "horas_sueno" else (5 if campo == "mclean_suma" else 1),
                              maximo=24 if campo == "horas_sueno" else (25 if campo == "mclean_suma" else (5 if campo.startswith("mclean_") else 10)), ancho=500, alto=120)
         for campo in campos_grafico
     }

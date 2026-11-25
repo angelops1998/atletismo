@@ -45,7 +45,7 @@
 {% if tendencias %}
 <div class="split">
     {% for campo, etiqueta in campos_grafico.items() %}
-    <div class="card"><div class="card-head"><h3>{{ etiqueta }}</h3><span class="tenue">{{ 'horas' if campo == 'horas_sueno' else ('escala 5–25' if campo == 'mclean_suma' else ('escala 1–5' if campo.startswith('mclean_') else 'escala 1–10')) }}</span></div><div class="card-body">{{ linea(graficos[campo]) }}<p class="apunte">Cada punto corresponde a una fecha con partes; las fechas sin partes no se imputan.</p></div></div>
+    <div class="card"><div class="card-head"><h3>{{ etiqueta }}</h3><span class="tenue">{{ 'horas' if campo == 'horas_sueno' else ('escala 5–25' if campo == 'mclean_suma' else ('escala 1–5' if campo.startswith('mclean_') else 'escala 1–10')) }}</span></div><div class="card-body">{{ linea(graficos[campo]) }}<p class="apunte">Cada punto corresponde a una fecha con partes; las fechas sin partes interrumpen la línea. La separación horizontal no representa la duración del intervalo.</p></div></div>
     {% endfor %}
 </div>
 {% else %}<div class="card"><div class="card-body"><div class="vacio">{{ icono('estadisticas') }}<p>No hay partes diarios en este período.</p></div></div></div>{% endif %}
@@ -59,6 +59,10 @@
         {% if grupo.cantidad %}<p>{{ etiqueta }}: {{ grupo.cantidad }} sesiones · {{ grupo.minutos }} minutos · RPE promedio {{ '%.1f'|format(grupo.rpe_promedio) }} · carga almacenada total {{ grupo.carga }}.</p>{% endif %}
         {% endfor %}
         <p class="apunte">Los minutos y cargas se agrupan por tipo de duración; se usa la carga almacenada.</p>
+        <p><strong>Sesiones realizadas por tipo</strong></p>
+        <div class="item-chips">{% for tipo, etiqueta in [('aerobico', 'Aeróbico'), ('lactico', 'Láctico'), ('velocidad', 'Velocidad'), ('fuerza', 'Fuerza')] %}<span class="chip">{{ etiqueta }} · {{ resumen.sesiones.tipos_realizados.get(tipo, 0) }}</span>{% endfor %}</div>
+        <p class="apunte">Los tipos históricos de sesión se conservan en el total de sesiones.</p>
+        <p><strong>Estructuras principales planificadas</strong></p>
         {% if resumen.tipos %}<div class="item-chips">{% for tipo, cantidad in resumen.tipos %}<span class="chip">{{ 'Aeróbico' if tipo == 'aerobico' else 'Velocidad' }} · {{ cantidad }}</span>{% endfor %}</div>
         {% else %}<p class="tenue">No hay estructuras principales guardadas en este período.</p>{% endif %}
     </div></div>
