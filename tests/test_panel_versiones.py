@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.models import ParteDiaria, SesionEntrenamiento
+from app.models import EntrenamientoPrincipal, ParteDiaria, SesionEntrenamiento
 from app.services import seguimiento_diario as sd
 from conftest import crear_usuario, entrar
 
@@ -106,6 +106,27 @@ def test_estadisticas_corta_fechas_ausentes_y_cuenta_sesiones(client, db, monkey
     for etiqueta in ("Aeróbico · 1", "Láctico · 1", "Velocidad · 1", "Fuerza · 1"):
         assert etiqueta in response.text
     assert "5</strong> sesiones individuales" in response.text
+
+
+def test_estadisticas_distingue_planificacion_y_sesiones_realizadas(client, db):
+    teacher = crear_usuario(db, username="profe_plan", role="profesor")
+    athlete = crear_usuario(db, username="atleta_plan")
+    p = parte(db, athlete, DIA)
+    p.entrenamiento_principal = EntrenamientoPrincipal(estructura_tipo="aerobico", series=3,
+        repeticiones_por_serie=4, distancia_m=400, descanso_micro_min_s=30, descanso_micro_max_s=60,
+        descanso_macro_min_s=180, descanso_macro_max_s=300, tiempo_rep_min_s=100, tiempo_rep_max_s=120)
+    for index, tipo in enumerate(("lactico", "fuerza"), 1):
+        db.add(SesionEntrenamiento(parte_diaria_id=p.id, orden=index, tipo_entrenamiento=tipo,
+            tipo_duracion="trabajo_principal", duracion_min=10, rpe=5, carga_sesion=50))
+    db.commit()
+    entrar(client, teacher)
+    response = client.get("/estadisticas", params={"desde": DIA.isoformat(), "hasta": DIA.isoformat()})
+    assert response.status_code == 200
+    realizadas = response.text.split("Sesiones realizadas por tipo", 1)[1].split("Estructuras principales planificadas", 1)[0]
+    planificadas = response.text.split("Estructuras principales planificadas", 1)[1].split("</div></div>", 1)[0]
+    for texto in ("Aeróbico · 0", "Láctico · 1", "Velocidad · 0", "Fuerza · 1"):
+        assert texto in realizadas
+    assert "Aeróbico · 1" in planificadas
 
 
 def test_teacher_views_show_mclean_history_and_separate_durations(client, db):
