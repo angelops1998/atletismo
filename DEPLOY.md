@@ -52,7 +52,7 @@ postgresql://postgres.abcdefghijklm:LA_PASSWORD@aws-1-us-east-1.pooler.supabase.
 > Si la contraseña tiene `@`, `/`, `:` o `#`, hay que escaparla
 > (`@` → `%40`, etc.). Lo más simple es generar una sin símbolos raros.
 
-Guardá esa cadena: la vas a pegar dos veces (paso 3 y paso 5).
+Guardar la cadena en un gestor de secretos; no copiarla al `.env` de desarrollo.
 
 ---
 
@@ -106,31 +106,33 @@ por sí solo la revisión ni las restricciones. Si hay discrepancias, detenerse.
 
 ---
 
-## 5. Apuntar tu máquina a Supabase
+## 5. Preparar una sesión administrativa separada
 
-Para crear el profesor necesitás correr un script contra la base de producción
-desde tu máquina. En el `.env` local, **comentá** tu `DATABASE_URL` de
-desarrollo y poné la de Supabase:
+No intercambiar credenciales en el `.env` de desarrollo. Antes de cualquier
+operación real, obtener autorización expresa y abrir un proceso administrativo
+aislado, desde un directorio sin `.env` y con entorno de corta duración. Cargar
+`DATABASE_URL` y `SECRET_KEY` desde un gestor de secretos por un canal protegido,
+sin imprimirlos ni pasarlos en argumentos o historial; las variables de entorno
+tienen prioridad sobre `.env` en la configuración de la aplicación.
 
-```bash
-# DATABASE_URL=postgresql://atletismo:...@127.0.0.1:5432/atletismo   # local
-DATABASE_URL=postgresql://postgres.abcdefghijklm:LA_PASSWORD@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require
-```
+En ese mismo entorno, realizar primero los [controles de identidad y revisión de
+solo lectura](docs/DESPLIEGUE_SEGURO_MCLEAN.md#verificación-de-solo-lectura),
+comparando además el proyecto Supabase mediante evidencia independiente. Si hay
+cualquier discrepancia, ausencia de permisos o duda sobre el destino, detenerse.
+No dejar accesible ese entorno para tareas de desarrollo; al terminar, cerrar el
+proceso y eliminar sus credenciales temporales de forma segura.
 
 ---
 
 ## 6. Crear el profesor
 
-```bash
-.venv/bin/python scripts/crear_profesor.py
-```
-
-Te pide nombre, usuario y contraseña. Usá una contraseña de verdad: con esa
-cuenta se ven los datos de todos los atletas.
-
-**Cuando termine, volvé a dejar tu `DATABASE_URL` local en el `.env`.** Si te
-la olvidás apuntando a Supabase, el próximo `scripts/seed.py --borrar` que
-corras para probar algo vacía la base del club.
+El alta escribe en la base y requiere autorización específica, posterior a la
+verificación del paso 5 y al esquema compatible. Ejecutar `scripts/crear_profesor.py`
+con el intérprete del proyecto desde la sesión administrativa aislada, sin cambiar
+su entorno ni el destino entre la verificación y el alta. El script **no verifica
+por sí mismo la identidad del destino**: la comprobación previa no es una garantía
+atómica; si no se puede mantener el destino verificado, no ejecutarlo. La cuenta
+accede a datos de los atletas y debe usar una contraseña segura.
 
 ---
 
@@ -247,6 +249,6 @@ ya está en `true`, así que no hay nada más que tocar.
 - [ ] Blueprint aplicado en Render y build en verde
 - [ ] Las tablas aparecen en el Table Editor de Supabase
 - [ ] Profesor creado y login OK en `https://…onrender.com`
-- [ ] `.env` local **devuelto** a la base de desarrollo
+- [ ] Credenciales administrativas aisladas y retiradas; `.env` de desarrollo sin modificar
 - [ ] Datos del club cargados en las variables `CLUB_*`
 - [ ] VPS dado de baja (paso 8) y dump final descargado
