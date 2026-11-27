@@ -53,11 +53,18 @@
 <div class="split">
     <div class="card"><div class="card-head"><h3>Actividad reportada</h3></div><div class="card-body">
         <p><strong>{{ resumen.entrenaron }}</strong> partes indican entrenamiento · <strong>{{ resumen.no_entrenaron }}</strong> indican que no entrenaron.</p>
-        <p><strong>{{ resumen.sesiones.cantidad }}</strong> sesiones individuales.</p>
+        <p><strong>{{ resumen.sesiones.cantidad }}</strong> sesiones individuales en partes marcados como entrenamiento.</p>
         {% for tipo, etiqueta in [('no_especificada', 'Duración no especificada'), ('trabajo_principal', 'Trabajo principal')] %}
         {% set grupo = resumen.sesiones.por_tipo[tipo] %}
         {% if grupo.cantidad %}<p>{{ etiqueta }}: {{ grupo.cantidad }} sesiones · {{ grupo.minutos }} minutos · RPE promedio {{ '%.1f'|format(grupo.rpe_promedio) }} · carga almacenada total {{ grupo.carga }}.</p>{% endif %}
         {% endfor %}
+        {% if resumen.sesiones_descanso.cantidad %}
+        <p><strong>{{ resumen.sesiones_descanso.cantidad }}</strong> sesiones históricas conservadas en partes marcados como descanso; no se incluyen en los totales de entrenamiento.</p>
+        {% for tipo, etiqueta in [('no_especificada', 'Duración no especificada'), ('trabajo_principal', 'Trabajo principal')] %}
+        {% set grupo = resumen.sesiones_descanso.por_tipo[tipo] %}
+        {% if grupo.cantidad %}<p>Descanso · {{ etiqueta }}: {{ grupo.cantidad }} sesiones · {{ grupo.minutos }} minutos · carga almacenada total {{ grupo.carga }}.</p>{% endif %}
+        {% endfor %}
+        {% endif %}
         <p class="apunte">Los minutos y cargas se agrupan por tipo de duración; se usa la carga almacenada.</p>
         <p><strong>Tipos de entrenamiento diarios</strong></p>
         <div class="item-chips">{% for tipo, etiqueta in [('aerobico', 'Aeróbico'), ('lactico', 'Láctico'), ('velocidad', 'Velocidad'), ('fuerza', 'Fuerza')] %}<span class="chip">{{ etiqueta }} · {{ resumen.tipos_diarios.get(tipo, 0) }}</span>{% endfor %}</div>
@@ -80,7 +87,7 @@
 
 <div class="seccion-titulo"><h2>Atleta por atleta</h2></div>
 <div class="card"><div class="tabla-scroll"><table>
-    <thead><tr><th>Atleta</th><th class="num">Partes</th><th class="num">Sueño 1–10</th><th class="num">Fatiga 1–10</th><th class="num">Dolor 1–10</th><th class="num">Estrés 1–10</th><th class="num">Ánimo 1–10</th><th class="num">Sueño McLean 1–5</th><th class="num">Fatiga McLean 1–5</th><th class="num">Dolor McLean 1–5</th><th class="num">Estrés McLean 1–5</th><th class="num">Ánimo McLean 1–5</th><th class="num">Suma McLean 5–25</th><th class="num">Promedio McLean 1–5</th><th class="num">Horas sueño</th><th>Entrenó / no</th><th>Molestias</th><th>Síntomas</th><th class="num">Sesiones</th><th class="num">Minutos no especificados</th><th class="num">Carga guardada no especificada</th><th class="num">Minutos trabajo principal</th><th class="num">Carga guardada trabajo principal</th></tr></thead>
+    <thead><tr><th>Atleta</th><th class="num">Partes</th><th class="num">Sueño 1–10</th><th class="num">Fatiga 1–10</th><th class="num">Dolor 1–10</th><th class="num">Estrés 1–10</th><th class="num">Ánimo 1–10</th><th class="num">Sueño McLean 1–5</th><th class="num">Fatiga McLean 1–5</th><th class="num">Dolor McLean 1–5</th><th class="num">Estrés McLean 1–5</th><th class="num">Ánimo McLean 1–5</th><th class="num">Suma McLean 5–25</th><th class="num">Promedio McLean 1–5</th><th class="num">Horas sueño</th><th>Entrenó / no</th><th>Molestias</th><th>Síntomas</th><th class="num">Sesiones en entrenamiento</th><th class="num">Sesiones conservadas en descanso</th><th class="num">Minutos no especificados</th><th class="num">Carga guardada no especificada</th><th class="num">Minutos trabajo principal</th><th class="num">Carga guardada trabajo principal</th></tr></thead>
     <tbody>
     {% for f in resumen.filas_atletas %}<tr>
         <td class="nombre-celda"><a href="/atletas/{{ f.atleta.id }}?desde={{ desde.isoformat() }}&hasta={{ hasta.isoformat() }}">{{ f.atleta.nombre }}</a></td>
@@ -94,7 +101,7 @@
         <td class="num">{{ f.mclean_suma if f.mclean_suma is not none else '—' }}</td><td class="num">{{ f.mclean_promedio if f.mclean_promedio is not none else '—' }}</td>
         <td class="num">{{ ('%.1f'|format(f.horas_sueno)) if f.horas_sueno is not none else '—' }}</td>
         <td>{{ f.entreno }} / {{ f.no_entreno }}</td><td>{{ f.molestias }}</td><td>{{ f.sintomas }}</td>
-        <td class="num">{{ f.sesiones }}</td><td class="num">{{ f.sesiones_por_tipo.no_especificada.minutos }}</td><td class="num">{{ f.sesiones_por_tipo.no_especificada.carga }}</td><td class="num">{{ f.sesiones_por_tipo.trabajo_principal.minutos }}</td><td class="num">{{ f.sesiones_por_tipo.trabajo_principal.carga }}</td>
+        <td class="num">{{ f.sesiones }}</td><td class="num">{{ f.sesiones_descanso }}</td><td class="num">{{ f.sesiones_por_tipo.no_especificada.minutos }}</td><td class="num">{{ f.sesiones_por_tipo.no_especificada.carga }}</td><td class="num">{{ f.sesiones_por_tipo.trabajo_principal.minutos }}</td><td class="num">{{ f.sesiones_por_tipo.trabajo_principal.carga }}</td>
     </tr>{% endfor %}
     </tbody>
 </table></div></div>

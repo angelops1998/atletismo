@@ -230,6 +230,7 @@ def resumen_reportes(reportes: list[ParteDiaria], atletas: list[User], desde: da
     por_atleta: dict[int, list[ParteDiaria]] = defaultdict(list)
     por_dia: dict[date, list[ParteDiaria]] = defaultdict(list)
     sesiones_por_atleta: dict[int, list[SesionEntrenamiento]] = defaultdict(list)
+    sesiones_descanso_por_atleta: dict[int, list[SesionEntrenamiento]] = defaultdict(list)
     for reporte in reportes:
         por_atleta[reporte.atleta_id].append(reporte)
         por_dia[reporte.fecha].append(reporte)
@@ -237,13 +238,18 @@ def resumen_reportes(reportes: list[ParteDiaria], atletas: list[User], desde: da
     zonas: Counter[str] = Counter()
     tipos: Counter[str] = Counter()
     sesiones: list[SesionEntrenamiento] = []
+    sesiones_descanso: list[SesionEntrenamiento] = []
     for reporte in reportes:
         if reporte.hay_molestia:
             zonas.update(reporte.molestia_zona or [])
         if reporte.entreno_hoy and reporte.entrenamiento_principal:
             tipos[reporte.entrenamiento_principal.estructura_tipo] += 1
-        sesiones.extend(reporte.sesiones or [])
-        sesiones_por_atleta[reporte.atleta_id].extend(reporte.sesiones or [])
+        if reporte.entreno_hoy:
+            sesiones.extend(reporte.sesiones or [])
+            sesiones_por_atleta[reporte.atleta_id].extend(reporte.sesiones or [])
+        else:
+            sesiones_descanso.extend(reporte.sesiones or [])
+            sesiones_descanso_por_atleta[reporte.atleta_id].extend(reporte.sesiones or [])
 
     dias = (hasta - desde).days + 1
     posibles = len(atletas) * dias
@@ -276,6 +282,7 @@ def resumen_reportes(reportes: list[ParteDiaria], atletas: list[User], desde: da
             "molestias": sum(1 for r in rows if r.hay_molestia),
             "sintomas": sum(1 for r in rows if r.sintomas_enfermedad),
             "sesiones": len(sesiones_atleta),
+            "sesiones_descanso": len(sesiones_descanso_por_atleta.get(atleta.id, [])),
         })
     resumen_atletas.sort(key=lambda fila: (fila["reportes"] == 0, fila["reportes"], fila["atleta"].nombre.lower()))
 
@@ -316,6 +323,7 @@ def resumen_reportes(reportes: list[ParteDiaria], atletas: list[User], desde: da
         "tipos_diarios": Counter(r.tipo_entrenamiento_diario for r in reportes if r.tipo_entrenamiento_diario),
         "sesiones": {"cantidad": len(sesiones), "por_tipo": resumen_sesiones(sesiones),
                      "tipos_realizados": Counter(s.tipo_entrenamiento for s in sesiones)},
+        "sesiones_descanso": {"cantidad": len(sesiones_descanso), "por_tipo": resumen_sesiones(sesiones_descanso)},
         "tendencia": tendencia,
         "filas_atletas": resumen_atletas,
     }

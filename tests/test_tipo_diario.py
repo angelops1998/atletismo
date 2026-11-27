@@ -1,8 +1,64 @@
 import pytest
+from datetime import date, timedelta
 from app.models import ParteDiaria, SesionEntrenamiento
+from app.services import parte_diaria as pd, seguimiento_diario as sd
 from app.tiempo import hoy
 from conftest import crear_usuario, entrar
 from test_formulario_mclean import data, enabled, token
+
+
+def test_semana_entrenamiento_sin_medicion_no_es_cero(db):
+    athlete = crear_usuario(db, username="semana_sin_carga")
+    monday = date(2026, 11, 23)
+    def record(day, trained):
+        return ParteDiaria(atleta_id=athlete.id, fecha=monday + timedelta(days=day),
+            sueno_calidad=8, fatiga=7, dolor_muscular=6, estres=5, animo=4,
+            horas_sueno=8, entreno_hoy=trained)
+    measured, unmeasured, rest = record(0, True), record(1, True), record(2, False)
+    unmeasured.tipo_entrenamiento_diario = "aerobico"
+    measured.sesiones.append(SesionEntrenamiento(orden=1, tipo_entrenamiento="fuerza",
+        tipo_duracion="no_especificada", duracion_min=30, rpe=5, carga_sesion=999))
+    db.add_all([measured, unmeasured, rest]); db.commit()
+    assert pd.carga_diaria(None) is None and pd.carga_diaria(unmeasured) is None
+    result = pd.aggregate_week_reported(db, athlete.id, monday)
+    assert result.dias_con_entreno == 2 and result.dias_reportados == 3
+    assert result.cargas_diarias[monday.isoformat()] == 999
+    assert result.cargas_diarias[(monday + timedelta(days=1)).isoformat()] is None
+    assert result.cargas_diarias[(monday + timedelta(days=2)).isoformat()] == 0
+    assert result.cargas_diarias[(monday + timedelta(days=3)).isoformat()] is None
+    assert result.carga_semanal is None
+
+
+def test_estadisticas_separan_sesiones_conservadas_en_descanso(client, db):
+    athlete = crear_usuario(db, username="sesiones_descanso")
+    teacher = crear_usuario(db, username="profesor_descanso", role="profesor")
+    day = date(2026, 11, 23)
+    def record(offset, trained, kind, load):
+        p = ParteDiaria(atleta_id=athlete.id, fecha=day + timedelta(days=offset),
+            sueno_calidad=8, fatiga=7, dolor_muscular=6, estres=5, animo=4,
+            horas_sueno=8, entreno_hoy=trained)
+        p.sesiones.append(SesionEntrenamiento(orden=1, tipo_entrenamiento="fuerza",
+            tipo_duracion=kind, duracion_min=30, rpe=5, carga_sesion=load))
+        return p
+    trained = record(0, True, "no_especificada", 999)
+    rest1 = record(1, False, "no_especificada", 777)
+    rest2 = record(2, False, "trabajo_principal", 555)
+    db.add_all([trained, rest1, rest2]); db.commit()
+    before = [(s.id, s.carga_sesion, s.tipo_duracion) for s in db.query(SesionEntrenamiento).order_by(SesionEntrenamiento.id)]
+    result = sd.resumen_reportes([trained, rest1, rest2], [athlete], day, day + timedelta(days=2))
+    assert result["sesiones"]["cantidad"] == 1 and result["sesiones"]["por_tipo"]["no_especificada"]["carga"] == 999
+    assert result["sesiones_descanso"]["cantidad"] == 2
+    assert result["sesiones_descanso"]["por_tipo"]["no_especificada"]["carga"] == 777
+    assert result["sesiones_descanso"]["por_tipo"]["trabajo_principal"]["carga"] == 555
+    assert result["filas_atletas"][0]["sesiones_descanso"] == 2
+    entrar(client, teacher)
+    page = client.get("/estadisticas", params={"desde": day.isoformat(), "hasta": (day + timedelta(days=2)).isoformat()})
+    assert page.status_code == 200
+    assert "sesiones históricas conservadas en partes marcados como descanso" in page.text
+    assert "carga almacenada total 777" in page.text and "carga almacenada total 555" in page.text
+    assert "carga almacenada total 999" in page.text
+    db.expire_all()
+    assert [(s.id, s.carga_sesion, s.tipo_duracion) for s in db.query(SesionEntrenamiento).order_by(SesionEntrenamiento.id)] == before
 
 
 @pytest.mark.parametrize("tipo", ["aerobico", "lactico", "velocidad", "fuerza"])

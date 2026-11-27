@@ -375,21 +375,23 @@ def carga_sesion(duracion_min: int, rpe: int) -> int:
     return int(duracion_min) * int(rpe)
 
 
-def carga_diaria(parte: Optional[ParteDiaria]) -> int:
-    """Daily load for a reported record. Missing record is NOT zero (handled by caller)."""
+def carga_diaria(parte: Optional[ParteDiaria]) -> Optional[int]:
+    """Carga almacenada, o None si falta el parte o no se midió el entrenamiento."""
     if not parte:
-        return 0
+        return None
     if not parte.entreno_hoy:
         return 0
+    if not parte.sesiones:
+        return None
     return sum(int(s.carga_sesion or 0) for s in (parte.sesiones or []))
 
 
 @dataclass
 class WeeklyAggregation:
-    carga_semanal: int
+    carga_semanal: Optional[int]
     dias_reportados: int
     dias_con_entreno: int
-    cargas_diarias: dict[str, Optional[int]]  # iso date -> carga or None if missing
+    cargas_diarias: dict[str, Optional[int]]  # None: sin parte o entrenamiento sin medición
 
 
 def aggregate_week_reported(
@@ -417,11 +419,14 @@ def aggregate_week_reported(
             continue
         cd = carga_diaria(r)
         cargas[d.isoformat()] = cd
-        total += cd
-        if r.entreno_hoy and (r.sesiones or []):
+        if cd is None:
+            total = None
+        elif total is not None:
+            total += cd
+        if r.entreno_hoy:
             dias_entreno += 1
     return WeeklyAggregation(
-        carga_semanal=total,
+        carga_semanal=total if by_fecha else None,
         dias_reportados=len(by_fecha),
         dias_con_entreno=dias_entreno,
         cargas_diarias=cargas,
