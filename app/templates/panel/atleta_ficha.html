@@ -63,14 +63,22 @@
     </div>
 </div>
 
-<div class="card"><div class="card-head"><h3>Sesiones individuales registradas</h3></div><div class="card-body">
+<div class="card"><div class="card-head"><h3>Sesiones individuales en partes de entrenamiento</h3></div><div class="card-body">
     {% if resumen_diario.sesiones.cantidad %}
     {% for tipo, etiqueta in [('no_especificada', 'Duración no especificada'), ('trabajo_principal', 'Trabajo principal')] %}
     {% set grupo = resumen_diario.sesiones.por_tipo[tipo] %}
     {% if grupo.cantidad %}<p>{{ etiqueta }}: {{ grupo.cantidad }} sesiones · {{ grupo.minutos }} min guardados · RPE promedio {{ '%.1f'|format(grupo.rpe_promedio) }} · carga almacenada total {{ grupo.carga }}.</p>{% endif %}
     {% endfor %}
     <p class="apunte">Los grupos se calculan por separado con los valores guardados. La estructura planificada se presenta aparte.</p>
+    {% elif resumen_diario.sesiones_descanso.cantidad %}<p>— · No hay sesiones en partes de entrenamiento en este período.</p>
     {% else %}<p>— · No hay sesiones individuales en este período.</p>{% endif %}
+    {% if resumen_diario.sesiones_descanso.cantidad %}
+    <p>{{ resumen_diario.sesiones_descanso.cantidad }} sesiones históricas conservadas en partes marcados como descanso; no se incluyen en los totales de entrenamiento.</p>
+    {% for tipo, etiqueta in [('no_especificada', 'Duración no especificada'), ('trabajo_principal', 'Trabajo principal')] %}
+    {% set grupo = resumen_diario.sesiones_descanso.por_tipo[tipo] %}
+    {% if grupo.cantidad %}<p>Descanso · {{ etiqueta }}: {{ grupo.cantidad }} sesiones · {{ grupo.minutos }} min guardados · carga almacenada total {{ grupo.carga }}.</p>{% endif %}
+    {% endfor %}
+    {% endif %}
 </div></div>
 
 <div class="card"><div class="card-head"><h3>Bienestar McLean · escala 1–5</h3></div><div class="card-body">

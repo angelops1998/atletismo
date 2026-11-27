@@ -135,6 +135,7 @@ def resumen_diario_atleta(
 
     sesiones_query = (db.query(
         ParteDiaria.fecha.label("fecha"),
+        ParteDiaria.entreno_hoy.label("entreno_hoy"),
         SesionEntrenamiento.tipo_duracion.label("tipo_duracion"),
         func.count(SesionEntrenamiento.id).label("cantidad"),
         func.sum(SesionEntrenamiento.duracion_min).label("minutos"),
@@ -146,7 +147,7 @@ def resumen_diario_atleta(
         sesiones_query = sesiones_query.filter(ParteDiaria.fecha >= desde)
     if hasta:
         sesiones_query = sesiones_query.filter(ParteDiaria.fecha <= hasta)
-    agrupadas = sesiones_query.group_by(ParteDiaria.fecha, SesionEntrenamiento.tipo_duracion).all()
+    agrupadas = sesiones_query.group_by(ParteDiaria.fecha, ParteDiaria.entreno_hoy, SesionEntrenamiento.tipo_duracion).all()
     sesiones_por_fecha = defaultdict(dict)
     for row in agrupadas:
         sesiones_por_fecha[row.fecha][row.tipo_duracion] = {
@@ -160,16 +161,17 @@ def resumen_diario_atleta(
         valores = [float(reporte[campo]) for reporte in observaciones if reporte[campo] is not None]
         return round(mean(valores), 1) if valores else None
 
-    por_tipo_sesiones = {}
-    for tipo in TIPOS_DURACION:
-        rows = [r for r in agrupadas if r.tipo_duracion == tipo]
-        n = sum(int(r.cantidad or 0) for r in rows)
-        por_tipo_sesiones[tipo] = {
-            "cantidad": n, "minutos": sum(int(r.minutos or 0) for r in rows),
-            "rpe_promedio": round(sum(int(r.suma_rpe or 0) for r in rows) / n, 1) if n else None,
-            "carga": sum(int(r.carga or 0) for r in rows),
-        }
-    cantidad_sesiones = sum(v["cantidad"] for v in por_tipo_sesiones.values())
+    def resumen_por_estado(entreno_hoy):
+        por_tipo = {}
+        for tipo in TIPOS_DURACION:
+            rows = [r for r in agrupadas if r.tipo_duracion == tipo and r.entreno_hoy == entreno_hoy]
+            n = sum(int(r.cantidad or 0) for r in rows)
+            por_tipo[tipo] = {
+                "cantidad": n, "minutos": sum(int(r.minutos or 0) for r in rows),
+                "rpe_promedio": round(sum(int(r.suma_rpe or 0) for r in rows) / n, 1) if n else None,
+                "carga": sum(int(r.carga or 0) for r in rows),
+            }
+        return {"cantidad": sum(v["cantidad"] for v in por_tipo.values()), "por_tipo": por_tipo}
     fechas = [r["fecha"] for r in observaciones]
     series = {}
     for campo in campos:
@@ -193,7 +195,8 @@ def resumen_diario_atleta(
         "sintomas": sum(1 for r in observaciones if r["sintomas_enfermedad"]),
         "entrenaron": sum(1 for r in observaciones if r["entreno_hoy"]),
         "no_entrenaron": sum(1 for r in observaciones if not r["entreno_hoy"]),
-        "sesiones": {"cantidad": cantidad_sesiones, "por_tipo": por_tipo_sesiones},
+        "sesiones": resumen_por_estado(True),
+        "sesiones_descanso": resumen_por_estado(False),
         "observaciones": observaciones,
         "series": series,
     }

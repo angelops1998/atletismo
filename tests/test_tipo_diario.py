@@ -51,12 +51,27 @@ def test_estadisticas_separan_sesiones_conservadas_en_descanso(client, db):
     assert result["sesiones_descanso"]["por_tipo"]["no_especificada"]["carga"] == 777
     assert result["sesiones_descanso"]["por_tipo"]["trabajo_principal"]["carga"] == 555
     assert result["filas_atletas"][0]["sesiones_descanso"] == 2
+    individual = sd.resumen_diario_atleta(db, athlete.id, desde=day, hasta=day + timedelta(days=2))
+    assert individual["sesiones"]["cantidad"] == result["sesiones"]["cantidad"]
+    for tipo in ("no_especificada", "trabajo_principal"):
+        for campo in ("cantidad", "minutos", "carga"):
+            assert individual["sesiones"]["por_tipo"][tipo][campo] == result["sesiones"]["por_tipo"][tipo][campo]
+            assert individual["sesiones_descanso"]["por_tipo"][tipo][campo] == result["sesiones_descanso"]["por_tipo"][tipo][campo]
     entrar(client, teacher)
     page = client.get("/estadisticas", params={"desde": day.isoformat(), "hasta": (day + timedelta(days=2)).isoformat()})
     assert page.status_code == 200
     assert "sesiones históricas conservadas en partes marcados como descanso" in page.text
     assert "carga almacenada total 777" in page.text and "carga almacenada total 555" in page.text
     assert "carga almacenada total 999" in page.text
+    ficha = client.get(f"/atletas/{athlete.id}", params={"desde": day.isoformat(), "hasta": (day + timedelta(days=2)).isoformat()})
+    assert ficha.status_code == 200
+    assert "sesiones históricas conservadas en partes marcados como descanso" in ficha.text
+    assert "Descanso · Duración no especificada: 1 sesiones · 30 min guardados · carga almacenada total 777" in ficha.text
+    assert "Descanso · Trabajo principal: 1 sesiones · 30 min guardados · carga almacenada total 555" in ficha.text
+    assert "Duración no especificada: 1 sesiones · 30 min guardados · RPE promedio 5.0 · carga almacenada total 999" in ficha.text
+    descanso = client.get(f"/atletas/{athlete.id}", params={"desde": (day + timedelta(days=1)).isoformat(), "hasta": (day + timedelta(days=2)).isoformat()})
+    assert "No hay sesiones en partes de entrenamiento" in descanso.text
+    assert "2 sesiones históricas conservadas en partes marcados como descanso" in descanso.text
     db.expire_all()
     assert [(s.id, s.carga_sesion, s.tipo_duracion) for s in db.query(SesionEntrenamiento).order_by(SesionEntrenamiento.id)] == before
 
