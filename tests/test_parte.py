@@ -67,6 +67,21 @@ def _get_edit_token(client):
     return m.group(1) if m else None
 
 
+@pytest.fixture(autouse=True)
+def _contrato_historico_de_prueba(monkeypatch):
+    """Ejercita el contrato antiguo, incluido su alta para preparar escenarios."""
+    from app.routers import parte as router_parte
+
+    save = pd.save_daily_record
+    monkeypatch.setattr(router_parte, "_es_parte_historico", lambda parte: True)
+
+    def guardar_fixture(*args, **kwargs):
+        kwargs.pop("solo_edicion", None)
+        return save(*args, **kwargs)
+
+    monkeypatch.setattr(pd, "save_daily_record", guardar_fixture)
+
+
 @pytest.fixture
 def atleta(db):
     return crear_usuario(db, username="atleta1", full_name="Un Atleta")

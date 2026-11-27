@@ -1,3 +1,5 @@
+from alembic.runtime.migration import MigrationContext
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from .config import get_settings
@@ -54,6 +56,20 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class Base(DeclarativeBase):
     pass
+
+
+ESQUEMA_REQUERIDO = "b395c7281e4a"
+
+
+def verificar_revision_esquema(db_engine):
+    """Comprueba la revisión sin ejecutar migraciones ni modificar la base."""
+    try:
+        with db_engine.connect() as conn:
+            revisiones = MigrationContext.configure(conn).get_current_heads()
+    except SQLAlchemyError:
+        raise RuntimeError("No se pudo verificar la revisión Alembic de la base.") from None
+    if revisiones != (ESQUEMA_REQUERIDO,):
+        raise RuntimeError(f"Esquema incompatible: se requiere Alembic {ESQUEMA_REQUERIDO}.")
 
 
 def get_db():

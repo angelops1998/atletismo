@@ -4,10 +4,10 @@ from datetime import timedelta
 from app.models import ParteDiaria, SesionEntrenamiento
 from app.tiempo import hoy
 from conftest import crear_usuario, entrar
-from test_formulario_mclean import data, enabled, token
+from test_formulario_mclean import data, token
 
 
-def test_flujo_atleta_profesor_con_historico_y_mclean(client, db, enabled):
+def test_flujo_atleta_profesor_con_historico_y_mclean(client, db):
     athlete = crear_usuario(db, username="integral_atleta")
     teacher = crear_usuario(db, username="integral_profesor", role="profesor")
     ayer = hoy() - timedelta(days=1)

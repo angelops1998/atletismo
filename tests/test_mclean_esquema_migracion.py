@@ -216,3 +216,19 @@ def test_upgrade_reconstructed_full_schema_preserves_related_data(monkeypatch):
         assert conn.execute(text("SELECT tipo_duracion FROM sesiones_entrenamiento ORDER BY id")).scalars().all() == ["no_especificada"] * 2
         assert conn.execute(text("SELECT carga_sesion FROM sesiones_entrenamiento WHERE id=1")).scalar_one() == 999
     engine.dispose()
+
+def test_revision_guard_accepts_only_current_schema(db):
+    from sqlalchemy import text
+
+    from app.database import verificar_revision_esquema
+
+    with pytest.raises(RuntimeError, match="b395c7281e4a"):
+        verificar_revision_esquema(db.bind)
+    db.execute(text("CREATE TABLE alembic_version (version_num varchar(32) PRIMARY KEY)"))
+    db.execute(text("INSERT INTO alembic_version VALUES ('e8a4f670c11d')"))
+    db.commit()
+    with pytest.raises(RuntimeError, match="b395c7281e4a"):
+        verificar_revision_esquema(db.bind)
+    db.execute(text("UPDATE alembic_version SET version_num = 'b395c7281e4a'"))
+    db.commit()
+    verificar_revision_esquema(db.bind)

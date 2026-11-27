@@ -1,19 +1,12 @@
-"""New form is opt-in; HTTP tests use the in-memory DB fixture."""
+"""HTTP tests use the in-memory DB fixture."""
 import re
 from datetime import date
-
-import pytest
 
 from app.config import get_settings
 from app.models import ParteDiaria, SesionEntrenamiento
 from app.services import parte_diaria as svc
 from app.tiempo import hoy
 from conftest import con_csrf, crear_usuario, entrar
-
-
-@pytest.fixture
-def enabled(monkeypatch):
-    monkeypatch.setattr(get_settings(), "formulario_mclean_habilitado", True)
 
 
 def token(client):
@@ -34,11 +27,9 @@ def data(client, **kwargs):
     return body
 
 
-def test_disabled_by_default_and_enabled_form_texts(client, db, monkeypatch):
+def test_mclean_default_form_texts(client, db):
     athlete = crear_usuario(db, username="ui_flag")
     entrar(client, athlete)
-    assert "Escala 1 a 10" in client.get("/parte").text
-    monkeypatch.setattr(get_settings(), "formulario_mclean_habilitado", True)
     page = client.get("/parte")
     assert page.status_code == 200
     for value in ("Escala 1 a 5", "Muy recuperado", "Muy cansado", "Insomnio",
@@ -50,7 +41,7 @@ def test_disabled_by_default_and_enabled_form_texts(client, db, monkeypatch):
     assert 'name="tipo_entrenamiento_diario"' in page.text
 
 
-def test_tipo_diario_and_additional_health(client, db, enabled):
+def test_tipo_diario_and_additional_health(client, db):
     athlete = crear_usuario(db, username="ui_create")
     entrar(client, athlete)
     assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
@@ -60,7 +51,7 @@ def test_tipo_diario_and_additional_health(client, db, enabled):
 
 
 
-def test_422_preserves_input_and_rejects_bad_type(client, db, enabled):
+def test_422_preserves_input_and_rejects_bad_type(client, db):
     athlete = crear_usuario(db, username="ui_invalid")
     entrar(client, athlete)
     response = client.post("/parte", data=data(client, tipo_entrenamiento_diario="invalid", comentarios="borrador"), follow_redirects=False)
@@ -69,7 +60,7 @@ def test_422_preserves_input_and_rejects_bad_type(client, db, enabled):
 
 
 
-def test_stale_edit_conflict_preserves_committed_data(client, db, enabled):
+def test_stale_edit_conflict_preserves_committed_data(client, db):
     athlete = crear_usuario(db, username="ui_conflict")
     entrar(client, athlete)
     body = data(client)
@@ -83,7 +74,7 @@ def test_stale_edit_conflict_preserves_committed_data(client, db, enabled):
 
 
 
-def test_historical_record_keeps_original_form(client, db, enabled):
+def test_historical_record_keeps_original_form(client, db):
     athlete = crear_usuario(db, username="ui_historical")
     record = ParteDiaria(atleta_id=athlete.id, fecha=hoy(), sueno_calidad=8, fatiga=5,
         dolor_muscular=4, estres=3, animo=9, horas_sueno=8, entreno_hoy=False)
@@ -96,7 +87,7 @@ def test_historical_record_keeps_original_form(client, db, enabled):
     assert record.version_cuestionario == "historico_1_10" and record.sueno_calidad == 8
 
 
-def test_csrf_and_role_still_enforced(client, db, enabled):
+def test_csrf_and_role_still_enforced(client, db):
     athlete = crear_usuario(db, username="ui_csrf")
     entrar(client, athlete)
     assert client.post("/parte", data={}).status_code == 403
@@ -114,7 +105,7 @@ def test_csrf_and_role_still_enforced(client, db, enabled):
 
 
 
-def test_validation_error_does_not_refresh_stale_token(client, db, enabled):
+def test_validation_error_does_not_refresh_stale_token(client, db):
     athlete = crear_usuario(db, username="ui_stale_422")
     entrar(client, athlete)
     assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
@@ -125,48 +116,22 @@ def test_validation_error_does_not_refresh_stale_token(client, db, enabled):
 
 
 
-def test_existing_mclean_record_blocked_when_flag_disabled(client, db, monkeypatch):
-    athlete = crear_usuario(db, username="ui_disabled_existing")
-    record = ParteDiaria(atleta_id=athlete.id, fecha=hoy(), version_cuestionario="mclean_1_5",
-        mclean_sueno=4, mclean_fatiga=4, mclean_dolor_muscular=4, mclean_estres=4, mclean_animo=4,
-        horas_sueno=8, entreno_hoy=False)
-    db.add(record); db.commit()
-    entrar(client, athlete)
+def test_old_environment_flag_cannot_restore_legacy_creation(client, db, monkeypatch):
+    from test_parte import completo
+
     monkeypatch.setattr(get_settings(), "formulario_mclean_habilitado", False)
-    assert client.get("/parte").status_code == 503
-    db.refresh(record)
-    assert record.version_cuestionario == "mclean_1_5" and record.mclean_animo == 4
-
-
-def test_desactivar_y_restaurar_mclean_conserva_datos_y_acceso_docente(client, db, monkeypatch, enabled):
-    athlete = crear_usuario(db, username="ui_cambio_flag")
-    teacher = crear_usuario(db, username="ui_cambio_flag_profesor", role="profesor")
+    athlete = crear_usuario(db, username="ui_old_config")
     entrar(client, athlete)
-    body = data(client)
-    assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
+    assert "Escala 1 a 5" in client.get("/parte").text
+    assert client.post("/parte", data=completo(client)).status_code == 422
+    assert db.query(ParteDiaria).count() == 0
+    assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
     record = db.query(ParteDiaria).one()
-    original = (record.mclean_sueno, record.mclean_fatiga, record.mclean_dolor_muscular,
-                record.mclean_estres, record.mclean_animo, record.comentarios,
-                [(s.tipo_duracion, s.carga_sesion) for s in record.sesiones])
-    edit_token = token(client)
-    body.update(edit_state_token=edit_token, sesion_id=[str(s.id) for s in record.sesiones])
-    monkeypatch.setattr(get_settings(), "formulario_mclean_habilitado", False)
-    assert client.get("/parte").status_code == 503
-    assert client.post("/parte", data=body, follow_redirects=False).status_code == 503
-    entrar(client, teacher)
-    ficha = client.get(f"/atletas/{athlete.id}")
-    assert ficha.status_code == 200 and "Sueño 4/5" in ficha.text and "Suma 15/25" in ficha.text
-    entrar(client, athlete)
-    monkeypatch.setattr(get_settings(), "formulario_mclean_habilitado", True)
+    assert record.version_cuestionario == "mclean_1_5" and record.animo is None
     assert client.get("/parte").status_code == 200
-    db.expire_all()
-    assert (record.mclean_sueno, record.mclean_fatiga, record.mclean_dolor_muscular,
-            record.mclean_estres, record.mclean_animo, record.comentarios,
-            [(s.tipo_duracion, s.carga_sesion) for s in record.sesiones]) == original
-    assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
 
 
-def test_historical_record_can_be_edited_without_conversion(client, db, enabled):
+def test_historical_record_can_be_edited_without_conversion(client, db):
     from test_parte import completo
     athlete = crear_usuario(db, username="ui_historical_edit")
     record = ParteDiaria(atleta_id=athlete.id, fecha=hoy(), sueno_calidad=8, fatiga=5,
@@ -181,12 +146,25 @@ def test_historical_record_can_be_edited_without_conversion(client, db, enabled)
     assert record.mclean_animo is None
 
 
-def test_disabled_flag_does_not_accept_forged_mclean_submission(client, db, monkeypatch):
-    monkeypatch.setattr(get_settings(), "formulario_mclean_habilitado", False)
-    athlete = crear_usuario(db, username="ui_disabled_forged")
+def test_legacy_edit_cannot_recreate_missing_record(client, db, monkeypatch):
+    from test_parte import completo
+
+    athlete = crear_usuario(db, username="ui_legacy_race")
+    record = ParteDiaria(atleta_id=athlete.id, fecha=hoy(), sueno_calidad=8, fatiga=5,
+        dolor_muscular=4, estres=3, animo=9, horas_sueno=8, entreno_hoy=False)
+    db.add(record)
+    db.commit()
     entrar(client, athlete)
-    response = client.post("/parte", data=data(client), follow_redirects=False)
-    assert response.status_code == 422
+    body = completo(client, entreno_hoy="no", sessions="", edit_state_token=token(client))
+
+    def desaparece(session, atleta_id, fecha):
+        parte = svc.load_today(session, atleta_id, fecha)
+        session.delete(parte)
+        session.commit()
+        return None
+
+    monkeypatch.setattr(svc, "load_today_for_update", desaparece)
+    assert client.post("/parte", data=body, follow_redirects=False).status_code == 409
     assert db.query(ParteDiaria).count() == 0
 
 
@@ -194,7 +172,7 @@ def _hidden(response, name):
     return re.search(r'name="' + name + r'" value="([^"]*)"', response.text).group(1)
 
 
-def test_conflict_requires_explicit_review_before_draft_can_overwrite(client, db, enabled):
+def test_conflict_requires_explicit_review_before_draft_can_overwrite(client, db):
     athlete = crear_usuario(db, username="ui_review")
     entrar(client, athlete); body = data(client)
     assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
@@ -212,7 +190,7 @@ def test_conflict_requires_explicit_review_before_draft_can_overwrite(client, db
 
 
 
-def test_review_token_invalidated_by_further_change_and_422_keeps_tokens(client, db, enabled):
+def test_review_token_invalidated_by_further_change_and_422_keeps_tokens(client, db):
     athlete = crear_usuario(db, username="ui_review_stale")
     entrar(client, athlete); body = data(client)
     assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
@@ -232,7 +210,7 @@ def test_review_token_invalidated_by_further_change_and_422_keeps_tokens(client,
 
 
 
-def test_no_script_fallback_includes_all_conditional_blocks(client, db, enabled):
+def test_no_script_fallback_includes_all_conditional_blocks(client, db):
     athlete = crear_usuario(db, username="ui_no_script")
     entrar(client, athlete)
     response = client.get("/parte")
@@ -244,7 +222,7 @@ def test_no_script_fallback_includes_all_conditional_blocks(client, db, enabled)
     assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
 
 
-def test_422_keeps_original_edit_and_discard_tokens(client, db, enabled):
+def test_422_keeps_original_edit_and_discard_tokens(client, db):
     athlete = crear_usuario(db, username="ui_422_tokens"); entrar(client, athlete)
     assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
     page = client.get("/parte"); old_edit = _hidden(page, "edit_state_token"); old_discard = _hidden(page, "discard_token")
@@ -253,7 +231,7 @@ def test_422_keeps_original_edit_and_discard_tokens(client, db, enabled):
 
 
 
-def test_review_token_cannot_be_forged_or_reused_by_another_athlete(client, db, enabled):
+def test_review_token_cannot_be_forged_or_reused_by_another_athlete(client, db):
     a = crear_usuario(db, username="ui_review_owner")
     b = crear_usuario(db, username="ui_review_other")
     entrar(client, a)

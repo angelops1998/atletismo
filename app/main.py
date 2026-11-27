@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -14,12 +16,21 @@ from .auth import (NotAuthenticatedException, DebeCambiarPassword,
                    refrescar_token, set_auth_cookie)
 from .csrf import set_csrf_cookie, validate_csrf
 from .config import get_settings
+from .database import engine, verificar_revision_esquema
 
 # El mismo entorno que usan los routers: las páginas de error extienden base.html,
 # que necesita los globals de templates_config (static(), csrf_input…).
 from .templates_config import templates as _templates
 
+@asynccontextmanager
+async def lifespan(_app):
+    if engine.dialect.name == "postgresql":
+        verificar_revision_esquema(engine)
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title=f"{get_settings().club_nombre} — Gestión de atletas",
     version="0.1.0",
     # La app se renderiza entera en el servidor: no hay ninguna API que consumir

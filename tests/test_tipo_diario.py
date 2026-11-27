@@ -4,7 +4,7 @@ from app.models import ParteDiaria, SesionEntrenamiento
 from app.services import parte_diaria as pd, seguimiento_diario as sd
 from app.tiempo import hoy
 from conftest import crear_usuario, entrar
-from test_formulario_mclean import data, enabled, token
+from test_formulario_mclean import data, token
 
 
 def test_semana_entrenamiento_sin_medicion_no_es_cero(db):
@@ -77,7 +77,7 @@ def test_estadisticas_separan_sesiones_conservadas_en_descanso(client, db):
 
 
 @pytest.mark.parametrize("tipo", ["aerobico", "lactico", "velocidad", "fuerza"])
-def test_cuatro_tipos_sin_sesiones(client, db, enabled, tipo):
+def test_cuatro_tipos_sin_sesiones(client, db, tipo):
     athlete = crear_usuario(db, username="tipo_nuevo")
     entrar(client, athlete)
     assert client.post("/parte", data=data(client, tipo_entrenamiento_diario=tipo), follow_redirects=False).status_code == 302
@@ -85,7 +85,7 @@ def test_cuatro_tipos_sin_sesiones(client, db, enabled, tipo):
     assert record.tipo_entrenamiento_diario == tipo and not record.sesiones
 
 
-def test_creacion_edicion_y_descanso_con_servicio_docente(client, db, enabled):
+def test_creacion_edicion_y_descanso_con_servicio_docente(client, db):
     athlete = crear_usuario(db, username="tipo_atleta")
     teacher = crear_usuario(db, username="tipo_docente", role="profesor")
     entrar(client, athlete)
@@ -110,14 +110,14 @@ def test_creacion_edicion_y_descanso_con_servicio_docente(client, db, enabled):
 
 
 @pytest.mark.parametrize("tipo", ["", "invalido"])
-def test_tipo_es_obligatorio_si_entrena(client, db, enabled, tipo):
+def test_tipo_es_obligatorio_si_entrena(client, db, tipo):
     athlete = crear_usuario(db, username="tipo_invalido")
     entrar(client, athlete)
     response = client.post("/parte", data=data(client, tipo_entrenamiento_diario=tipo), follow_redirects=False)
     assert response.status_code == 422 and db.query(ParteDiaria).count() == 0
 
 
-def test_preserva_sesiones_al_editar_y_marcar_descanso(client, db, enabled):
+def test_preserva_sesiones_al_editar_y_marcar_descanso(client, db):
     athlete = crear_usuario(db, username="tipo_preservar")
     record = ParteDiaria(atleta_id=athlete.id, fecha=hoy(), version_cuestionario="mclean_1_5",
         mclean_sueno=1, mclean_fatiga=2, mclean_dolor_muscular=3, mclean_estres=4, mclean_animo=5,
@@ -139,7 +139,7 @@ def test_preserva_sesiones_al_editar_y_marcar_descanso(client, db, enabled):
     assert record.tipo_entrenamiento_diario is None
 
 
-def test_conflicto_por_cambio_de_tipo(client, db, enabled):
+def test_conflicto_por_cambio_de_tipo(client, db):
     athlete = crear_usuario(db, username="tipo_conflicto")
     entrar(client, athlete)
     body = data(client, tipo_entrenamiento_diario="aerobico")
@@ -153,7 +153,7 @@ def test_conflicto_por_cambio_de_tipo(client, db, enabled):
     assert record.tipo_entrenamiento_diario == "fuerza"
 
 
-def test_ids_ajenos_no_modifican_sesiones(client, db, enabled):
+def test_ids_ajenos_no_modifican_sesiones(client, db):
     owner = crear_usuario(db, username="tipo_dueno")
     other = crear_usuario(db, username="tipo_otro")
     record = ParteDiaria(atleta_id=owner.id, fecha=hoy(), sueno_calidad=8, fatiga=7,

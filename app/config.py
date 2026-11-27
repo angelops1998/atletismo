@@ -14,7 +14,8 @@ class Settings(BaseSettings):
     # todas las veces y terminarían no cargando el parte.
     access_token_expire_minutes: int = 60 * 24 * 60  # 60 días
     https_only: bool = False
-    formulario_mclean_habilitado: bool = False
+    # Compatibilidad con entornos anteriores. /parte ya no consulta esta opción.
+    formulario_mclean_habilitado: bool = True
 
     # Datos del club que se muestran en la página pública y en los mensajes.
     # Viven acá y no en la base porque son de la instalación, no del uso diario.

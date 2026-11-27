@@ -13,7 +13,6 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from ..config import get_settings
 from ..auth import get_current_user
 from ..database import get_db
 from ..services import bienestar, parte_diaria as pd
@@ -359,6 +358,10 @@ def _parse_mclean_form(form, parte):
     return payload, [], errors
 
 
+def _es_parte_historico(parte) -> bool:
+    return parte is not None and parte.version_cuestionario == "historico_1_10"
+
+
 @router.get("", response_class=HTMLResponse)
 async def formulario(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -367,9 +370,7 @@ async def formulario(request: Request, db: Session = Depends(get_db)):
     target_date = hoy()
     parte, edit_token, discard_token = pd.get_today_state(db, user.id, target_date)
 
-    if parte and parte.version_cuestionario == "mclean_1_5" and not get_settings().formulario_mclean_habilitado:
-        raise HTTPException(status_code=503, detail="El formulario de este parte no está disponible.")
-    if get_settings().formulario_mclean_habilitado and (parte is None or parte.version_cuestionario == "mclean_1_5"):
+    if not _es_parte_historico(parte):
         return _render_mclean(request, user, parte, edit_state_token=edit_token, discard_token=discard_token)
     return _render_form(request, user, db, parte=parte,
                        edit_state_token=edit_token, discard_token=discard_token)
@@ -386,9 +387,7 @@ async def guardar(
     target_date = hoy()
     form = await request.form()
     parte, edit_token, discard_token = pd.get_today_state(db, user.id, target_date)
-    if parte and parte.version_cuestionario == "mclean_1_5" and not get_settings().formulario_mclean_habilitado:
-        raise HTTPException(status_code=503, detail="El formulario de este parte no está disponible.")
-    if get_settings().formulario_mclean_habilitado and (parte is None or parte.version_cuestionario == "mclean_1_5"):
+    if not _es_parte_historico(parte):
         payload, delete_ids, parse_errors = _parse_mclean_form(form, parte)
         original_token = form.get("edit_state_token") or ""
         review_token = form.get("review_token") or ""
@@ -449,6 +448,7 @@ async def guardar(
         confirm_discard_sessions=_parse_bool(form.get("confirm_discard_sessions")),
         explicit_delete_session_ids=delete_ids or None,
         allow_full_session_replacement=allow_replace,
+        solo_edicion=True,
         fecha=target_date,
     )
 

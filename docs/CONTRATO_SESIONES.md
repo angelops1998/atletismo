@@ -10,4 +10,6 @@ La migración `a82d51f4c930` amplía el CHECK de tipos sin convertir filas. Su d
 
 La migración `b395c7281e4a` añade una columna nullable para el tipo diario sin inferirlo desde sesiones o planes anteriores. Su downgrade está bloqueado para preservar las clasificaciones.
 
-El formulario McLean está desactivado por defecto (`FORMULARIO_MCLEAN_HABILITADO=false`). Las vistas docentes distinguen las versiones de bienestar y las semánticas de duración; su activación sigue reservada a entornos de prueba aislados hasta una decisión expresa de puesta en producción. Con la opción desactivada, los partes McLean existentes no se editan con el formulario histórico.
+Las altas usan McLean y un único tipo diario cuando se entrena. Los partes históricos
+mantienen su cuestionario. Las vistas docentes distinguen las versiones de bienestar
+y las semánticas de duración.

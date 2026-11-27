@@ -52,11 +52,6 @@ services:
       - key: HTTPS_ONLY
         value: "true"
 
-      # La sincronización puede cambiar un valor existente: comprobar el
-      # servicio efectivo y sus consecuencias antes de aplicar el Blueprint.
-      - key: FORMULARIO_MCLEAN_HABILITADO
-        value: "false"
-
       # 60 días. La sesión es deslizante: es cuánto puede estar SIN entrar un
       # atleta antes de que le vuelva a pedir la contraseña.
       - key: ACCESS_TOKEN_EXPIRE_MINUTES

@@ -736,6 +736,7 @@ def save_daily_record(
     explicit_delete_session_ids: Optional[Iterable[int]] = None,
     allow_full_session_replacement: bool = False,
     contrato_sesiones: str = "historico",
+    solo_edicion: bool = False,
     fecha: Optional[date] = None,
     # Test-only concurrency coordination (Phase 2.2). No effect in production.
     _test_after_create_observed_missing: Any = None,
@@ -784,6 +785,10 @@ def save_daily_record(
         parte = load_today_for_update(db, atleta_id, target_fecha)
 
         if parte is None:
+            if solo_edicion:
+                db.rollback()
+                return ServiceResult(ok=False, status=STATUS_CONFLICT,
+                                     message="El parte ya no existe. Volvé a abrir el formulario.")
             if wellness["entreno_hoy"] and not principal and not sessions and contrato_sesiones != "tipo_diario":
                 raise DomainValidationError(["Agregá una sesión o la estructura del entrenamiento principal."])
             if any(session.get("id") is not None for session in sessions) or explicit_delete_ids:

@@ -66,7 +66,15 @@ Guardar la cadena en un gestor de secretos; no copiarla al `.env` de desarrollo.
 4. Solo tras la migración autorizada, si fuera necesaria, verificar por separado que el destino tenga la revisión objetivo y que el esquema sea compatible. Obtener autorización para incorporar a `main` y desplegar. Render está configurado para desplegar desde `main`; coordinar antes cualquier despliegue automático.
 
 No aplicar el Blueprint ni iniciar esta versión mientras el esquema compatible y
-las autorizaciones anteriores no estén verificados.
+las autorizaciones anteriores no estén verificados. Partiendo de
+`e8a4f670c11d`, Alembic aplica `f2a7c94b1d30` (McLean y semántica de duración),
+`a82d51f4c930` (tipos de sesión) y `b395c7281e4a` (tipo diario). Tras identificar
+el destino, comprobar el respaldo restaurado y autorizar la migración, ejecutar
+`alembic upgrade b395c7281e4a` desde el entorno administrativo y verificar con
+`alembic current`. El arranque en PostgreSQL exige esa revisión. La cuenta de la aplicación necesita
+lectura de `alembic_version`.
+McLean es obligatorio para nuevas altas. Retirar la variable obsoleta
+`FORMULARIO_MCLEAN_HABILITADO` de la configuración al desplegar.
 
 ---
 
@@ -256,9 +264,9 @@ ya está en `true`, así que no hay nada más que tocar.
 - [ ] Identidad de servicio y base verificadas sin exponer credenciales
 - [ ] Revisión inicial observada registrada y comparada con `b395c7281e4a`
 - [ ] Respaldo real consistente, protegido y restaurado con éxito en entorno aislado
-- [ ] Autorización expresa para respaldo, eventual migración, merge y despliegue; activación McLean por decisión separada
+- [ ] Autorización expresa para respaldo, eventual migración, merge y despliegue
 - [ ] Revisión objetivo y compatibilidad del esquema confirmadas **antes del primer arranque**
-- [ ] Comandos efectivos de Render revisados sin migración automática y `FORMULARIO_MCLEAN_HABILITADO=false` efectivo
+- [ ] Comandos efectivos de Render revisados sin migración automática
 - [ ] `DATABASE_URL` es la del **Session pooler**, con `?sslmode=require`
 - [ ] Supabase y Render en la misma región (`us-east` / Virginia)
 - [ ] Blueprint aplicado en Render y build en verde
