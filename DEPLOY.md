@@ -72,6 +72,21 @@ las autorizaciones anteriores no estén verificados.
 
 ## 3. El servicio web en Render
 
+### Actualización de un servicio existente
+
+No crear otro Blueprint ni otro servicio. Antes de cualquier cambio, seguir la
+[secuencia para retirar la migración automática](docs/DESPLIEGUE_SEGURO_MCLEAN.md#secuencia-para-retirar-la-migración-automática),
+verificar el servicio y su configuración efectiva y obtener las autorizaciones
+indicadas. El Blueprint de `main` puede conservar el build anterior; no
+sincronizarlo sin revisar. Mantener el despliegue automático controlado hasta
+completar el respaldo restaurable y verificar el esquema objetivo.
+
+### Creación inicial de un Blueprint
+
+Esta sección se aplica solo a una instalación nueva y autorizada. Completar
+primero los controles del paso 2; crear o aplicar el Blueprint puede iniciar un
+despliegue y no sustituye la migración autorizada ni su verificación previa.
+
 1. En Render: **New → Blueprint**.
 2. Elegí el repo `angelops1998/atletismo`. Render lee
    [`render.yaml`](render.yaml) y arma el servicio solo (plan, región, comandos
