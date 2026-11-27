@@ -322,6 +322,10 @@ async def ficha(atleta_id: int, request: Request, db: Session = Depends(get_db))
         "estres": ("Estrés", 1, 10, "escala 1–10"),
         "animo": ("Ánimo", 1, 10, "escala 1–10"),
         "horas_sueno": ("Horas de sueño", 0, 24, "horas"),
+        **{campo: (etiqueta + " · McLean", 1, 5, "escala 1–5")
+           for campo, etiqueta in seguimiento_diario.INDICADORES_MCLEAN},
+        "mclean_suma": ("Suma · McLean", 5, 25, "escala 5–25"),
+        "mclean_promedio": ("Promedio · McLean", 1, 5, "escala 1–5"),
     }
     graficos_diarios = {
         campo: grafico.linea(resumen_diario["series"][campo], minimo=minimo,

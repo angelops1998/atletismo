@@ -52,21 +52,40 @@ postgresql://postgres.abcdefghijklm:LA_PASSWORD@aws-1-us-east-1.pooler.supabase.
 > Si la contraseña tiene `@`, `/`, `:` o `#`, hay que escaparla
 > (`@` → `%40`, etc.). Lo más simple es generar una sin símbolos raros.
 
-Guardá esa cadena: la vas a pegar dos veces (paso 3 y paso 5).
+Guardar la cadena en un gestor de secretos; no copiarla al `.env` de desarrollo.
 
 ---
 
 ## 2. Subir el código
 
-```bash
-git push origin main
-```
+**Antes del primer arranque, del merge o de activar el despliegue:**
 
-Render despliega desde `main`, así que lo que no esté ahí no se publica.
+1. Verificar mediante [controles de solo lectura](docs/DESPLIEGUE_SEGURO_MCLEAN.md#verificación-de-solo-lectura) el servicio real, su rama y comandos efectivos, la identidad de Supabase y la revisión Alembic **inicial observada**. No asumir que el Blueprint de esta rama ya está aplicado.
+2. Obtener autorización para el respaldo y ensayar su restauración en un destino aislado, siguiendo el [procedimiento](docs/DESPLIEGUE_SEGURO_MCLEAN.md#respaldo-y-restauración-a-ensayar). Confirmar el inventario y las diferencias antes de continuar.
+3. Comparar la revisión inicial observada con la **revisión objetivo `b395c7281e4a`**. Si no coincide, detenerse: una migración es una operación separada que requiere destino identificado y autorización expresa. La primera revisión de la cadena del repositorio, `d61e48816ec5`, no demuestra cuál es la revisión inicial de la base real; una base nueva puede no tener aún `alembic_version`.
+4. Solo tras la migración autorizada, si fuera necesaria, verificar por separado que el destino tenga la revisión objetivo y que el esquema sea compatible. Obtener autorización para incorporar a `main` y desplegar. Render está configurado para desplegar desde `main`; coordinar antes cualquier despliegue automático.
+
+No aplicar el Blueprint ni iniciar esta versión mientras el esquema compatible y
+las autorizaciones anteriores no estén verificados.
 
 ---
 
 ## 3. El servicio web en Render
+
+### Actualización de un servicio existente
+
+No crear otro Blueprint ni otro servicio. Antes de cualquier cambio, seguir la
+[secuencia para retirar la migración automática](docs/DESPLIEGUE_SEGURO_MCLEAN.md#secuencia-para-retirar-la-migración-automática),
+verificar el servicio y su configuración efectiva y obtener las autorizaciones
+indicadas. El Blueprint de `main` puede conservar el build anterior; no
+sincronizarlo sin revisar. Mantener el despliegue automático controlado hasta
+completar el respaldo restaurable y verificar el esquema objetivo.
+
+### Creación inicial de un Blueprint
+
+Esta sección se aplica solo a una instalación nueva y autorizada. Completar
+primero los controles del paso 2; crear o aplicar el Blueprint puede iniciar un
+despliegue y no sustituye la migración autorizada ni su verificación previa.
 
 1. En Render: **New → Blueprint**.
 2. Elegí el repo `angelops1998/atletismo`. Render lee
@@ -81,49 +100,54 @@ Render despliega desde `main`, así que lo que no esté ahí no se publica.
 
    `SECRET_KEY` **no te la pide**: la genera Render sola y no la ve nadie.
 
-4. **Apply**. El primer deploy tarda unos minutos: instala las dependencias y
-   corre `alembic upgrade head` contra Supabase.
+4. **Solo después de completar el paso 2**, y con autorización para desplegar,
+   **Apply**. Puede iniciar el primer deploy inmediatamente.
+
+El build instala dependencias; **no ejecuta migraciones**. El esquema objetivo
+debe estar verificado antes de pulsar Apply o permitir el primer arranque.
 
 Cuando termine, arriba tenés la URL: `https://atletismo.onrender.com` (o con un
 sufijo si el nombre estaba tomado).
 
 ---
 
-## 4. Revisar que el esquema se haya creado
+## 4. Confirmar el esquema después del arranque
 
 En Supabase: **Table Editor**. Tienen que estar las tablas `users`,
 `partes_semanales`, `marcas`, `asistencias`, `pagos` y `alembic_version`.
 
-Si no están, mirá **Logs** en Render: el error de `alembic` sale en el log del
-build, no en el de la app.
+Esta comprobación complementa la verificación anterior; ver tablas no demuestra
+por sí solo la revisión ni las restricciones. Si hay discrepancias, detenerse.
 
 ---
 
-## 5. Apuntar tu máquina a Supabase
+## 5. Preparar una sesión administrativa separada
 
-Para crear el profesor necesitás correr un script contra la base de producción
-desde tu máquina. En el `.env` local, **comentá** tu `DATABASE_URL` de
-desarrollo y poné la de Supabase:
+No intercambiar credenciales en el `.env` de desarrollo. Antes de cualquier
+operación real, obtener autorización expresa y abrir un proceso administrativo
+aislado, desde un directorio sin `.env` y con entorno de corta duración. Cargar
+`DATABASE_URL` y `SECRET_KEY` desde un gestor de secretos por un canal protegido,
+sin imprimirlos ni pasarlos en argumentos o historial; las variables de entorno
+tienen prioridad sobre `.env` en la configuración de la aplicación.
 
-```bash
-# DATABASE_URL=postgresql://atletismo:...@127.0.0.1:5432/atletismo   # local
-DATABASE_URL=postgresql://postgres.abcdefghijklm:LA_PASSWORD@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require
-```
+En ese mismo entorno, realizar primero los [controles de identidad y revisión de
+solo lectura](docs/DESPLIEGUE_SEGURO_MCLEAN.md#verificación-de-solo-lectura),
+comparando además el proyecto Supabase mediante evidencia independiente. Si hay
+cualquier discrepancia, ausencia de permisos o duda sobre el destino, detenerse.
+No dejar accesible ese entorno para tareas de desarrollo; al terminar, cerrar el
+proceso y eliminar sus credenciales temporales de forma segura.
 
 ---
 
 ## 6. Crear el profesor
 
-```bash
-.venv/bin/python scripts/crear_profesor.py
-```
-
-Te pide nombre, usuario y contraseña. Usá una contraseña de verdad: con esa
-cuenta se ven los datos de todos los atletas.
-
-**Cuando termine, volvé a dejar tu `DATABASE_URL` local en el `.env`.** Si te
-la olvidás apuntando a Supabase, el próximo `scripts/seed.py --borrar` que
-corras para probar algo vacía la base del club.
+El alta escribe en la base y requiere autorización específica, posterior a la
+verificación del paso 5 y al esquema compatible. Ejecutar `scripts/crear_profesor.py`
+con el intérprete del proyecto desde la sesión administrativa aislada, sin cambiar
+su entorno ni el destino entre la verificación y el alta. El script **no verifica
+por sí mismo la identidad del destino**: la comprobación previa no es una garantía
+atómica; si no se puede mantener el destino verificado, no ejecutarlo. La cuenta
+accede a datos de los atletas y debe usar una contraseña segura.
 
 ---
 
@@ -184,28 +208,18 @@ scp root@IP_DEL_VPS:/root/atletismo_final.dump .
 
 ## Actualizar la app a futuro
 
-```bash
-git push origin main
-```
-
-Nada más. Render detecta el push, instala, corre `alembic upgrade head` y
-reemplaza la versión anterior. Si el build falla, la versión vieja sigue
-sirviendo: no se cae la app.
+Antes de incorporar cambios a `main`, seguir [el procedimiento de preparación](docs/DESPLIEGUE_SEGURO_MCLEAN.md).
+La migración es independiente del build y requiere verificación y autorización
+expresas. Confirmar primero que el servicio efectivo de Render tiene el build
+actualizado y no tiene comandos de predeploy o inicio que migren la base; el
+archivo de la rama por sí solo no cambia la configuración ya desplegada.
 
 ---
 
 ## Backups
 
-Supabase hace backups diarios automáticos (**Database → Backups**). En el plan
-free se retienen pocos días y **no se pueden restaurar desde el panel**, así que
-una vez por mes, o antes de cualquier cambio grande, bajate una copia vos:
-
-```bash
-pg_dump "$DATABASE_URL" -Fc -f atletismo_$(date +%Y%m%d).dump
-```
-
-Guardala fuera de la máquina (los `.dump` están en `.gitignore`: son datos de
-menores de edad y no van al repo).
+El alcance y la disponibilidad de las copias dependen del plan y de la
+configuración de Supabase. Seguir [el procedimiento de respaldo y ensayo](docs/DESPLIEGUE_SEGURO_MCLEAN.md): incluye roles, esquema, datos y recursos externos, y exige comprobar la restauración aislada. No guardar copias ni credenciales en el repositorio.
 
 > **La otra siesta:** en el plan free de Supabase, un proyecto **sin ninguna
 > consulta durante 7 días se pausa** y hay que despertarlo a mano desde el
@@ -239,11 +253,17 @@ ya está en `true`, así que no hay nada más que tocar.
 ## Checklist final
 
 - [ ] Proyecto de Supabase creado, password guardada en el gestor
+- [ ] Identidad de servicio y base verificadas sin exponer credenciales
+- [ ] Revisión inicial observada registrada y comparada con `b395c7281e4a`
+- [ ] Respaldo real consistente, protegido y restaurado con éxito en entorno aislado
+- [ ] Autorización expresa para respaldo, eventual migración, merge y despliegue; activación McLean por decisión separada
+- [ ] Revisión objetivo y compatibilidad del esquema confirmadas **antes del primer arranque**
+- [ ] Comandos efectivos de Render revisados sin migración automática y `FORMULARIO_MCLEAN_HABILITADO=false` efectivo
 - [ ] `DATABASE_URL` es la del **Session pooler**, con `?sslmode=require`
 - [ ] Supabase y Render en la misma región (`us-east` / Virginia)
 - [ ] Blueprint aplicado en Render y build en verde
 - [ ] Las tablas aparecen en el Table Editor de Supabase
 - [ ] Profesor creado y login OK en `https://…onrender.com`
-- [ ] `.env` local **devuelto** a la base de desarrollo
+- [ ] Credenciales administrativas aisladas y retiradas; `.env` de desarrollo sin modificar
 - [ ] Datos del club cargados en las variables `CLUB_*`
 - [ ] VPS dado de baja (paso 8) y dump final descargado

@@ -24,7 +24,7 @@
     <div class="kpi {{ 'kpi-mal' if resumen.sintomas else '' }}"><div class="valor">{{ resumen.sintomas }}</div><div class="etiqueta">Reportes con síntomas</div><div class="detalle">declaraciones en el período</div></div>
 </div>
 
-<div class="seccion-titulo"><h2>Bienestar diario promedio</h2></div>
+<div class="seccion-titulo"><h2>Bienestar histórico promedio · escala 1–10</h2></div>
 <div class="card"><div class="tabla-scroll"><table>
     <thead><tr><th>Indicador</th><th class="num">Promedio</th><th>Distribución de respuestas (valor: cantidad)</th></tr></thead>
     <tbody>
@@ -33,11 +33,19 @@
     </tbody>
 </table></div></div>
 
+<div class="seccion-titulo"><h2>Bienestar McLean · escala 1–5</h2></div>
+<div class="card"><div class="tabla-scroll"><table>
+<thead><tr><th>Indicador</th><th class="num">Promedio</th><th>Distribución de respuestas</th></tr></thead><tbody>
+{% for campo, etiqueta in indicadores_mclean %}<tr><th>{{ etiqueta }}</th><td class="num">{{ resumen.promedios_mclean[campo] if resumen.promedios_mclean[campo] is not none else '—' }}</td><td>{% for valor, cantidad in resumen.distribuciones_mclean[campo].items() if cantidad %}<span class="chip">{{ valor }}: {{ cantidad }}</span>{% endfor %}</td></tr>{% endfor %}
+<tr><th>Suma promedio (5–25)</th><td class="num">{{ resumen.promedios_mclean.suma if resumen.promedios_mclean.suma is not none else '—' }}</td><td></td></tr>
+<tr><th>Promedio de respuestas (1–5)</th><td class="num">{{ resumen.promedios_mclean.promedio if resumen.promedios_mclean.promedio is not none else '—' }}</td><td></td></tr>
+</tbody></table></div></div>
+
 <div class="seccion-titulo"><h2>Tendencias por fecha con reportes</h2></div>
 {% if tendencias %}
 <div class="split">
     {% for campo, etiqueta in campos_grafico.items() %}
-    <div class="card"><div class="card-head"><h3>{{ etiqueta }}</h3><span class="tenue">{{ 'horas' if campo == 'horas_sueno' else 'escala 1–10' }}</span></div><div class="card-body">{{ linea(graficos[campo]) }}<p class="apunte">Cada punto corresponde a una fecha con partes; las fechas sin partes no se imputan.</p></div></div>
+    <div class="card"><div class="card-head"><h3>{{ etiqueta }}</h3><span class="tenue">{{ 'horas' if campo == 'horas_sueno' else ('escala 5–25' if campo == 'mclean_suma' else ('escala 1–5' if campo.startswith('mclean_') else 'escala 1–10')) }}</span></div><div class="card-body">{{ linea(graficos[campo]) }}<p class="apunte">Cada punto corresponde a una fecha con partes; las fechas sin partes interrumpen la línea. La separación horizontal no representa la duración del intervalo.</p></div></div>
     {% endfor %}
 </div>
 {% else %}<div class="card"><div class="card-body"><div class="vacio">{{ icono('estadisticas') }}<p>No hay partes diarios en este período.</p></div></div></div>{% endif %}
@@ -45,10 +53,25 @@
 <div class="split">
     <div class="card"><div class="card-head"><h3>Actividad reportada</h3></div><div class="card-body">
         <p><strong>{{ resumen.entrenaron }}</strong> partes indican entrenamiento · <strong>{{ resumen.no_entrenaron }}</strong> indican que no entrenaron.</p>
-        <p><strong>{{ resumen.sesiones.cantidad }}</strong> sesiones individuales: {{ resumen.sesiones.minutos }} minutos acumulados ({{ ('%.1f'|format(resumen.sesiones.duracion_promedio)) if resumen.sesiones.duracion_promedio is not none else '—' }} min por sesión en promedio), RPE promedio {{ ('%.1f'|format(resumen.sesiones.rpe_promedio)) if resumen.sesiones.rpe_promedio is not none else '—' }}, carga almacenada total {{ resumen.sesiones.carga }} (promedio {{ ('%.1f'|format(resumen.sesiones.carga_promedio)) if resumen.sesiones.carga_promedio is not none else '—' }} por sesión).</p>
-        <p class="apunte">Los minutos y la carga provienen de SesionEntrenamiento. No se estiman a partir de la estructura planificada.</p>
-    </div></div>
-    <div class="card"><div class="card-head"><h3>Estructuras principales planificadas</h3></div><div class="card-body">
+        <p><strong>{{ resumen.sesiones.cantidad }}</strong> sesiones individuales en partes marcados como entrenamiento.</p>
+        {% for tipo, etiqueta in [('no_especificada', 'Duración no especificada'), ('trabajo_principal', 'Trabajo principal')] %}
+        {% set grupo = resumen.sesiones.por_tipo[tipo] %}
+        {% if grupo.cantidad %}<p>{{ etiqueta }}: {{ grupo.cantidad }} sesiones · {{ grupo.minutos }} minutos · RPE promedio {{ '%.1f'|format(grupo.rpe_promedio) }} · carga almacenada total {{ grupo.carga }}.</p>{% endif %}
+        {% endfor %}
+        {% if resumen.sesiones_descanso.cantidad %}
+        <p><strong>{{ resumen.sesiones_descanso.cantidad }}</strong> sesiones históricas conservadas en partes marcados como descanso; no se incluyen en los totales de entrenamiento.</p>
+        {% for tipo, etiqueta in [('no_especificada', 'Duración no especificada'), ('trabajo_principal', 'Trabajo principal')] %}
+        {% set grupo = resumen.sesiones_descanso.por_tipo[tipo] %}
+        {% if grupo.cantidad %}<p>Descanso · {{ etiqueta }}: {{ grupo.cantidad }} sesiones · {{ grupo.minutos }} minutos · carga almacenada total {{ grupo.carga }}.</p>{% endif %}
+        {% endfor %}
+        {% endif %}
+        <p class="apunte">Los minutos y cargas se agrupan por tipo de duración; se usa la carga almacenada.</p>
+        <p><strong>Tipos de entrenamiento diarios</strong></p>
+        <div class="item-chips">{% for tipo, etiqueta in [('aerobico', 'Aeróbico'), ('lactico', 'Láctico'), ('velocidad', 'Velocidad'), ('fuerza', 'Fuerza')] %}<span class="chip">{{ etiqueta }} · {{ resumen.tipos_diarios.get(tipo, 0) }}</span>{% endfor %}</div>
+        <p><strong>Sesiones realizadas por tipo (históricas)</strong></p>
+        <div class="item-chips">{% for tipo, etiqueta in [('aerobico', 'Aeróbico'), ('lactico', 'Láctico'), ('velocidad', 'Velocidad'), ('fuerza', 'Fuerza')] %}<span class="chip">{{ etiqueta }} · {{ resumen.sesiones.tipos_realizados.get(tipo, 0) }}</span>{% endfor %}</div>
+        <p class="apunte">Los tipos históricos de sesión se conservan en el total de sesiones.</p>
+        <p><strong>Estructuras principales planificadas</strong></p>
         {% if resumen.tipos %}<div class="item-chips">{% for tipo, cantidad in resumen.tipos %}<span class="chip">{{ 'Aeróbico' if tipo == 'aerobico' else 'Velocidad' }} · {{ cantidad }}</span>{% endfor %}</div>
         {% else %}<p class="tenue">No hay estructuras principales guardadas en este período.</p>{% endif %}
     </div></div>
@@ -64,7 +87,7 @@
 
 <div class="seccion-titulo"><h2>Atleta por atleta</h2></div>
 <div class="card"><div class="tabla-scroll"><table>
-    <thead><tr><th>Atleta</th><th class="num">Partes</th><th class="num">Sueño</th><th class="num">Fatiga</th><th class="num">Dolor muscular</th><th class="num">Estrés</th><th class="num">Ánimo</th><th class="num">Horas sueño</th><th>Entrenó / no</th><th>Molestias</th><th>Síntomas</th><th class="num">Sesiones</th><th class="num">Minutos</th><th class="num">RPE prom.</th><th class="num">Carga guardada</th></tr></thead>
+    <thead><tr><th>Atleta</th><th class="num">Partes</th><th class="num">Sueño 1–10</th><th class="num">Fatiga 1–10</th><th class="num">Dolor 1–10</th><th class="num">Estrés 1–10</th><th class="num">Ánimo 1–10</th><th class="num">Sueño McLean 1–5</th><th class="num">Fatiga McLean 1–5</th><th class="num">Dolor McLean 1–5</th><th class="num">Estrés McLean 1–5</th><th class="num">Ánimo McLean 1–5</th><th class="num">Suma McLean 5–25</th><th class="num">Promedio McLean 1–5</th><th class="num">Horas sueño</th><th>Entrenó / no</th><th>Molestias</th><th>Síntomas</th><th class="num">Sesiones en entrenamiento</th><th class="num">Sesiones conservadas en descanso</th><th class="num">Minutos no especificados</th><th class="num">Carga guardada no especificada</th><th class="num">Minutos trabajo principal</th><th class="num">Carga guardada trabajo principal</th></tr></thead>
     <tbody>
     {% for f in resumen.filas_atletas %}<tr>
         <td class="nombre-celda"><a href="/atletas/{{ f.atleta.id }}?desde={{ desde.isoformat() }}&hasta={{ hasta.isoformat() }}">{{ f.atleta.nombre }}</a></td>
@@ -74,16 +97,18 @@
         <td class="num">{{ f.promedios.dolor_muscular if f.promedios.dolor_muscular is not none else '—' }}</td>
         <td class="num">{{ f.promedios.estres if f.promedios.estres is not none else '—' }}</td>
         <td class="num">{{ f.promedios.animo if f.promedios.animo is not none else '—' }}</td>
+        {% for campo, etiqueta in indicadores_mclean %}<td class="num">{{ f.promedios_mclean[campo] if f.promedios_mclean[campo] is not none else '—' }}</td>{% endfor %}
+        <td class="num">{{ f.mclean_suma if f.mclean_suma is not none else '—' }}</td><td class="num">{{ f.mclean_promedio if f.mclean_promedio is not none else '—' }}</td>
         <td class="num">{{ ('%.1f'|format(f.horas_sueno)) if f.horas_sueno is not none else '—' }}</td>
         <td>{{ f.entreno }} / {{ f.no_entreno }}</td><td>{{ f.molestias }}</td><td>{{ f.sintomas }}</td>
-        <td class="num">{{ f.sesiones }}</td><td class="num">{{ f.minutos_sesion }}</td><td class="num">{{ ('%.1f'|format(f.rpe_sesion)) if f.rpe_sesion is not none else '—' }}</td><td class="num">{{ f.carga_sesion }}</td>
+        <td class="num">{{ f.sesiones }}</td><td class="num">{{ f.sesiones_descanso }}</td><td class="num">{{ f.sesiones_por_tipo.no_especificada.minutos }}</td><td class="num">{{ f.sesiones_por_tipo.no_especificada.carga }}</td><td class="num">{{ f.sesiones_por_tipo.trabajo_principal.minutos }}</td><td class="num">{{ f.sesiones_por_tipo.trabajo_principal.carga }}</td>
     </tr>{% endfor %}
     </tbody>
 </table></div></div>
 
 <div class="seccion-titulo"><h2>Resumen por día</h2></div>
 {% if tendencias %}<div class="card"><div class="tabla-scroll"><table>
-    <thead><tr><th>Fecha</th><th class="num">Partes</th><th class="num">Sueño</th><th class="num">Fatiga</th><th class="num">Dolor muscular</th><th class="num">Estrés</th><th class="num">Ánimo</th><th class="num">Entrenó / no</th><th class="num">Molestias</th><th class="num">Síntomas</th></tr></thead>
-    <tbody>{% for d in tendencias %}<tr><td>{{ d.fecha|fecha_corta }}</td><td class="num">{{ d.reportes }}/{{ resumen.atletas_activos }}</td><td class="num">{{ d.sueno_calidad if d.sueno_calidad is not none else '—' }}</td><td class="num">{{ d.fatiga if d.fatiga is not none else '—' }}</td><td class="num">{{ d.dolor_muscular if d.dolor_muscular is not none else '—' }}</td><td class="num">{{ d.estres if d.estres is not none else '—' }}</td><td class="num">{{ d.animo if d.animo is not none else '—' }}</td><td class="num">{{ d.entreno }} / {{ d.no_entreno }}</td><td class="num">{{ d.molestias }}</td><td class="num">{{ d.sintomas }}</td></tr>{% endfor %}</tbody>
+    <thead><tr><th>Fecha</th><th class="num">Partes</th><th class="num">Sueño 1–10</th><th class="num">Fatiga 1–10</th><th class="num">Dolor 1–10</th><th class="num">Estrés 1–10</th><th class="num">Ánimo 1–10</th><th class="num">Sueño McLean</th><th class="num">Fatiga McLean</th><th class="num">Dolor McLean</th><th class="num">Estrés McLean</th><th class="num">Ánimo McLean</th><th class="num">Suma McLean 5–25</th><th class="num">Promedio McLean 1–5</th><th class="num">Entrenó / no</th><th class="num">Molestias</th><th class="num">Síntomas</th></tr></thead>
+    <tbody>{% for d in tendencias %}<tr><td>{{ d.fecha|fecha_corta }}</td><td class="num">{{ d.reportes }}/{{ resumen.atletas_activos }}</td><td class="num">{{ d.sueno_calidad if d.sueno_calidad is not none else '—' }}</td><td class="num">{{ d.fatiga if d.fatiga is not none else '—' }}</td><td class="num">{{ d.dolor_muscular if d.dolor_muscular is not none else '—' }}</td><td class="num">{{ d.estres if d.estres is not none else '—' }}</td><td class="num">{{ d.animo if d.animo is not none else '—' }}</td>{% for campo, etiqueta in indicadores_mclean %}<td class="num">{{ d[campo] if d[campo] is not none else '—' }}</td>{% endfor %}<td class="num">{{ d.mclean_suma if d.mclean_suma is not none else '—' }}</td><td class="num">{{ d.mclean_promedio if d.mclean_promedio is not none else '—' }}</td><td class="num">{{ d.entreno }} / {{ d.no_entreno }}</td><td class="num">{{ d.molestias }}</td><td class="num">{{ d.sintomas }}</td></tr>{% endfor %}</tbody>
 </table></div></div>{% endif %}
 {% endblock %}

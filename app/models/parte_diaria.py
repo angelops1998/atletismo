@@ -53,6 +53,7 @@ MOLESTIA_ZONAS = (
 class ParteDiaria(Base):
     __tablename__ = "partes_diarios"
     __table_args__ = (
+        CheckConstraint("tipo_entrenamiento_diario IS NULL OR tipo_entrenamiento_diario IN ('aerobico','lactico','velocidad','fuerza')", name="ck_partes_tipo_entrenamiento_diario"),
         UniqueConstraint("atleta_id", "fecha", name="uq_parte_diaria_atleta_fecha"),
         Index("ix_partes_diarios_atleta_fecha", "atleta_id", "fecha"),
         Index("ix_partes_diarios_fecha", "fecha"),
@@ -61,6 +62,16 @@ class ParteDiaria(Base):
         CheckConstraint("dolor_muscular BETWEEN 1 AND 10", name="ck_partes_diarios_dolor_muscular"),
         CheckConstraint("estres BETWEEN 1 AND 10", name="ck_partes_diarios_estres"),
         CheckConstraint("animo BETWEEN 1 AND 10", name="ck_partes_diarios_animo"),
+        CheckConstraint(
+            "(version_cuestionario = 'historico_1_10' AND "
+            "sueno_calidad IS NOT NULL AND fatiga IS NOT NULL AND dolor_muscular IS NOT NULL AND estres IS NOT NULL AND animo IS NOT NULL AND "
+            "mclean_sueno IS NULL AND mclean_fatiga IS NULL AND mclean_dolor_muscular IS NULL AND mclean_estres IS NULL AND mclean_animo IS NULL) OR "
+            "(version_cuestionario = 'mclean_1_5' AND "
+            "sueno_calidad IS NULL AND fatiga IS NULL AND dolor_muscular IS NULL AND estres IS NULL AND animo IS NULL AND "
+            "mclean_sueno IS NOT NULL AND mclean_fatiga IS NOT NULL AND mclean_dolor_muscular IS NOT NULL AND mclean_estres IS NOT NULL AND mclean_animo IS NOT NULL AND "
+            "mclean_sueno BETWEEN 1 AND 5 AND mclean_fatiga BETWEEN 1 AND 5 AND mclean_dolor_muscular BETWEEN 1 AND 5 AND mclean_estres BETWEEN 1 AND 5 AND mclean_animo BETWEEN 1 AND 5)",
+            name="ck_partes_diarios_version_bienestar",
+        ),
         CheckConstraint(
             "horas_sueno >= 0 AND horas_sueno <= 24",
             name="ck_partes_diarios_horas_sueno",
@@ -85,12 +96,20 @@ class ParteDiaria(Base):
     # Fecha local (America/La_Paz) determinada por el servidor.
     fecha = Column(Date, nullable=False)
 
-    # Bienestar 1-10 (obligatorios).
-    sueno_calidad = Column(Integer, nullable=False)
-    fatiga = Column(Integer, nullable=False)
-    dolor_muscular = Column(Integer, nullable=False)
-    estres = Column(Integer, nullable=False)
-    animo = Column(Integer, nullable=False)
+    # La versión identifica el significado de las respuestas; no se convierten.
+    version_cuestionario = Column(String(20), nullable=False, server_default="historico_1_10")
+    mclean_sueno = Column(Integer, nullable=True)
+    mclean_fatiga = Column(Integer, nullable=True)
+    mclean_dolor_muscular = Column(Integer, nullable=True)
+    mclean_estres = Column(Integer, nullable=True)
+    mclean_animo = Column(Integer, nullable=True)
+
+    # Bienestar histórico 1-10, obligatorio para su versión.
+    sueno_calidad = Column(Integer, nullable=True)
+    fatiga = Column(Integer, nullable=True)
+    dolor_muscular = Column(Integer, nullable=True)
+    estres = Column(Integer, nullable=True)
+    animo = Column(Integer, nullable=True)
     horas_sueno = Column(Numeric(4, 1), nullable=False)
 
     # Molestias (condicionales; normalización backend en fases posteriores).
@@ -109,6 +128,7 @@ class ParteDiaria(Base):
 
     comentarios = Column(Text, nullable=True)
     entreno_hoy = Column(Boolean, nullable=False)
+    tipo_entrenamiento_diario = Column(String(16), nullable=True)
 
     enviado = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

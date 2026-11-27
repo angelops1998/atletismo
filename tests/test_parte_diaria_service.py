@@ -41,14 +41,15 @@ def _payload(**overrides):
         "sintomas_enfermedad": False,
         "entreno_hoy": False,
         "sessions": [],
-        "entrenamiento_principal": {
+    }
+    base.update(overrides)
+    if base["entreno_hoy"] and "entrenamiento_principal" not in base:
+        base["entrenamiento_principal"] = {
             "estructura_tipo": "aerobico", "series": 3, "repeticiones_por_serie": 4,
             "distancia_m": 400, "descanso_micro_min_s": 30, "descanso_micro_max_s": 60,
             "descanso_macro_min_s": 180, "descanso_macro_max_s": 300,
             "tiempo_rep_min_s": 100, "tiempo_rep_max_s": 120,
-        },
-    }
-    base.update(overrides)
+        }
     return base
 
 
@@ -298,7 +299,7 @@ class TestServiceCRUD:
         actualizado = svc.save_daily_record(
             db, atleta_id=atleta.id,
             payload=_payload(entreno_hoy=True, sessions=[], entrenamiento_principal={
-                **_payload()["entrenamiento_principal"], "distancia_m": 800,
+                **_payload(entreno_hoy=True)["entrenamiento_principal"], "distancia_m": 800,
             }),
             edit_state_token=inicial.edit_state_token, fecha=fecha,
         )

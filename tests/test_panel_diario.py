@@ -196,8 +196,9 @@ def test_ficha_tabla_graficos_y_kpis_son_diarios_y_conserva_secciones_admin(clie
                      "Calidad del sueño", "Fatiga", "Dolor muscular", "Estrés", "Ánimo",
                      "Horas de sueño", "2 partes en el período seleccionado",
                      "8.0", "4.0", "5.0", "8.0", "8.0", "1 / 1",
-                     "2 sesiones", "75 min guardados", "RPE promedio 5.0",
-                     "carga almacenada total 390", "tabla-historial-diario",
+                     "1 sesiones", "45 min guardados", "RPE promedio 6.0",
+                     "carga almacenada total 270", "30 min guardados",
+                     "carga almacenada total 120", "tabla-historial-diario",
                      "12/11/26", "14/11/26", "No entrenó", "Marcas",
                      "Cuota y pagos", "Asistencia", "Ficha"):
         assert fragment in text

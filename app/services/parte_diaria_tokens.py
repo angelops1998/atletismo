@@ -125,6 +125,7 @@ def normalize_session_for_fingerprint(session: dict[str, Any]) -> dict[str, Any]
         "orden": _norm_int(session.get("orden")),
         "tipo_entrenamiento": _norm_text(session.get("tipo_entrenamiento")),
         "duracion_min": _norm_int(session.get("duracion_min")),
+        "tipo_duracion": _norm_text(session.get("tipo_duracion")),
         "rpe": _norm_int(session.get("rpe")),
         "carga_sesion": _norm_int(session.get("carga_sesion")),
         "comentarios_entrenamiento": _norm_text(
@@ -191,6 +192,8 @@ def record_state_fingerprint(
         "atleta_id": _norm_int(parte.get("atleta_id")),
         "fecha": fecha_iso,
         "registro_id": _norm_int(parte.get("registro_id") or parte.get("id")),
+        "version_cuestionario": _norm_text(parte.get("version_cuestionario")),
+        **{name: _norm_int(parte.get(name)) for name in ("mclean_sueno", "mclean_fatiga", "mclean_dolor_muscular", "mclean_estres", "mclean_animo")},
         "sueno_calidad": _norm_int(parte.get("sueno_calidad")),
         "horas_sueno": _norm_decimal(parte.get("horas_sueno")),
         "fatiga": _norm_int(parte.get("fatiga")),
@@ -206,6 +209,7 @@ def record_state_fingerprint(
         "detalle_sintomas": _norm_text(parte.get("detalle_sintomas")),
         "comentarios": _norm_text(parte.get("comentarios")),
         "entreno_hoy": _norm_bool(parte.get("entreno_hoy")),
+        "tipo_entrenamiento_diario": _norm_text(parte.get("tipo_entrenamiento_diario")),
         "entrenamiento_principal": normalize_principal_for_fingerprint(
             parte.get("entrenamiento_principal")
         ),
@@ -295,6 +299,28 @@ def verify_edit_state_token(
     if not hmac.compare_digest(str(p.get("fingerprint", "")), current_fingerprint):
         return TokenVerification(False, payload=p, reason="fingerprint_mismatch")
     return res
+
+
+def issue_conflict_review_token(*, atleta_id: int, fecha: date, registro_id: int,
+                                fingerprint: str) -> str:
+    """Authorize review of one exact server state; never an edit token."""
+    return _issue_token({"purpose": "mclean_conflict_review", "atleta_id": int(atleta_id),
+                         "fecha": fecha.isoformat(), "registro_id": int(registro_id),
+                         "fingerprint": fingerprint}, DEFAULT_EDIT_EXP_SECONDS)
+
+
+def verify_conflict_review_token(token: str, *, atleta_id: int, fecha: date,
+                                 registro_id: int, current_fingerprint: str) -> TokenVerification:
+    result = _verify_token(token, "mclean_conflict_review")
+    if not result.ok or not result.payload:
+        return result
+    data = result.payload
+    if (data.get("atleta_id") != atleta_id or data.get("fecha") != fecha.isoformat()
+            or data.get("registro_id") != registro_id):
+        return TokenVerification(False, reason="binding_mismatch")
+    if not hmac.compare_digest(str(data.get("fingerprint", "")), current_fingerprint):
+        return TokenVerification(False, reason="fingerprint_mismatch")
+    return result
 
 
 def issue_discard_token(

@@ -13,9 +13,13 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..auth import get_current_user
 from ..database import get_db
 from ..services import bienestar, parte_diaria as pd
+from ..services.parte_diaria_tokens import (
+    issue_conflict_review_token, verify_conflict_review_token, issue_edit_state_token,
+)
 from ..templates_config import templates
 from ..tiempo import hoy, lunes_actual, lunes_de
 
@@ -62,6 +66,17 @@ DAILY_DESCRIPTORES = {
         7: "Bueno", 8: "Bueno", 9: "Excelente", 10: "Excelente",
     },
 }
+
+
+# Descriptores de la tabla McLean (página 175 del PDF facilitado).
+MCLEAN_ITEMS = [
+    ("mclean_fatiga", "Fatiga", {1: "Muy cansado", 2: "Más cansado de lo normal", 3: "Normal", 4: "Recuperado", 5: "Muy recuperado"}),
+    ("mclean_sueno", "Calidad del sueño", {1: "Insomnio", 2: "Sueño inquieto", 3: "Dificultad para conciliar el sueño", 4: "Bueno", 5: "Muy reparador"}),
+    ("mclean_dolor_muscular", "Dolor muscular", {1: "Mucho dolor", 2: "Dolor y rigidez muscular", 3: "Normal", 4: "Bien", 5: "En perfecto estado"}),
+    ("mclean_estres", "Estrés", {1: "Altamente estresado", 2: "Estresado", 3: "Normal", 4: "Relajado", 5: "Muy relajado"}),
+    ("mclean_animo", "Humor", {1: "Muy enfadado, irritado. Desanimado", 2: "Enfadado o irritado", 3: "Menos interés en otros y/o en otras actividades de lo normal", 4: "Bien en general", 5: "Muy positivo"}),
+]
+MCLEAN_TYPES = (("aerobico", "Aeróbico"), ("lactico", "Láctico"), ("velocidad", "Velocidad"), ("fuerza", "Fuerza"))
 
 
 def _athlete_required(user) -> None:
@@ -322,6 +337,28 @@ def _render_form(request, user, db, *, parte=None, form=None, errors=None,
     }, status_code=status_code)
 
 
+def _render_mclean(request, user, parte, *, form=None, errors=None, message=None,
+                   conflict=False, edit_state_token=None, discard_token=None, review_token=None, status_code=200):
+    return templates.TemplateResponse(request, "atleta/parte_mclean.html", {
+        **_base_context(user, parte=parte, form=form, errors=errors, message=message,
+                        conflict=conflict, edit_state_token=edit_state_token, discard_token=discard_token),
+        "mclean_items": MCLEAN_ITEMS, "session_types": MCLEAN_TYPES,
+        "review_token": review_token,
+    }, status_code=status_code)
+
+
+def _parse_mclean_form(form, parte):
+    errors = []
+    payload = {name: form.get(name, "") for name, _, _ in MCLEAN_ITEMS}
+    payload.update({name: form.get(name, "") for name in (
+        "horas_sueno", "molestia_zona_otra", "molestia_dolor", "afecta_entrenamiento", "detalle_sintomas", "comentarios")})
+    payload.update(version_cuestionario="mclean_1_5", molestia_zona=_parse_zonas(form.get("molestia_zona", "")))
+    for name in ("hay_molestia", "sintomas_enfermedad", "entreno_hoy"):
+        payload[name] = _parse_bool(form.get(name))
+    payload["tipo_entrenamiento_diario"] = form.get("tipo_entrenamiento_diario", "")
+    return payload, [], errors
+
+
 @router.get("", response_class=HTMLResponse)
 async def formulario(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -330,6 +367,10 @@ async def formulario(request: Request, db: Session = Depends(get_db)):
     target_date = hoy()
     parte, edit_token, discard_token = pd.get_today_state(db, user.id, target_date)
 
+    if parte and parte.version_cuestionario == "mclean_1_5" and not get_settings().formulario_mclean_habilitado:
+        raise HTTPException(status_code=503, detail="El formulario de este parte no está disponible.")
+    if get_settings().formulario_mclean_habilitado and (parte is None or parte.version_cuestionario == "mclean_1_5"):
+        return _render_mclean(request, user, parte, edit_state_token=edit_token, discard_token=discard_token)
     return _render_form(request, user, db, parte=parte,
                        edit_state_token=edit_token, discard_token=discard_token)
 
@@ -344,9 +385,51 @@ async def guardar(
 
     target_date = hoy()
     form = await request.form()
-    payload, delete_ids, allow_replace, parse_errors = _session_payload(form)
-
     parte, edit_token, discard_token = pd.get_today_state(db, user.id, target_date)
+    if parte and parte.version_cuestionario == "mclean_1_5" and not get_settings().formulario_mclean_habilitado:
+        raise HTTPException(status_code=503, detail="El formulario de este parte no está disponible.")
+    if get_settings().formulario_mclean_habilitado and (parte is None or parte.version_cuestionario == "mclean_1_5"):
+        payload, delete_ids, parse_errors = _parse_mclean_form(form, parte)
+        original_token = form.get("edit_state_token") or ""
+        review_token = form.get("review_token") or ""
+        if parse_errors:
+            return _render_mclean(request, user, parte, form=form, errors=parse_errors,
+                conflict=bool(review_token), review_token=review_token or None,
+                edit_state_token=original_token, discard_token=form.get("discard_token"), status_code=422)
+
+        effective_token = original_token
+        if review_token:
+            fingerprint = pd.current_fingerprint(parte) if parte else ""
+            verified = (verify_conflict_review_token(review_token, atleta_id=user.id, fecha=target_date,
+                        registro_id=parte.id, current_fingerprint=fingerprint) if parte else None)
+            if not verified or not verified.ok or form.get("confirmar_revision") != "si":
+                fresh_review = (issue_conflict_review_token(atleta_id=user.id, fecha=target_date,
+                                registro_id=parte.id, fingerprint=fingerprint) if parte else None)
+                return _render_mclean(request, user, parte, form=form, conflict=True,
+                    message="Revisá el registro actual y confirmá antes de guardar.",
+                    review_token=fresh_review, edit_state_token=original_token,
+                    discard_token=form.get("discard_token"), status_code=409)
+            effective_token = issue_edit_state_token(atleta_id=user.id, fecha=target_date,
+                              registro_id=parte.id, fingerprint=fingerprint)
+
+        result = pd.save_daily_record(db, atleta_id=user.id, payload=payload,
+            edit_state_token=effective_token, discard_token=form.get("discard_token"),
+            confirm_discard_sessions=_parse_bool(form.get("confirm_discard_sessions")),
+            explicit_delete_session_ids=delete_ids or None, contrato_sesiones="tipo_diario", fecha=target_date)
+        if result.ok:
+            return RedirectResponse(url="/parte?ok=1", status_code=302)
+        current = result.parte or parte
+        if result.status == pd.STATUS_CONFLICT:
+            fresh_review = (issue_conflict_review_token(atleta_id=user.id, fecha=target_date,
+                            registro_id=current.id, fingerprint=pd.current_fingerprint(current)) if current else None)
+            return _render_mclean(request, user, current, form=form, errors=result.errors,
+                message=result.message, conflict=True, review_token=fresh_review,
+                edit_state_token=original_token, discard_token=form.get("discard_token"), status_code=409)
+        return _render_mclean(request, user, current, form=form, errors=result.errors,
+            message=result.message, conflict=bool(review_token), review_token=review_token or None,
+            edit_state_token=original_token, discard_token=form.get("discard_token") or result.discard_token,
+            status_code=result.status)
+    payload, delete_ids, allow_replace, parse_errors = _session_payload(form)
     if parse_errors:
         return _render_form(
             request, user, db,

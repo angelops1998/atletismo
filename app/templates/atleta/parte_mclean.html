@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% from "_campos.html" import escala, escala_num, escala_rpe, binario %}
+{% from "_iconos.html" import icono %}
+{% block title %}Mi parte diario — {{ club.club_nombre }}{% endblock %}
+
+{% macro dato(campo) -%}
+{%- if form and form.get(campo) is not none -%}{{ form.get(campo) }}
+{%- elif parte -%}{% set v = parte|attr(campo) %}{% if v is not none %}{% if v is iterable and v is not string %}{{ v|join(', ') }}{% else %}{{ v }}{% endif %}{% endif %}
+{%- endif -%}
+{%- endmacro %}
+
+{% block barra %}
+<header class="barra">
+    <div class="barra-izq">
+        <h1>Mi parte diario</h1>
+        <div class="sub">{{ fecha|fecha_corta }}</div>
+    </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+<noscript><style>#bloque-entrenamiento, #bloque-molestia, #bloque-sintomas { display: block; }</style><p class="apunte">Sin JavaScript, todos los apartados están visibles. Completá los detalles solo cuando respondas Sí.</p></noscript>
+{% if errores %}
+<div class="aviso aviso-error" style="margin-bottom:14px">
+    <strong>Corregí los errores antes de guardar:</strong>
+    <ul>{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if conflict %}
+<div class="aviso aviso-error" style="margin-bottom:14px">
+    <strong>{{ message or "Tu información está desactualizada." }}</strong>
+    <p style="margin:6px 0 0">Los datos que cargaste no se guardaron: el registro cambió mientras lo editabas. Los valores que enviaste se mantienen en el formulario; a continuación ves el registro actual del servidor. Los datos del servidor son los autoritativos y nunca se sobresalieron con tu envío.</p>
+</div>
+
+{% if parte %}
+<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h3>Registro actual en el servidor (autoritativo)</h3></div>
+    <div class="card-body">
+        <p class="apunte">Este es el valor que prevalece hoy. Tu envío no se aplicó a este registro.</p>
+        <div class="fila-3">
+            <div class="campo"><div class="lbl">Fecha</div><div class="ayuda">{{ parte.fecha }}</div></div>
+            <div class="campo"><div class="lbl">Ánimo</div><div class="ayuda">{{ parte.mclean_animo }}</div></div>
+            <div class="campo"><div class="lbl">Fatiga</div><div class="ayuda">{{ parte.mclean_fatiga }}</div></div>
+        </div>
+        <div class="fila-3">
+            <div class="campo"><div class="lbl">Calidad del sueño</div><div class="ayuda">{{ parte.mclean_sueno }}</div></div>
+            <div class="campo"><div class="lbl">Horas de sueño</div><div class="ayuda">{{ parte.horas_sueno }}</div></div>
+            <div class="campo"><div class="lbl">Dolor muscular</div><div class="ayuda">{{ parte.mclean_dolor_muscular }}</div></div>
+        </div>
+        <div class="fila-3">
+            <div class="campo"><div class="lbl">Estrés</div><div class="ayuda">{{ parte.mclean_estres }}</div></div>
+            <div class="campo"><div class="lbl">¿Entrenó hoy?</div><div class="ayuda">{{ 'Sí' if parte.entreno_hoy else 'No' }}</div></div>
+            <div class="campo"><div class="lbl">¿Molestia?</div><div class="ayuda">{{ 'Sí' if parte.hay_molestia else 'No' }}</div></div>
+        </div>
+        <div class="campo"><div class="lbl">Molestias y enfermedad</div><div class="ayuda">
+            Zonas: {{ parte.molestia_zona|join(', ') if parte.molestia_zona else '—' }};
+            otra zona: {{ parte.molestia_zona_otra or '—' }};
+            dolor: {{ parte.molestia_dolor if parte.molestia_dolor is not none else '—' }};
+            afecta entrenamiento: {{ parte.afecta_entrenamiento if parte.afecta_entrenamiento is not none else '—' }};
+            síntomas: {{ 'Sí' if parte.sintomas_enfermedad else 'No' }};
+            detalle: {{ parte.detalle_sintomas or '—' }}.
+        </div></div>
+        <div class="campo"><div class="lbl">Tipo diario</div><div class="ayuda">{{ parte.tipo_entrenamiento_diario or "—" }}</div></div>
+        <div class="campo"><div class="lbl">Comentarios</div><div class="ayuda">{{ parte.comentarios or '—' }}</div></div>
+        <div class="campo"><div class="lbl">Sesiones históricas conservadas</div>
+            {% for s in parte.sesiones %}<div class="ayuda">Sesión {{ s.orden }} · {{ s.tipo_entrenamiento }} · {{ s.duracion_min }} min · RPE {{ s.rpe }} · {{ s.tipo_duracion }} · carga {{ s.carga_sesion }} · {{ s.comentarios_entrenamiento or '—' }}</div>
+            {% else %}<div class="ayuda">Sin sesiones guardadas.</div>{% endfor %}
+        </div>
+        {% if parte.entrenamiento_principal %}<div class="campo"><div class="lbl">Planificación guardada</div>
+            <div class="ayuda">{{ parte.entrenamiento_principal.estructura_tipo }} · {{ parte.entrenamiento_principal.series }} series · {{ parte.entrenamiento_principal.repeticiones_por_serie }} repeticiones · {{ parte.entrenamiento_principal.distancia_m }} m · descansos micro {{ parte.entrenamiento_principal.descanso_micro_min_s }}–{{ parte.entrenamiento_principal.descanso_micro_max_s }} s · descansos macro {{ parte.entrenamiento_principal.descanso_macro_min_s }}–{{ parte.entrenamiento_principal.descanso_macro_max_s }} s · tiempo por repetición {{ parte.entrenamiento_principal.tiempo_rep_min_s }}–{{ parte.entrenamiento_principal.tiempo_rep_max_s }} s</div>
+        </div>{% endif %}
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
+{% if parte and not conflict %}
+<div class="aviso aviso-info" style="margin-bottom:14px">
+    Ya cargaste hoy. Si algo cambió, corregilo y volvé a guardar.
+</div>
+{% endif %}
+
+<form method="post" action="/parte">
+    {{ csrf_input(request) }}
+    <input type="hidden" name="edit_state_token" value="{{ edit_state_token or '' }}">
+    {% if review_token %}
+    <input type="hidden" name="review_token" value="{{ review_token }}">
+    <div class="aviso aviso-info" style="margin-bottom:14px">
+        <label><input type="checkbox" name="confirmar_revision" value="si">
+            Revisé el registro actual y confirmo que quiero guardar mi borrador.</label>
+    </div>
+    {% endif %}
+    {% if discard_token %}
+    <input type="hidden" name="discard_token" value="{{ discard_token }}">
+    {% endif %}
+
+    <!-- A · Bienestar McLean -->
+    <div class="card">
+        <div class="card-head">
+            <h3>A · Bienestar general</h3>
+            <span class="chip chip-info">Escala 1 a 5</span>
+        </div>
+        <div class="card-body mclean-bienestar">
+            <p class="apunte">Contestá pensando en cómo te sentís antes de entrenar. Revisá la guía de valores de cada indicador.</p>
+            {% for campo, etiqueta, descriptores in mclean_items %}
+            <div class="campo">
+                <fieldset class="campo" style="border:0;padding:0"><legend class="lbl">{{ etiqueta }}</legend>
+                {{ escala_num(campo, dato(campo), 1, 5, requerido=true, descriptores=descriptores) }}</fieldset>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- B · Sueño -->
+    <div class="card">
+        <div class="card-head"><h3>B · Sueño</h3></div>
+        <div class="card-body">
+            <div class="campo">
+                <label for="horas_sueno">Horas de sueño por noche</label>
+                <input type="number" id="horas_sueno" name="horas_sueno" step="0.5"
+                       min="0" max="24" inputmode="decimal" required
+                       value="{{ dato('horas_sueno') }}" placeholder="7.5">
+                <p class="ayuda">Ejemplo: 7,5 o 7.5. Rango permitido: 0 a 24 horas.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- C · Entrenamiento y sesiones realizadas -->
+    <div class="card">
+        <div class="card-head"><h3>C · Entrenamiento</h3></div>
+        <div class="card-body">
+            <div class="campo"><div class="lbl">¿Entrenaste hoy?</div>
+                {% if form is not none %}{% set entreno = 'si' if form.get('entreno_hoy') == 'si' else 'no' %}
+                {% elif parte %}{% set entreno = 'si' if parte.entreno_hoy else 'no' %}
+                {% else %}{% set entreno = 'no' %}{% endif %}
+                {{ binario('entreno_hoy', entreno, abre='bloque-entrenamiento') }}
+            </div>
+            <div id="bloque-entrenamiento" class="condicional {{ 'abierto' if entreno == 'si' }}">
+                <label for="tipo_entrenamiento_diario">Tipo de entrenamiento (obligatorio si entrenaste)</label>
+                <select name="tipo_entrenamiento_diario" id="tipo_entrenamiento_diario">
+                    <option value="">Elegí una opción</option>
+                    {% for codigo, etiqueta in session_types %}<option value="{{ codigo }}" {{ 'selected' if dato('tipo_entrenamiento_diario')|trim == codigo }}>{{ etiqueta }}</option>{% endfor %}
+                </select>
+                {% if parte and parte.sesiones %}<p class="ayuda">Las sesiones registradas anteriormente se conservan.</p>{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- D · Molestias -->
+    <div class="card">
+        <div class="card-head"><h3>D · Molestias</h3></div>
+        <div class="card-body">
+            <div class="campo">
+                <div class="lbl">¿Tenés alguna molestia o dolor?</div>
+                {% if form is not none and 'hay_molestia' in form %}
+                    {% set molestia = 'si' if form.get('hay_molestia') == 'si' else 'no' %}
+                {% elif parte %}
+                    {% set molestia = 'si' if parte.hay_molestia else 'no' %}
+                {% else %}
+                    {% set molestia = 'no' %}
+                {% endif %}
+                {{ binario('hay_molestia', molestia, abre='bloque-molestia') }}
+            </div>
+
+            <div id="bloque-molestia" class="condicional {{ 'abierto' if molestia == 'si' }}">
+                <div class="campo">
+                    <label for="molestia_zona">¿En qué parte del cuerpo?</label>
+                    <input type="text" id="molestia_zona" name="molestia_zona" list="zonas-molestia"
+                           value="{{ dato('molestia_zona') }}"
+                           placeholder="Ej: rodillas, isquiotibial derecho">
+                    <datalist id="zonas-molestia">
+                        {% for z in molestia_zonas %}<option value="{{ z }}">{% endfor %}
+                    </datalist>
+                    <p class="ayuda">Valores permitidos: {{ molestia_zonas|join(', ') }}. Si elegís "otro", completá el campo de abajo.</p>
+                </div>
+                <div class="campo">
+                    <div class="lbl">¿Cuánto te duele? (1 apenas — 10 muchísimo)</div>
+                    {{ escala_num('molestia_dolor', dato('molestia_dolor'), 1, 10) }}
+                </div>
+                <div class="campo">
+                    <div class="lbl">¿Te afecta para entrenar? (0 nada — 3 mucho)</div>
+                    {{ escala_num('afecta_entrenamiento', dato('afecta_entrenamiento'), 0, 3) }}
+                </div>
+                <div class="campo">
+                    <div class="lbl">Zona "otra"</div>
+                    <input type="text" id="molestia_zona_otra" name="molestia_zona_otra"
+                           value="{{ dato('molestia_zona_otra') }}"
+                           placeholder="Especificá la otra zona (máx. 120 caracteres)">
+                    <p class="ayuda">Obligatorio solo si en "parte del cuerpo" elegís "otro"; en caso contrario el servidor lo descarta.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- E · Síntomas de enfermedad -->
+    <div class="card">
+        <div class="card-head"><h3>E · Síntomas de enfermedad</h3></div>
+        <div class="card-body">
+            <div class="campo">
+                <div class="lbl">¿Te sentiste enfermo hoy?</div>
+                {% if form is not none and 'sintomas_enfermedad' in form %}
+                    {% set sintomas = 'si' if form.get('sintomas_enfermedad') == 'si' else 'no' %}
+                {% elif parte %}
+                    {% set sintomas = 'si' if parte.sintomas_enfermedad else 'no' %}
+                {% else %}
+                    {% set sintomas = 'no' %}
+                {% endif %}
+                {{ binario('sintomas_enfermedad', sintomas, abre='bloque-sintomas') }}
+            </div>
+            <div id="bloque-sintomas" class="condicional {{ 'abierto' if sintomas == 'si' }}">
+                <div class="campo">
+                    <label for="detalle_sintomas">Detallá los síntomas (opcional)</label>
+                    <textarea id="detalle_sintomas" name="detalle_sintomas" rows="3"
+                              placeholder="Tos, fiebre, garganta…">{{ dato('detalle_sintomas') }}</textarea>
+                    <p class="ayuda">Solo si respondiste "Sí". Opcional.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Comentarios -->
+    <div class="card">
+        <div class="card-head"><h3>Algo más que el profesor deba saber</h3></div>
+        <div class="card-body">
+            <div class="campo">
+                <textarea name="comentarios" maxlength="1000"
+                          placeholder="Estudios, viajes, si dormiste mal por algo puntual…">{{ dato('comentarios') }}</textarea>
+            </div>
+        </div>
+    </div>
+
+    <div style="margin-top:16px">
+        <button type="submit" class="btn btn-primario btn-bloque btn-grande">
+            {{ icono('check') }} {{ 'Guardar los cambios' if parte else 'Enviar mi parte' }}
+        </button>
+    </div>
+</form>
+{% endblock %}

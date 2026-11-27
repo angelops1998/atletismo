@@ -1,0 +1,8 @@
+# Backend McLean y sesiones
+
+- El servicio valida y persiste explícitamente las dos versiones sin permitir mezclas ni cambios de versión en registros existentes. Calcula suma y promedio McLean bajo demanda, sin columnas redundantes.
+- Las sesiones nuevas representan minutos de trabajo principal y se calcula su carga en servidor. Para sesiones históricas no especificadas se conserva la carga; el servicio rechaza cambios de duración/RPE que no pueden interpretarse sin una decisión posterior.
+- Se permite registrar sesiones sin estructura planificada y se preserva la planificación existente incluso al confirmar descarte de sesiones. Se mantienen tokens, control de propiedad, bloqueo y protocolo de descarte.
+- Se corrigió el fixture de entrenamiento de las pruebas y se añadieron pruebas de persistencia, validación, carga, conservación y concurrencia, incluida una prueba real en PostgreSQL verificado.
+- Suite completa con PostgreSQL desechable validado: 605 aprobadas y cuatro avisos de dependencias. Tras un ajuste adicional del fixture, su prueba PostgreSQL focalizada también pasó. Sin esquemas temporales ni filas de prueba residuales; contenedor detenido y volumen conservado.
+- No se modificaron formulario ni estadísticas. El formulario actual sigue enviando la versión histórica; antes de activar McLean deben adaptarse las vistas y evitar agregaciones mixtas. No se han ejecutado operaciones en producción.

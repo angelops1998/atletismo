@@ -1,0 +1,7 @@
+# Contratos y tipos de sesiones
+
+- El servicio comprueba el estado final tras aplicar los cambios bajo bloqueo y revierte la transacción si un parte entrenado queda sin sesiones ni planificación. Se rechaza actualizar y eliminar el mismo ID.
+- El contrato histórico predeterminado crea duraciones no especificadas; el contrato explícito trabajo_principal crea sesiones de trabajo principal. No se reclasifican ni recalculan cargas históricas y no se permite al contrato histórico modificar minutos de trabajo principal.
+- La migración a82d51f4c930 amplía el CHECK con aerobico, lactico y velocidad y conserva fuerza y todos los tipos anteriores. Bloquea el downgrade si hay valores nuevos.
+- Se añadieron pruebas SQLite y PostgreSQL aislado de contratos, integridad final, tokens, propiedad, migración y concurrencia. La suite completa pasó: 628 aprobadas, cinco advertencias de dependencias; cero filas y esquemas temporales de prueba residuales en la base desechable.
+- El contenedor de PostgreSQL se detuvo con sus volúmenes conservados. No se modificaron formulario, estadísticas ni producción. Los registros creados con la versión anterior y marcados trabajo_principal requieren revisión de procedencia antes de cualquier reclasificación.

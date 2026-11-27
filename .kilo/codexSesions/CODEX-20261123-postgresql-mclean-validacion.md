@@ -1,0 +1,8 @@
+# Validación PostgreSQL de McLean
+
+- Se inició Docker Desktop y se creó PostgreSQL 16 dedicado con etiquetas, identidad de base y usuario, marca independiente y puerto ligado exclusivamente a localhost. El primer contenedor con puerto automático no superó el control existente; se creó otro con asignación explícita, sin modificar el control.
+- La prueba ejecutó la cadena completa y el flujo histórico en PostgreSQL; se comprobó conservación de datos, carga, relaciones, índices y restricciones. El proceso Alembic real se ejecutó por su API y env.py con conexión verificada y transacción externa; se verificaron alembic_version, bloqueo de downgrade y ausencia de esquemas tras rollback.
+- Se añadieron cambios persistidos entre sesiones para respuestas McLean y tipo_duracion. Los tokens antiguos se rechazaron y se preservaron los datos y sesiones.
+- La ejecución inicial confirmó que el fixture de concurrencia no creaba entrenamientos_principales y que dos casos enviaban un entrenamiento sin estructura principal. Se corrigieron ambos datos de prueba; no se alteró el código de aplicación.
+- Pruebas focalizadas PostgreSQL: 26 aprobadas. Suite completa con PostgreSQL habilitado: 571 aprobadas y cuatro avisos de dependencias. Cero esquemas temporales y cero filas de prueba en las tablas verificadas al terminar.
+- Se detuvieron los dos contenedores creados; se conservaron sus volúmenes. Las pruebas no verifican el esquema ni los datos de ninguna base externa o de producción.

@@ -1,0 +1,20 @@
+{% macro bienestar_diario(r) %}
+{% if r.version_cuestionario == 'mclean_1_5' %}
+    {% set valores = [r.mclean_sueno, r.mclean_fatiga, r.mclean_dolor_muscular, r.mclean_estres, r.mclean_animo] %}
+    <span class="chip">McLean 1–5</span>
+    <span class="chip">Sueño {{ valores[0] }}/5</span>
+    <span class="chip">Fatiga {{ valores[1] }}/5</span>
+    <span class="chip">Dolor muscular {{ valores[2] }}/5</span>
+    <span class="chip">Estrés {{ valores[3] }}/5</span>
+    <span class="chip">Ánimo {{ valores[4] }}/5</span>
+    <span class="chip">Suma {{ valores|sum }}/25</span>
+    <span class="chip">Promedio {{ '%.1f'|format((valores|sum) / 5) }}/5</span>
+{% else %}
+    <span class="chip">Histórico 1–10</span>
+    <span class="chip">Sueño {{ r.sueno_calidad }}/10</span>
+    <span class="chip">Fatiga {{ r.fatiga }}/10</span>
+    <span class="chip">Dolor muscular {{ r.dolor_muscular }}/10</span>
+    <span class="chip">Estrés {{ r.estres }}/10</span>
+    <span class="chip">Ánimo {{ r.animo }}/10</span>
+{% endif %}
+{% endmacro %}

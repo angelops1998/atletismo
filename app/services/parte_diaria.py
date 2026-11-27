@@ -214,6 +214,8 @@ def serialize_parte(parte: ParteDiaria) -> dict[str, Any]:
         "registro_id": parte.id,
         "atleta_id": parte.atleta_id,
         "fecha": parte.fecha,
+        "version_cuestionario": parte.version_cuestionario,
+        **{name: getattr(parte, name) for name in ("mclean_sueno", "mclean_fatiga", "mclean_dolor_muscular", "mclean_estres", "mclean_animo")},
         "sueno_calidad": parte.sueno_calidad,
         "horas_sueno": parte.horas_sueno,
         "fatiga": parte.fatiga,
@@ -229,6 +231,7 @@ def serialize_parte(parte: ParteDiaria) -> dict[str, Any]:
         "detalle_sintomas": parte.detalle_sintomas,
         "comentarios": parte.comentarios,
         "entreno_hoy": bool(parte.entreno_hoy),
+        "tipo_entrenamiento_diario": parte.tipo_entrenamiento_diario,
         "sessions": sesiones,
         "entrenamiento_principal": ({
             k: getattr(parte.entrenamiento_principal, k)
@@ -242,8 +245,10 @@ def serialize_parte(parte: ParteDiaria) -> dict[str, Any]:
 def validate_principal_workout(raw: Any, *, entreno_hoy: bool) -> Optional[dict[str, Any]]:
     if not entreno_hoy:
         return None
+    if raw is None:
+        return None
     if not isinstance(raw, dict):
-        raise DomainValidationError(["Completá la estructura del entrenamiento principal."])
+        raise DomainValidationError(["Estructura del entrenamiento principal inválida."])
     fields = ("series", "repeticiones_por_serie", "distancia_m", "descanso_micro_min_s",
               "descanso_micro_max_s", "descanso_macro_min_s", "descanso_macro_max_s",
               "tiempo_rep_min_s", "tiempo_rep_max_s")
@@ -276,6 +281,7 @@ def serialize_session(s: SesionEntrenamiento) -> dict[str, Any]:
         "orden": s.orden,
         "tipo_entrenamiento": s.tipo_entrenamiento,
         "duracion_min": s.duracion_min,
+        "tipo_duracion": s.tipo_duracion,
         "rpe": s.rpe,
         "carga_sesion": s.carga_sesion,
         "comentarios_entrenamiento": s.comentarios_entrenamiento,
@@ -352,25 +358,40 @@ def get_today_state(db: Session, atleta_id: int, fecha: Optional[date] = None) -
     return parte, edit_tok, discard_tok
 
 
+def resumen_mclean(parte: ParteDiaria) -> Optional[dict[str, Any]]:
+    """Calculate McLean totals on demand, without mixing historical scales."""
+    if parte.version_cuestionario != "mclean_1_5":
+        return None
+    values = [getattr(parte, name) for name in (
+        "mclean_sueno", "mclean_fatiga", "mclean_dolor_muscular", "mclean_estres", "mclean_animo"
+    )]
+    if any(not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 5 for value in values):
+        raise DomainValidationError(["El parte McLean está incompleto o contiene valores inválidos."])
+    total = sum(values)
+    return {"suma": total, "promedio": total / len(values)}
+
+
 def carga_sesion(duracion_min: int, rpe: int) -> int:
     return int(duracion_min) * int(rpe)
 
 
-def carga_diaria(parte: Optional[ParteDiaria]) -> int:
-    """Daily load for a reported record. Missing record is NOT zero (handled by caller)."""
+def carga_diaria(parte: Optional[ParteDiaria]) -> Optional[int]:
+    """Carga almacenada, o None si falta el parte o no se midió el entrenamiento."""
     if not parte:
-        return 0
+        return None
     if not parte.entreno_hoy:
         return 0
+    if not parte.sesiones:
+        return None
     return sum(int(s.carga_sesion or 0) for s in (parte.sesiones or []))
 
 
 @dataclass
 class WeeklyAggregation:
-    carga_semanal: int
+    carga_semanal: Optional[int]
     dias_reportados: int
     dias_con_entreno: int
-    cargas_diarias: dict[str, Optional[int]]  # iso date -> carga or None if missing
+    cargas_diarias: dict[str, Optional[int]]  # None: sin parte o entrenamiento sin medición
 
 
 def aggregate_week_reported(
@@ -398,11 +419,14 @@ def aggregate_week_reported(
             continue
         cd = carga_diaria(r)
         cargas[d.isoformat()] = cd
-        total += cd
-        if r.entreno_hoy and (r.sesiones or []):
+        if cd is None:
+            total = None
+        elif total is not None:
+            total += cd
+        if r.entreno_hoy:
             dias_entreno += 1
     return WeeklyAggregation(
-        carga_semanal=total,
+        carga_semanal=total if by_fecha else None,
         dias_reportados=len(by_fecha),
         dias_con_entreno=dias_entreno,
         cargas_diarias=cargas,
@@ -419,11 +443,17 @@ def validate_and_normalize_wellness(data: dict[str, Any]) -> dict[str, Any]:
         except DomainValidationError as e:
             errors.extend(e.errors)
 
-    req_int("sueno_calidad", 1, 10)
-    req_int("fatiga", 1, 10)
-    req_int("dolor_muscular", 1, 10)
-    req_int("estres", 1, 10)
-    req_int("animo", 1, 10)
+    legacy_fields = ("sueno_calidad", "fatiga", "dolor_muscular", "estres", "animo")
+    mclean_fields = ("mclean_sueno", "mclean_fatiga", "mclean_dolor_muscular", "mclean_estres", "mclean_animo")
+    version = data.get("version_cuestionario", "historico_1_10")
+    if version not in ("historico_1_10", "mclean_1_5"):
+        raise DomainValidationError(["Versión del cuestionario inválida."])
+    out["version_cuestionario"] = version
+    selected, other, maximum = (mclean_fields, legacy_fields, 5) if version == "mclean_1_5" else (legacy_fields, mclean_fields, 10)
+    for name in selected:
+        req_int(name, 1, maximum)
+    if any(data.get(name) not in (None, "") for name in other):
+        errors.append("No se pueden mezclar respuestas de distintas versiones.")
 
     try:
         out["horas_sueno"] = _to_decimal(
@@ -574,6 +604,7 @@ def _apply_sessions(
     *,
     allow_delete_omitted: bool = False,
     explicit_delete_ids: Optional[set[int]] = None,
+    contrato_sesiones: str = "historico",
 ) -> None:
     """Apply explicit session operations. Default: no implicit delete by omission."""
     explicit_delete_ids = explicit_delete_ids or set()
@@ -584,6 +615,9 @@ def _apply_sessions(
     for ref_id in desired_ids | explicit_delete_ids:
         if ref_id not in current_by_id:
             raise DomainValidationError([f"Sesión {ref_id} no pertenece al registro actual."])
+
+    if desired_ids & explicit_delete_ids:
+        raise DomainValidationError(["Una sesión no puede actualizarse y eliminarse simultáneamente."])
 
     # Deletes: explicit only, unless validated full replacement mode.
     if allow_delete_omitted:
@@ -609,9 +643,18 @@ def _apply_sessions(
             obj = current_by_id[sid]
             obj.orden = ds["orden"]
             obj.tipo_entrenamiento = ds["tipo_entrenamiento"]
-            obj.duracion_min = ds["duracion_min"]
-            obj.rpe = ds["rpe"]
-            obj.carga_sesion = ds["carga_sesion"]  # authoritative recompute
+            if obj.tipo_duracion == "no_especificada":
+                if obj.duracion_min != ds["duracion_min"] or obj.rpe != ds["rpe"]:
+                    raise DomainValidationError(["No se pueden modificar duración o RPE de una sesión histórica sin semántica especificada."])
+            else:
+                if contrato_sesiones != "trabajo_principal" and (
+                    obj.duracion_min != ds["duracion_min"] or obj.rpe != ds["rpe"]
+                ):
+                    raise DomainValidationError(["La edición de minutos de trabajo principal requiere el contrato correspondiente."])
+                if contrato_sesiones == "trabajo_principal":
+                    obj.duracion_min = ds["duracion_min"]
+                    obj.rpe = ds["rpe"]
+                    obj.carga_sesion = ds["carga_sesion"]
             obj.comentarios_entrenamiento = ds["comentarios_entrenamiento"]
         elif sid is None:
             parte.sesiones.append(
@@ -619,6 +662,7 @@ def _apply_sessions(
                     orden=ds["orden"],
                     tipo_entrenamiento=ds["tipo_entrenamiento"],
                     duracion_min=ds["duracion_min"],
+                    tipo_duracion=("trabajo_principal" if contrato_sesiones == "trabajo_principal" else "no_especificada"),
                     rpe=ds["rpe"],
                     carga_sesion=ds["carga_sesion"],
                     comentarios_entrenamiento=ds["comentarios_entrenamiento"],
@@ -691,6 +735,7 @@ def save_daily_record(
     confirm_discard_sessions: bool = False,
     explicit_delete_session_ids: Optional[Iterable[int]] = None,
     allow_full_session_replacement: bool = False,
+    contrato_sesiones: str = "historico",
     fecha: Optional[date] = None,
     # Test-only concurrency coordination (Phase 2.2). No effect in production.
     _test_after_create_observed_missing: Any = None,
@@ -710,14 +755,21 @@ def save_daily_record(
     explicit_delete_ids = {int(x) for x in (explicit_delete_session_ids or [])}
 
     try:
+        if contrato_sesiones not in ("historico", "trabajo_principal", "tipo_diario"):
+            raise DomainValidationError(["Contrato de sesiones inválido."])
         wellness = validate_and_normalize_wellness(payload)
+        if contrato_sesiones == "tipo_diario":
+            tipo = payload.get("tipo_entrenamiento_diario")
+            if wellness["entreno_hoy"] and tipo not in ("aerobico", "lactico", "velocidad", "fuerza"):
+                raise DomainValidationError(["Elegí un tipo de entrenamiento válido."])
+            wellness["tipo_entrenamiento_diario"] = tipo if wellness["entreno_hoy"] else None
+            if payload.get("sessions") or explicit_delete_ids:
+                raise DomainValidationError(["No se pueden modificar sesiones históricas."])
         sessions = validate_and_normalize_sessions(
             payload.get("sessions"),
             # The structured principal workout is independent from legacy
             # individual sessions. New /parte submissions may have no session rows.
-            entreno_hoy=(wellness["entreno_hoy"] and (
-                "entrenamiento_principal" not in payload or bool(payload.get("sessions"))
-            )),
+            entreno_hoy=bool(wellness["entreno_hoy"] and payload.get("sessions")),
         )
         principal = validate_principal_workout(
             payload.get("entrenamiento_principal"), entreno_hoy=wellness["entreno_hoy"]
@@ -732,6 +784,10 @@ def save_daily_record(
         parte = load_today_for_update(db, atleta_id, target_fecha)
 
         if parte is None:
+            if wellness["entreno_hoy"] and not principal and not sessions and contrato_sesiones != "tipo_diario":
+                raise DomainValidationError(["Agregá una sesión o la estructura del entrenamiento principal."])
+            if any(session.get("id") is not None for session in sessions) or explicit_delete_ids:
+                raise DomainValidationError(["Una sesión existente no pertenece a un parte nuevo."])
             # Create path
             create_attempted = True
             if callable(_test_after_create_observed_missing):
@@ -753,6 +809,7 @@ def save_daily_record(
                             orden=ds["orden"],
                             tipo_entrenamiento=ds["tipo_entrenamiento"],
                             duracion_min=ds["duracion_min"],
+                            tipo_duracion=("trabajo_principal" if contrato_sesiones == "trabajo_principal" else "no_especificada"),
                             rpe=ds["rpe"],
                             carga_sesion=ds["carga_sesion"],
                             comentarios_entrenamiento=ds["comentarios_entrenamiento"],
@@ -798,6 +855,19 @@ def save_daily_record(
                 stale=True,
             )
 
+        if wellness["version_cuestionario"] != parte.version_cuestionario:
+            raise DomainValidationError(["No se puede cambiar la versión de un parte existente."])
+        if contrato_sesiones == "tipo_diario":
+            _apply_wellness(parte, wellness)
+            db.commit()
+            db.refresh(parte)
+            edit_tok2, discard_tok2 = _fresh_tokens(parte)
+            return ServiceResult(ok=True, status=STATUS_OK, message="Registro diario actualizado.",
+                parte=parte, edit_state_token=edit_tok2, discard_token=discard_tok2,
+                current_fingerprint=current_fingerprint(parte))
+        if wellness["entreno_hoy"] and not principal and not sessions and not parte.sesiones and not parte.entrenamiento_principal:
+            raise DomainValidationError(["Agregá una sesión o la estructura del entrenamiento principal."])
+
         has_existing_sessions = bool(parte.sesiones)
         turning_off_training = bool(parte.entreno_hoy) and not bool(wellness["entreno_hoy"])
         if turning_off_training and has_existing_sessions:
@@ -841,7 +911,6 @@ def save_daily_record(
                 db.delete(s)
             parte.entreno_hoy = False
             _apply_wellness(parte, {**wellness, "entreno_hoy": False})
-            parte.entrenamiento_principal = None
             db.commit()
             db.refresh(parte)
             edit_tok2, discard_tok2 = _fresh_tokens(parte)
@@ -873,8 +942,6 @@ def save_daily_record(
             else:
                 for key, value in principal.items():
                     setattr(parte.entrenamiento_principal, key, value)
-        else:
-            parte.entrenamiento_principal = None
         if wellness["entreno_hoy"]:
             _apply_sessions(
                 db,
@@ -882,8 +949,14 @@ def save_daily_record(
                 sessions,
                 allow_delete_omitted=allow_full_session_replacement,
                 explicit_delete_ids=explicit_delete_ids,
+                contrato_sesiones=contrato_sesiones,
             )
             parte.entreno_hoy = True
+            remaining = db.query(SesionEntrenamiento.id).filter(
+                SesionEntrenamiento.parte_diaria_id == parte.id
+            ).first()
+            if not remaining and not parte.entrenamiento_principal:
+                raise DomainValidationError(["Agregá una sesión o conservá una planificación antes de guardar entrenamiento."])
         else:
             # entreno_hoy false and no discard-needed case (no existing sessions)
             for s in list(parte.sesiones or []):
@@ -1041,6 +1114,7 @@ __all__ = [
     "serialize_session",
     "current_fingerprint",
     "current_session_fingerprint",
+    "resumen_mclean",
     "carga_sesion",
     "carga_diaria",
     "aggregate_week_reported",
