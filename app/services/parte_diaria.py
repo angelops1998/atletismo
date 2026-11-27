@@ -231,6 +231,7 @@ def serialize_parte(parte: ParteDiaria) -> dict[str, Any]:
         "detalle_sintomas": parte.detalle_sintomas,
         "comentarios": parte.comentarios,
         "entreno_hoy": bool(parte.entreno_hoy),
+        "tipo_entrenamiento_diario": parte.tipo_entrenamiento_diario,
         "sessions": sesiones,
         "entrenamiento_principal": ({
             k: getattr(parte.entrenamiento_principal, k)
@@ -749,9 +750,16 @@ def save_daily_record(
     explicit_delete_ids = {int(x) for x in (explicit_delete_session_ids or [])}
 
     try:
-        if contrato_sesiones not in ("historico", "trabajo_principal"):
+        if contrato_sesiones not in ("historico", "trabajo_principal", "tipo_diario"):
             raise DomainValidationError(["Contrato de sesiones inválido."])
         wellness = validate_and_normalize_wellness(payload)
+        if contrato_sesiones == "tipo_diario":
+            tipo = payload.get("tipo_entrenamiento_diario")
+            if wellness["entreno_hoy"] and tipo not in ("aerobico", "lactico", "velocidad", "fuerza"):
+                raise DomainValidationError(["Elegí un tipo de entrenamiento válido."])
+            wellness["tipo_entrenamiento_diario"] = tipo if wellness["entreno_hoy"] else None
+            if payload.get("sessions") or explicit_delete_ids:
+                raise DomainValidationError(["No se pueden modificar sesiones históricas."])
         sessions = validate_and_normalize_sessions(
             payload.get("sessions"),
             # The structured principal workout is independent from legacy
@@ -771,7 +779,7 @@ def save_daily_record(
         parte = load_today_for_update(db, atleta_id, target_fecha)
 
         if parte is None:
-            if wellness["entreno_hoy"] and not principal and not sessions:
+            if wellness["entreno_hoy"] and not principal and not sessions and contrato_sesiones != "tipo_diario":
                 raise DomainValidationError(["Agregá una sesión o la estructura del entrenamiento principal."])
             if any(session.get("id") is not None for session in sessions) or explicit_delete_ids:
                 raise DomainValidationError(["Una sesión existente no pertenece a un parte nuevo."])
@@ -844,6 +852,14 @@ def save_daily_record(
 
         if wellness["version_cuestionario"] != parte.version_cuestionario:
             raise DomainValidationError(["No se puede cambiar la versión de un parte existente."])
+        if contrato_sesiones == "tipo_diario":
+            _apply_wellness(parte, wellness)
+            db.commit()
+            db.refresh(parte)
+            edit_tok2, discard_tok2 = _fresh_tokens(parte)
+            return ServiceResult(ok=True, status=STATUS_OK, message="Registro diario actualizado.",
+                parte=parte, edit_state_token=edit_tok2, discard_token=discard_tok2,
+                current_fingerprint=current_fingerprint(parte))
         if wellness["entreno_hoy"] and not principal and not sessions and not parte.sesiones and not parte.entrenamiento_principal:
             raise DomainValidationError(["Agregá una sesión o la estructura del entrenamiento principal."])
 

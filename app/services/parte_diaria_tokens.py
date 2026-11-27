@@ -209,6 +209,7 @@ def record_state_fingerprint(
         "detalle_sintomas": _norm_text(parte.get("detalle_sintomas")),
         "comentarios": _norm_text(parte.get("comentarios")),
         "entreno_hoy": _norm_bool(parte.get("entreno_hoy")),
+        "tipo_entrenamiento_diario": _norm_text(parte.get("tipo_entrenamiento_diario")),
         "entrenamiento_principal": normalize_principal_for_fingerprint(
             parte.get("entrenamiento_principal")
         ),

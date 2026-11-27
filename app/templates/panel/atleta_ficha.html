@@ -104,7 +104,7 @@
         {% set nombre = ('mclean_' ~ campo) if r.version_cuestionario == 'mclean_1_5' else ('sueno_calidad' if campo == 'sueno' else campo) %}
         <td class="num">{{ r|attr(nombre) if r|attr(nombre) is not none else '—' }}</td>{% endfor %}
         <td class="num">{{ ('%.1f'|format(r.horas_sueno)) if r.horas_sueno is not none else '—' }}</td>
-        <td>{% if not r.entreno_hoy %}No entrenó{% elif r.entrenamiento_principal %}{{ 'Aeróbico' if r.entrenamiento_principal.estructura_tipo == 'aerobico' else 'Velocidad' }} · {{ r.entrenamiento_principal.series }}×{{ r.entrenamiento_principal.repeticiones_por_serie }}×{{ r.entrenamiento_principal.distancia_m }} m{% else %}Entrenó{% endif %}</td>
+        <td>{% if not r.entreno_hoy %}No entrenó{% elif r.tipo_entrenamiento_diario %}{{ dict(aerobico='Aeróbico', lactico='Láctico', velocidad='Velocidad', fuerza='Fuerza')[r.tipo_entrenamiento_diario] }} · tipo diario{% elif r.entrenamiento_principal %}{{ 'Aeróbico' if r.entrenamiento_principal.estructura_tipo == 'aerobico' else 'Velocidad' }} · {{ r.entrenamiento_principal.series }}×{{ r.entrenamiento_principal.repeticiones_por_serie }}×{{ r.entrenamiento_principal.distancia_m }} m{% else %}Entrenó{% endif %}</td>
         <td class="num">{{ r.sesiones|length }}</td>
         <td>{% if r.hay_molestia %}<span class="chip chip-mal">Sí · {{ r.molestia_dolor or '—' }}/10</span>{% else %}No{% endif %}</td>
         <td>{% if r.sintomas_enfermedad %}<span class="chip chip-atencion">Sí</span>{% else %}No{% endif %}</td>
@@ -127,6 +127,7 @@
                 <span class="chip">Horas de sueño: {{ '%.1f'|format(r.horas_sueno) }}</span>
             </div>
 
+            {% if r.tipo_entrenamiento_diario %}<p>Tipo diario: {{ dict(aerobico='Aeróbico', lactico='Láctico', velocidad='Velocidad', fuerza='Fuerza')[r.tipo_entrenamiento_diario] }}</p>{% endif %}
             <div class="seccion-titulo"><h3>Entrenamiento principal planificado</h3></div>
             {% if r.entrenamiento_principal %}
             {% set p = r.entrenamiento_principal %}

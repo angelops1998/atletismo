@@ -313,6 +313,7 @@ def resumen_reportes(reportes: list[ParteDiaria], atletas: list[User], desde: da
         "no_entrenaron": sum(1 for r in reportes if not r.entreno_hoy),
         "zonas": zonas.most_common(),
         "tipos": sorted(tipos.items()),
+        "tipos_diarios": Counter(r.tipo_entrenamiento_diario for r in reportes if r.tipo_entrenamiento_diario),
         "sesiones": {"cantidad": len(sesiones), "por_tipo": resumen_sesiones(sesiones),
                      "tipos_realizados": Counter(s.tipo_entrenamiento for s in sesiones)},
         "tendencia": tendencia,

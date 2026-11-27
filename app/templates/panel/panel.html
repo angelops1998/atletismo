@@ -109,7 +109,7 @@
         <div class="item-txt"><div class="item-nombre">{{ atletas_por_id[r.atleta_id].nombre }}</div>
             <div class="item-chips">{{ bienestar_diario(r) }}</div>
             <div class="item-sub">
-                {% if not r.entreno_hoy %}No entrenó{% elif r.entrenamiento_principal %}
+                {% if not r.entreno_hoy %}No entrenó{% elif r.tipo_entrenamiento_diario %}{{ dict(aerobico='Aeróbico', lactico='Láctico', velocidad='Velocidad', fuerza='Fuerza')[r.tipo_entrenamiento_diario] }} · tipo diario{% elif r.entrenamiento_principal %}
                     {{ r.entrenamiento_principal.estructura_tipo|capitalize }} · {{ r.entrenamiento_principal.series }} × {{ r.entrenamiento_principal.repeticiones_por_serie }} × {{ r.entrenamiento_principal.distancia_m }} m
                 {% else %}Entrenó · sin estructura principal guardada{% endif %}
             </div>

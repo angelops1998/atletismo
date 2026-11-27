@@ -62,7 +62,7 @@ Guardar la cadena en un gestor de secretos; no copiarla al `.env` de desarrollo.
 
 1. Verificar mediante [controles de solo lectura](docs/DESPLIEGUE_SEGURO_MCLEAN.md#verificación-de-solo-lectura) el servicio real, su rama y comandos efectivos, la identidad de Supabase y la revisión Alembic **inicial observada**. No asumir que el Blueprint de esta rama ya está aplicado.
 2. Obtener autorización para el respaldo y ensayar su restauración en un destino aislado, siguiendo el [procedimiento](docs/DESPLIEGUE_SEGURO_MCLEAN.md#respaldo-y-restauración-a-ensayar). Confirmar el inventario y las diferencias antes de continuar.
-3. Comparar la revisión inicial observada con la **revisión objetivo `a82d51f4c930`**. Si no coincide, detenerse: una migración es una operación separada que requiere destino identificado y autorización expresa. La primera revisión de la cadena del repositorio, `d61e48816ec5`, no demuestra cuál es la revisión inicial de la base real; una base nueva puede no tener aún `alembic_version`.
+3. Comparar la revisión inicial observada con la **revisión objetivo `b395c7281e4a`**. Si no coincide, detenerse: una migración es una operación separada que requiere destino identificado y autorización expresa. La primera revisión de la cadena del repositorio, `d61e48816ec5`, no demuestra cuál es la revisión inicial de la base real; una base nueva puede no tener aún `alembic_version`.
 4. Solo tras la migración autorizada, si fuera necesaria, verificar por separado que el destino tenga la revisión objetivo y que el esquema sea compatible. Obtener autorización para incorporar a `main` y desplegar. Render está configurado para desplegar desde `main`; coordinar antes cualquier despliegue automático.
 
 No aplicar el Blueprint ni iniciar esta versión mientras el esquema compatible y
@@ -254,7 +254,7 @@ ya está en `true`, así que no hay nada más que tocar.
 
 - [ ] Proyecto de Supabase creado, password guardada en el gestor
 - [ ] Identidad de servicio y base verificadas sin exponer credenciales
-- [ ] Revisión inicial observada registrada y comparada con `a82d51f4c930`
+- [ ] Revisión inicial observada registrada y comparada con `b395c7281e4a`
 - [ ] Respaldo real consistente, protegido y restaurado con éxito en entorno aislado
 - [ ] Autorización expresa para respaldo, eventual migración, merge y despliegue; activación McLean por decisión separada
 - [ ] Revisión objetivo y compatibilidad del esquema confirmadas **antes del primer arranque**

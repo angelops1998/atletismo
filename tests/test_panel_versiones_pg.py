@@ -99,7 +99,7 @@ def test_pg_migrado_tipos_realizados_planificacion_y_periodo_mixto(isolated_conn
     config = Config(str(root / "alembic.ini"))
     config.set_main_option("script_location", str(root / "alembic"))
     command.upgrade(config, "head")
-    assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "a82d51f4c930"
+    assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "b395c7281e4a"
 
     day = date(2026, 11, 1)
     with Session(bind=conn, join_transaction_mode="create_savepoint") as db:

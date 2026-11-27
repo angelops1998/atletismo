@@ -61,8 +61,9 @@
             síntomas: {{ 'Sí' if parte.sintomas_enfermedad else 'No' }};
             detalle: {{ parte.detalle_sintomas or '—' }}.
         </div></div>
+        <div class="campo"><div class="lbl">Tipo diario</div><div class="ayuda">{{ parte.tipo_entrenamiento_diario or "—" }}</div></div>
         <div class="campo"><div class="lbl">Comentarios</div><div class="ayuda">{{ parte.comentarios or '—' }}</div></div>
-        <div class="campo"><div class="lbl">Sesiones guardadas</div>
+        <div class="campo"><div class="lbl">Sesiones históricas conservadas</div>
             {% for s in parte.sesiones %}<div class="ayuda">Sesión {{ s.orden }} · {{ s.tipo_entrenamiento }} · {{ s.duracion_min }} min · RPE {{ s.rpe }} · {{ s.tipo_duracion }} · carga {{ s.carga_sesion }} · {{ s.comentarios_entrenamiento or '—' }}</div>
             {% else %}<div class="ayuda">Sin sesiones guardadas.</div>{% endfor %}
         </div>
@@ -136,35 +137,12 @@
                 {{ binario('entreno_hoy', entreno, abre='bloque-entrenamiento') }}
             </div>
             <div id="bloque-entrenamiento" class="condicional {{ 'abierto' if entreno == 'si' }}">
-                <h4>Sesiones realizadas</h4>
-                <p class="ayuda">Registrá el RPE y los minutos de trabajo principal de cada sesión. Podés añadir hasta tres sesiones por guardado.</p>
-                {% for row in rows %}
-                <fieldset class="campo" style="margin-bottom:16px"><legend>Sesión {{ loop.index }}</legend>
-                    <input type="hidden" name="sesion_id" value="{{ row.id }}">
-                    <label for="sesion_tipo_{{ loop.index }}">Tipo de entrenamiento</label>
-                    <select name="sesion_tipo" id="sesion_tipo_{{ loop.index }}">
-                        <option value="">Elegí una opción</option>
-                        {% if row.tipo and row.tipo not in session_types|map(attribute=0)|list %}
-                        <option value="{{ row.tipo }}" selected>{{ row.tipo }} (registrado anteriormente)</option>
-                        {% endif %}
-                        {% for codigo, etiqueta in session_types %}<option value="{{ codigo }}" {{ 'selected' if row.tipo == codigo }}>{{ etiqueta }}</option>{% endfor %}
-                    </select>
-                    <label for="sesion_min_{{ loop.index }}">Minutos de trabajo principal</label>
-                    <input type="number" name="sesion_minutos" id="sesion_min_{{ loop.index }}" min="1" max="1000000" inputmode="numeric" value="{{ row.minutos }}">
-                    <label for="sesion_rpe_{{ loop.index }}">RPE (1–10)</label>
-                    <input type="number" name="sesion_rpe" id="sesion_rpe_{{ loop.index }}" min="1" max="10" inputmode="numeric" value="{{ row.rpe }}">
-                    {% if row.id %}<label><input type="checkbox" name="delete_session_ids" value="{{ row.id }}" {{ 'checked' if form and row.id in form.getlist('delete_session_ids') }}> Confirmo eliminar esta sesión al guardar</label>{% endif %}
-                </fieldset>
-                {% endfor %}
-                {% if historical_sessions %}
-                <h4>Sesiones anteriores</h4>
-                <p class="ayuda">Su duración no está identificada como trabajo principal. Sus valores se conservan.</p>
-                {% for session in historical_sessions %}
-                <div class="campo">{{ session.tipo_entrenamiento }} · {{ session.duracion_min }} min · RPE {{ session.rpe }} · carga {{ session.carga_sesion }}
-                    <label><input type="checkbox" name="delete_session_ids" value="{{ session.id }}" {{ 'checked' if form and session.id|string in form.getlist('delete_session_ids') }}> Confirmo eliminar esta sesión al guardar</label>
-                </div>
-                {% endfor %}
-                {% endif %}
+                <label for="tipo_entrenamiento_diario">Tipo de entrenamiento (obligatorio si entrenaste)</label>
+                <select name="tipo_entrenamiento_diario" id="tipo_entrenamiento_diario">
+                    <option value="">Elegí una opción</option>
+                    {% for codigo, etiqueta in session_types %}<option value="{{ codigo }}" {{ 'selected' if dato('tipo_entrenamiento_diario')|trim == codigo }}>{{ etiqueta }}</option>{% endfor %}
+                </select>
+                {% if parte and parte.sesiones %}<p class="ayuda">Las sesiones registradas anteriormente se conservan.</p>{% endif %}
             </div>
         </div>
     </div>
@@ -240,20 +218,6 @@
             </div>
         </div>
     </div>
-
-    <!-- Descarte de sesiones (solo cuando el servidor pide confirmación) -->
-    {% if discard_token and form and form.get('entreno_hoy') == 'no' %}
-    <div class="card">
-        <div class="card-head"><h3>Descarte de sesiones</h3></div>
-        <div class="card-body">
-            <p class="apunte">Tenés sesiones guardadas y marcaste que no entrenaste hoy. Si confirmás el descarte, esas sesiones se eliminarán. Esta acción no se puede deshacer.</p>
-            <div class="campo">
-                <div class="lbl">Confirmar descarte de sesiones</div>
-                {{ binario('confirm_discard_sessions', 'si' if (form and form.get('confirm_discard_sessions') == 'si') else 'no') }}
-            </div>
-        </div>
-    </div>
-    {% endif %}
 
     <!-- Comentarios -->
     <div class="card">

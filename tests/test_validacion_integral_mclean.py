@@ -18,7 +18,7 @@ def test_flujo_atleta_profesor_con_historico_y_mclean(client, db, enabled):
     db.add(historico); db.commit()
 
     entrar(client, athlete)
-    invalid = data(client, sesion_minutos=["0", "40"], comentarios="borrador inválido")
+    invalid = data(client, tipo_entrenamiento_diario="invalido", comentarios="borrador inválido")
     response = client.post("/parte", data=invalid, follow_redirects=False)
     assert response.status_code == 422 and "borrador inválido" in response.text
     assert db.query(ParteDiaria).count() == 1
@@ -27,14 +27,14 @@ def test_flujo_atleta_profesor_con_historico_y_mclean(client, db, enabled):
     actual = db.query(ParteDiaria).filter_by(fecha=hoy()).one()
     assert (actual.mclean_sueno, actual.mclean_fatiga, actual.mclean_dolor_muscular,
             actual.mclean_estres, actual.mclean_animo) == (4, 5, 3, 2, 1)
-    assert [s.carga_sesion for s in actual.sesiones] == [150, 280]
+    assert actual.tipo_entrenamiento_diario == "aerobico" and not actual.sesiones
     body.update(edit_state_token=token(client), sesion_id=[str(s.id) for s in actual.sesiones],
                 comentarios="borrador anterior")
     actual.comentarios = "cambio simultáneo"; db.commit()
     conflict = client.post("/parte", data=body, follow_redirects=False)
     assert conflict.status_code == 409 and "borrador anterior" in conflict.text
     db.refresh(actual)
-    assert actual.comentarios == "cambio simultáneo" and len(actual.sesiones) == 2
+    assert actual.comentarios == "cambio simultáneo" and not actual.sesiones
 
     entrar(client, teacher)
     ficha = client.get(f"/atletas/{athlete.id}")
@@ -46,7 +46,7 @@ def test_flujo_atleta_profesor_con_historico_y_mclean(client, db, enabled):
     stats = client.get("/estadisticas", params={"desde": ayer.isoformat(), "hasta": hoy().isoformat()})
     assert stats.status_code == 200
     assert "carga almacenada total 999" in stats.text
-    assert "carga almacenada total 430" in stats.text
+    assert "Tipos de entrenamiento diarios" in stats.text and "Aeróbico · 1" in stats.text
     db.expire_all()
     assert historico.sesiones[0].carga_sesion == 999
     assert (historico.sueno_calidad, historico.fatiga, historico.dolor_muscular,

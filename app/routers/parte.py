@@ -337,18 +337,6 @@ def _render_form(request, user, db, *, parte=None, form=None, errors=None,
     }, status_code=status_code)
 
 
-def _mclean_rows(form, parte):
-    if form is not None:
-        fields = [form.getlist(name) for name in ("sesion_id", "sesion_tipo", "sesion_minutos", "sesion_rpe")]
-        count = max((len(items) for items in fields), default=0)
-        return [dict(zip(("id", "tipo", "minutos", "rpe"),
-                         (items[i] if i < len(items) else "" for items in fields)))
-                for i in range(count)]
-    rows = [{"id": str(s.id), "tipo": s.tipo_entrenamiento, "minutos": str(s.duracion_min), "rpe": str(s.rpe)}
-            for s in (parte.sesiones if parte else []) if s.tipo_duracion == "trabajo_principal"]
-    return rows + [{"id": "", "tipo": "", "minutos": "", "rpe": ""} for _ in range(3)]
-
-
 def _render_mclean(request, user, parte, *, form=None, errors=None, message=None,
                    conflict=False, edit_state_token=None, discard_token=None, review_token=None, status_code=200):
     return templates.TemplateResponse(request, "atleta/parte_mclean.html", {
@@ -356,8 +344,6 @@ def _render_mclean(request, user, parte, *, form=None, errors=None, message=None
                         conflict=conflict, edit_state_token=edit_state_token, discard_token=discard_token),
         "mclean_items": MCLEAN_ITEMS, "session_types": MCLEAN_TYPES,
         "review_token": review_token,
-        "rows": _mclean_rows(form, parte),
-        "historical_sessions": [s for s in (parte.sesiones if parte else []) if s.tipo_duracion == "no_especificada"],
     }, status_code=status_code)
 
 
@@ -369,46 +355,8 @@ def _parse_mclean_form(form, parte):
     payload.update(version_cuestionario="mclean_1_5", molestia_zona=_parse_zonas(form.get("molestia_zona", "")))
     for name in ("hay_molestia", "sintomas_enfermedad", "entreno_hoy"):
         payload[name] = _parse_bool(form.get(name))
-    delete_ids = []
-    for raw in form.getlist("delete_session_ids"):
-        try:
-            value = _parse_positive_int(raw, name="ID de sesión a eliminar")
-            if value in delete_ids:
-                raise FormParseError("ID de sesión a eliminar duplicado.")
-            delete_ids.append(value)
-        except FormParseError as exc:
-            errors.append(exc.message)
-    fields = [form.getlist(name) for name in ("sesion_id", "sesion_tipo", "sesion_minutos", "sesion_rpe")]
-    if len({len(items) for items in fields}) != 1:
-        errors.append("Las sesiones enviadas son inválidas.")
-        payload["sessions"] = []
-        return payload, delete_ids, errors
-    sessions = []
-    seen = set()
-    existing = {s.id: s for s in (parte.sesiones if parte else [])}
-    for index, (sid, tipo, minutos, rpe) in enumerate(zip(*fields), 1):
-        if not any((sid, tipo, minutos, rpe)):
-            continue
-        try:
-            sid = _parse_positive_int(sid, name="ID de sesión") if sid else None
-            if sid and sid in seen:
-                raise FormParseError("ID de sesión duplicado.")
-            if sid:
-                seen.add(sid)
-            if sid in delete_ids:
-                continue
-            if tipo not in dict(MCLEAN_TYPES) and not (sid in existing and existing[sid].tipo_entrenamiento == tipo):
-                raise FormParseError(f"Sesión {index}: tipo inválido.")
-            sessions.append({"id": sid, "orden": index, "tipo_entrenamiento": tipo,
-                "duracion_min": _parse_positive_int(minutos, name=f"Sesión {index}: minutos"),
-                "rpe": _parse_positive_int(rpe, name=f"Sesión {index}: RPE"),
-                "comentarios_entrenamiento": existing[sid].comentarios_entrenamiento if sid in existing else None})
-        except FormParseError as exc:
-            errors.append(exc.message)
-    if sum(1 for session in sessions if session["id"] is None) > 3:
-        errors.append("Podés añadir como máximo tres sesiones nuevas por guardado.")
-    payload["sessions"] = sessions if payload["entreno_hoy"] else []
-    return payload, delete_ids, errors
+    payload["tipo_entrenamiento_diario"] = form.get("tipo_entrenamiento_diario", "")
+    return payload, [], errors
 
 
 @router.get("", response_class=HTMLResponse)
@@ -467,7 +415,7 @@ async def guardar(
         result = pd.save_daily_record(db, atleta_id=user.id, payload=payload,
             edit_state_token=effective_token, discard_token=form.get("discard_token"),
             confirm_discard_sessions=_parse_bool(form.get("confirm_discard_sessions")),
-            explicit_delete_session_ids=delete_ids or None, contrato_sesiones="trabajo_principal", fecha=target_date)
+            explicit_delete_session_ids=delete_ids or None, contrato_sesiones="tipo_diario", fecha=target_date)
         if result.ok:
             return RedirectResponse(url="/parte?ok=1", status_code=302)
         current = result.parte or parte

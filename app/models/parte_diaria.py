@@ -53,6 +53,7 @@ MOLESTIA_ZONAS = (
 class ParteDiaria(Base):
     __tablename__ = "partes_diarios"
     __table_args__ = (
+        CheckConstraint("tipo_entrenamiento_diario IS NULL OR tipo_entrenamiento_diario IN ('aerobico','lactico','velocidad','fuerza')", name="ck_partes_tipo_entrenamiento_diario"),
         UniqueConstraint("atleta_id", "fecha", name="uq_parte_diaria_atleta_fecha"),
         Index("ix_partes_diarios_atleta_fecha", "atleta_id", "fecha"),
         Index("ix_partes_diarios_fecha", "fecha"),
@@ -127,6 +128,7 @@ class ParteDiaria(Base):
 
     comentarios = Column(Text, nullable=True)
     entreno_hoy = Column(Boolean, nullable=False)
+    tipo_entrenamiento_diario = Column(String(16), nullable=True)
 
     enviado = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

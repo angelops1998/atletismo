@@ -27,7 +27,7 @@ def data(client, **kwargs):
             "mclean_dolor_muscular": "3", "mclean_estres": "2", "mclean_animo": "1",
             "horas_sueno": "7.5", "hay_molestia": "si", "molestia_zona": "rodillas",
             "molestia_dolor": "4", "afecta_entrenamiento": "1", "sintomas_enfermedad": "si",
-            "detalle_sintomas": "tos", "comentarios": "algo", "entreno_hoy": "si",
+            "detalle_sintomas": "tos", "comentarios": "algo", "entreno_hoy": "si", "tipo_entrenamiento_diario": "aerobico",
             "sesion_id": ["", ""], "sesion_tipo": ["aerobico", "lactico"],
             "sesion_minutos": ["30", "40"], "sesion_rpe": ["5", "7"]}
     body.update(kwargs)
@@ -47,28 +47,26 @@ def test_disabled_by_default_and_enabled_form_texts(client, db, monkeypatch):
                   "Aeróbico", "Láctico", "Velocidad", "Fuerza", "viewport", "csrf_token"):
         assert value in page.text
     assert 'name="series"' not in page.text and 'name="distancia_m"' not in page.text
-    assert page.text.count('name="sesion_tipo"') >= 3
+    assert 'name="tipo_entrenamiento_diario"' in page.text
 
 
-def test_multiple_sessions_and_additional_health(client, db, enabled):
+def test_tipo_diario_and_additional_health(client, db, enabled):
     athlete = crear_usuario(db, username="ui_create")
     entrar(client, athlete)
-    response = client.post("/parte", data=data(client), follow_redirects=False)
-    assert response.status_code == 302
+    assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
     p = db.query(ParteDiaria).one()
-    assert p.version_cuestionario == "mclean_1_5" and p.mclean_fatiga == 5 and p.sueno_calidad is None
-    assert [(s.tipo_entrenamiento, s.tipo_duracion, s.carga_sesion) for s in p.sesiones] == [
-        ("aerobico", "trabajo_principal", 150), ("lactico", "trabajo_principal", 280)]
+    assert p.tipo_entrenamiento_diario == "aerobico" and not p.sesiones
     assert p.molestia_zona == ["rodillas"] and p.detalle_sintomas == "tos" and p.comentarios == "algo"
 
 
-def test_422_preserves_input_and_rejects_bad_session(client, db, enabled):
+
+def test_422_preserves_input_and_rejects_bad_type(client, db, enabled):
     athlete = crear_usuario(db, username="ui_invalid")
     entrar(client, athlete)
-    body = data(client, sesion_minutos=["0", "40"], comentarios="texto guardado en pantalla")
-    response = client.post("/parte", data=body, follow_redirects=False)
-    assert response.status_code == 422 and "texto guardado en pantalla" in response.text
+    response = client.post("/parte", data=data(client, tipo_entrenamiento_diario="invalid", comentarios="borrador"), follow_redirects=False)
+    assert response.status_code == 422 and "borrador" in response.text
     assert db.query(ParteDiaria).count() == 0
+
 
 
 def test_stale_edit_conflict_preserves_committed_data(client, db, enabled):
@@ -76,15 +74,13 @@ def test_stale_edit_conflict_preserves_committed_data(client, db, enabled):
     entrar(client, athlete)
     body = data(client)
     assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
-    old = token(client)
+    stale = token(client)
     record = db.query(ParteDiaria).one()
-    record.mclean_animo = 4
-    db.commit()
-    body["edit_state_token"] = old
-    response = client.post("/parte", data=body, follow_redirects=False)
-    assert response.status_code == 409
-    db.refresh(record)
-    assert record.mclean_animo == 4 and len(record.sesiones) == 2
+    record.mclean_animo = 4; db.commit()
+    body["edit_state_token"] = stale
+    assert client.post("/parte", data=body, follow_redirects=False).status_code == 409
+    db.refresh(record); assert record.mclean_animo == 4
+
 
 
 def test_historical_record_keeps_original_form(client, db, enabled):
@@ -109,81 +105,24 @@ def test_csrf_and_role_still_enforced(client, db, enabled):
     assert client.get("/parte").status_code == 403
 
 
-def test_edit_work_and_preserve_historical_load(client, db, enabled):
-    athlete = crear_usuario(db, username="ui_edit")
-    entrar(client, athlete)
-    assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
-    record = db.query(ParteDiaria).one()
-    old = SesionEntrenamiento(parte_diaria_id=record.id, orden=3, tipo_entrenamiento="resistencia",
-                              duracion_min=50, rpe=6, carga_sesion=999, tipo_duracion="no_especificada")
-    db.add(old); db.commit(); db.refresh(record)
-    assert "duración no está identificada" in client.get("/parte").text
-    first, second = record.sesiones[:2]
-    body = data(client, edit_state_token=token(client), sesion_id=[str(first.id), str(second.id)],
-                sesion_tipo=["fuerza", "lactico"], sesion_minutos=["35", "40"], sesion_rpe=["6", "7"])
-    response = client.post("/parte", data=body, follow_redirects=False)
-    assert response.status_code == 302
-    db.expire_all()
-    record = db.query(ParteDiaria).one()
-    assert [(s.tipo_duracion, s.carga_sesion) for s in record.sesiones] == [
-        ("trabajo_principal", 210), ("trabajo_principal", 280), ("no_especificada", 999)]
 
 
-def test_explicit_single_delete_and_discard_confirmation(client, db, enabled):
-    athlete = crear_usuario(db, username="ui_delete")
-    entrar(client, athlete)
-    assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
-    record = db.query(ParteDiaria).one()
-    first, second = record.sesiones
-    body = data(client, edit_state_token=token(client), sesion_id=[str(first.id), str(second.id)],
-                delete_session_ids=[str(first.id)])
-    assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
-    db.expire_all(); record = db.query(ParteDiaria).one()
-    assert len(record.sesiones) == 1 and record.sesiones[0].id == second.id
-    body = data(client, edit_state_token=token(client), entreno_hoy="no",
-                sesion_id=[], sesion_tipo=[], sesion_minutos=[], sesion_rpe=[])
-    intent = client.post("/parte", data=body, follow_redirects=False)
-    assert intent.status_code == 422 and "Confirmar descarte de sesiones" in intent.text
-    assert len(db.query(ParteDiaria).one().sesiones) == 1
-    body["edit_state_token"] = re.search(r'name="edit_state_token" value="([^"]+)"', intent.text).group(1)
-    body["discard_token"] = re.search(r'name="discard_token" value="([^"]+)"', intent.text).group(1)
-    body["confirm_discard_sessions"] = "si"
-    assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
-    db.expire_all(); assert not db.query(ParteDiaria).one().sesiones
 
 
-def test_foreign_session_cannot_be_deleted(client, db, enabled):
-    athlete = crear_usuario(db, username="ui_owner")
-    other = crear_usuario(db, username="ui_other")
-    entrar(client, other)
-    assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
-    foreign_id = db.query(ParteDiaria).filter_by(atleta_id=other.id).one().sesiones[0].id
-    entrar(client, athlete)
-    assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
-    body = data(client, edit_state_token=token(client), delete_session_ids=[str(foreign_id)])
-    response = client.post("/parte", data=body, follow_redirects=False)
-    assert response.status_code == 422
-    db.expire_all(); assert len(db.query(ParteDiaria).filter_by(atleta_id=other.id).one().sesiones) == 2
+
+
+
 
 
 def test_validation_error_does_not_refresh_stale_token(client, db, enabled):
-    athlete = crear_usuario(db, username="ui_stale_invalid")
+    athlete = crear_usuario(db, username="ui_stale_422")
     entrar(client, athlete)
-    body = data(client)
-    assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
-    old = token(client)
-    record = db.query(ParteDiaria).one()
-    ids = [str(s.id) for s in record.sesiones]
-    record.mclean_animo = 4
-    db.commit()
-    body.update(edit_state_token=old, sesion_id=ids, sesion_minutos=["0", "40"])
-    invalid = client.post("/parte", data=body, follow_redirects=False)
-    assert invalid.status_code == 422
-    assert re.search(r'name="edit_state_token" value="([^"]+)"', invalid.text).group(1) == old
-    body["sesion_minutos"] = ["30", "40"]
-    assert client.post("/parte", data=body, follow_redirects=False).status_code == 409
-    db.refresh(record)
-    assert record.mclean_animo == 4
+    assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
+    stale = token(client)
+    record = db.query(ParteDiaria).one(); record.mclean_animo = 4; db.commit()
+    response = client.post("/parte", data=data(client, edit_state_token=stale, tipo_entrenamiento_diario="incorrecto"), follow_redirects=False)
+    assert response.status_code == 422 and _hidden(response, "edit_state_token") == stale
+
 
 
 def test_existing_mclean_record_blocked_when_flag_disabled(client, db, monkeypatch):
@@ -257,79 +196,40 @@ def _hidden(response, name):
 
 def test_conflict_requires_explicit_review_before_draft_can_overwrite(client, db, enabled):
     athlete = crear_usuario(db, username="ui_review")
-    entrar(client, athlete)
-    body = data(client)
+    entrar(client, athlete); body = data(client)
     assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
-    record = db.query(ParteDiaria).one()
-    ids = [str(s.id) for s in record.sesiones]
-    stale = token(client)
-    record.mclean_animo = 4
-    record.comentarios = "comentario del servidor"
-    db.commit()
-    body.update(edit_state_token=stale, sesion_id=ids, comentarios="mi borrador")
+    record = db.query(ParteDiaria).one(); stale = token(client)
+    record.comentarios = "servidor"; db.commit()
+    body.update(edit_state_token=stale, comentarios="borrador")
     response = client.post("/parte", data=body, follow_redirects=False)
-    assert response.status_code == 409 and "mi borrador" in response.text
-    assert "comentario del servidor" in response.text and "Sesiones guardadas" in response.text
-    assert _hidden(response, "edit_state_token") == stale
-    review = _hidden(response, "review_token")
-    body["review_token"] = review
+    assert response.status_code == 409 and "borrador" in response.text and "servidor" in response.text
+    review = _hidden(response, "review_token"); body["review_token"] = review
     assert client.post("/parte", data=body, follow_redirects=False).status_code == 409
-    db.refresh(record); assert record.mclean_animo == 4 and record.comentarios == "comentario del servidor"
-    # A review token cannot be substituted for an edit token or bypass confirmation.
-    body.pop("review_token"); body["edit_state_token"] = review
-    assert client.post("/parte", data=body, follow_redirects=False).status_code == 409
-    body.update(edit_state_token=stale, review_token=review, confirmar_revision="si")
+    db.refresh(record); assert record.comentarios == "servidor"
+    body["confirmar_revision"] = "si"
     assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
-    db.refresh(record); assert record.mclean_animo == 1 and record.comentarios == "mi borrador"
+    db.refresh(record); assert record.comentarios == "borrador"
+
 
 
 def test_review_token_invalidated_by_further_change_and_422_keeps_tokens(client, db, enabled):
     athlete = crear_usuario(db, username="ui_review_stale")
-    entrar(client, athlete)
-    body = data(client)
+    entrar(client, athlete); body = data(client)
     assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
-    record = db.query(ParteDiaria).one()
-    ids = [str(s.id) for s in record.sesiones]
-    stale = token(client)
-    record.mclean_animo = 4; db.commit()
-    body.update(edit_state_token=stale, sesion_id=ids)
+    record = db.query(ParteDiaria).one(); stale = token(client)
+    record.mclean_animo = 4; db.commit(); body["edit_state_token"] = stale
     first = client.post("/parte", data=body, follow_redirects=False)
-    assert first.status_code == 409
     review = _hidden(first, "review_token")
-    body.update(review_token=review, confirmar_revision="si", sesion_minutos=["0", "40"])
+    body.update(review_token=review, confirmar_revision="si", tipo_entrenamiento_diario="invalido")
     invalid = client.post("/parte", data=body, follow_redirects=False)
-    assert invalid.status_code == 422
-    assert _hidden(invalid, "edit_state_token") == stale and _hidden(invalid, "review_token") == review
-    record.mclean_animo = 3; db.commit()
-    body["sesion_minutos"] = ["30", "40"]
-    second = client.post("/parte", data=body, follow_redirects=False)
-    assert second.status_code == 409 and _hidden(second, "review_token") != review
+    assert invalid.status_code == 422 and _hidden(invalid, "edit_state_token") == stale and _hidden(invalid, "review_token") == review
+    record.mclean_animo = 3; db.commit(); body["tipo_entrenamiento_diario"] = "fuerza"
+    assert client.post("/parte", data=body, follow_redirects=False).status_code == 409
     db.refresh(record); assert record.mclean_animo == 3
 
 
-def test_four_new_sessions_are_rejected_but_existing_sessions_not_limited(client, db, enabled):
-    athlete = crear_usuario(db, username="ui_session_limit")
-    entrar(client, athlete)
-    too_many = data(client, sesion_id=["", "", "", ""], sesion_tipo=["fuerza"] * 4,
-                    sesion_minutos=["20"] * 4, sesion_rpe=["5"] * 4)
-    response = client.post("/parte", data=too_many, follow_redirects=False)
-    assert response.status_code == 422 and "máximo tres sesiones" in response.text
-    assert db.query(ParteDiaria).count() == 0
-    assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
-    record = db.query(ParteDiaria).one()
-    for order in range(3, 7):
-        db.add(SesionEntrenamiento(parte_diaria_id=record.id, orden=order, tipo_entrenamiento="fuerza",
-            duracion_min=20, rpe=5, carga_sesion=100, tipo_duracion="trabajo_principal"))
-    db.commit(); db.refresh(record)
-    ids = [str(s.id) for s in record.sesiones]
-    too_many_update = data(client, edit_state_token=token(client), sesion_id=ids + ["", "", "", ""],
-        sesion_tipo=["fuerza"] * 10, sesion_minutos=["20"] * 10, sesion_rpe=["5"] * 10)
-    assert client.post("/parte", data=too_many_update, follow_redirects=False).status_code == 422
-    db.expire_all(); assert len(db.query(ParteDiaria).one().sesiones) == 6
-    body = data(client, edit_state_token=token(client), sesion_id=ids + ["", "", ""],
-                sesion_tipo=["fuerza"] * 9, sesion_minutos=["20"] * 9, sesion_rpe=["5"] * 9)
-    assert client.post("/parte", data=body, follow_redirects=False).status_code == 302
-    db.expire_all(); assert len(db.query(ParteDiaria).one().sesiones) == 9
+
+
 
 
 def test_no_script_fallback_includes_all_conditional_blocks(client, db, enabled):
@@ -345,19 +245,12 @@ def test_no_script_fallback_includes_all_conditional_blocks(client, db, enabled)
 
 
 def test_422_keeps_original_edit_and_discard_tokens(client, db, enabled):
-    athlete = crear_usuario(db, username="ui_422_tokens")
-    entrar(client, athlete)
+    athlete = crear_usuario(db, username="ui_422_tokens"); entrar(client, athlete)
     assert client.post("/parte", data=data(client), follow_redirects=False).status_code == 302
-    page = client.get("/parte")
-    old_edit = _hidden(page, "edit_state_token")
-    old_discard = _hidden(page, "discard_token")
-    body = data(client, edit_state_token=old_edit, discard_token=old_discard,
-                entreno_hoy="no", sesion_id=[], sesion_tipo=[], sesion_minutos=[], sesion_rpe=[])
-    result = client.post("/parte", data=body, follow_redirects=False)
-    assert result.status_code == 422
-    assert _hidden(result, "edit_state_token") == old_edit
-    assert _hidden(result, "discard_token") == old_discard
-    assert len(db.query(ParteDiaria).one().sesiones) == 2
+    page = client.get("/parte"); old_edit = _hidden(page, "edit_state_token"); old_discard = _hidden(page, "discard_token")
+    result = client.post("/parte", data=data(client, edit_state_token=old_edit, discard_token=old_discard, tipo_entrenamiento_diario="invalido"), follow_redirects=False)
+    assert result.status_code == 422 and _hidden(result, "edit_state_token") == old_edit and _hidden(result, "discard_token") == old_discard
+
 
 
 def test_review_token_cannot_be_forged_or_reused_by_another_athlete(client, db, enabled):

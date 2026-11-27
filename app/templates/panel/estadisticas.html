@@ -59,7 +59,9 @@
         {% if grupo.cantidad %}<p>{{ etiqueta }}: {{ grupo.cantidad }} sesiones · {{ grupo.minutos }} minutos · RPE promedio {{ '%.1f'|format(grupo.rpe_promedio) }} · carga almacenada total {{ grupo.carga }}.</p>{% endif %}
         {% endfor %}
         <p class="apunte">Los minutos y cargas se agrupan por tipo de duración; se usa la carga almacenada.</p>
-        <p><strong>Sesiones realizadas por tipo</strong></p>
+        <p><strong>Tipos de entrenamiento diarios</strong></p>
+        <div class="item-chips">{% for tipo, etiqueta in [('aerobico', 'Aeróbico'), ('lactico', 'Láctico'), ('velocidad', 'Velocidad'), ('fuerza', 'Fuerza')] %}<span class="chip">{{ etiqueta }} · {{ resumen.tipos_diarios.get(tipo, 0) }}</span>{% endfor %}</div>
+        <p><strong>Sesiones realizadas por tipo (históricas)</strong></p>
         <div class="item-chips">{% for tipo, etiqueta in [('aerobico', 'Aeróbico'), ('lactico', 'Láctico'), ('velocidad', 'Velocidad'), ('fuerza', 'Fuerza')] %}<span class="chip">{{ etiqueta }} · {{ resumen.sesiones.tipos_realizados.get(tipo, 0) }}</span>{% endfor %}</div>
         <p class="apunte">Los tipos históricos de sesión se conservan en el total de sesiones.</p>
         <p><strong>Estructuras principales planificadas</strong></p>

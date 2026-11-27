@@ -148,6 +148,9 @@ def test_full_chain_preserves_schema_history_and_existing_flow(isolated_connecti
             _assert_rejected(conn, f"UPDATE partes_diarios SET {field}=:value WHERE id=2", {"value": value})
     _assert_rejected(conn, "UPDATE partes_diarios SET sueno_calidad=1 WHERE id=2")
     _assert_rejected(conn, "UPDATE partes_diarios SET version_cuestionario='desconocida' WHERE id=2")
+    # The current ORM expects all subsequent additive migrations.
+    _upgrade("a82d51f4c930", conn, monkeypatch)
+    _upgrade("b395c7281e4a", conn, monkeypatch)
     # Existing service can update historical rows while preserving omitted sessions.
     with Session(bind=conn, join_transaction_mode="create_savepoint") as db:
         record, token, _ = svc.get_today_state(db, 1, date(2026, 11, 23))
@@ -189,7 +192,7 @@ def test_real_alembic_upgrade_tracks_revision_in_rolled_back_schema(isolated_con
     conn.execute(text("INSERT INTO users (id,username,hashed_password) VALUES (1,'alembic_prueba','x')"))
     conn.execute(text("""INSERT INTO partes_diarios (id,atleta_id,fecha,sueno_calidad,fatiga,dolor_muscular,estres,animo,horas_sueno,comentarios,entreno_hoy)
         VALUES (1,1,'2026-11-23',10,9,8,7,6,7.5,'conservar',false)"""))
-    command.upgrade(config, "head")
+    command.upgrade(config, "a82d51f4c930")
     assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "a82d51f4c930"
     assert tuple(conn.execute(text("SELECT sueno_calidad, fatiga, comentarios, version_cuestionario FROM partes_diarios WHERE id=1")).one()) == (10, 9, "conservar", "historico_1_10")
     # The new types downgrade is safe when unused; McLean downgrade remains blocked.
@@ -198,6 +201,25 @@ def test_real_alembic_upgrade_tracks_revision_in_rolled_back_schema(isolated_con
     with pytest.raises(RuntimeError, match="Downgrade no disponible"):
         command.downgrade(config, "e8a4f670c11d")
     assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "f2a7c94b1d30"
+
+
+def test_tipo_diario_migration_preserves_sessions_and_blocks_downgrade(isolated_connection, monkeypatch):
+    conn = isolated_connection
+    for revision in (*CHAIN, "a82d51f4c930"):
+        _upgrade(revision, conn, monkeypatch)
+    conn.execute(text("INSERT INTO users (id,username,hashed_password) VALUES (1,'tipo_diario','x')"))
+    conn.execute(text("""INSERT INTO partes_diarios (id,atleta_id,fecha,sueno_calidad,fatiga,dolor_muscular,estres,animo,horas_sueno,entreno_hoy)
+        VALUES (1,1,'2026-11-24',10,9,8,7,6,8,true)"""))
+    conn.execute(text("""INSERT INTO sesiones_entrenamiento (id,parte_diaria_id,orden,tipo_entrenamiento,duracion_min,rpe,carga_sesion)
+        VALUES (1,1,1,'fuerza',30,5,999)"""))
+    migration = _upgrade("b395c7281e4a", conn, monkeypatch)
+    assert conn.execute(text("SELECT tipo_entrenamiento_diario FROM partes_diarios")).scalar_one() is None
+    assert conn.execute(text("SELECT carga_sesion FROM sesiones_entrenamiento")).scalar_one() == 999
+    for tipo in ("aerobico", "lactico", "velocidad", "fuerza"):
+        conn.execute(text("UPDATE partes_diarios SET tipo_entrenamiento_diario=:tipo"), {"tipo": tipo})
+    _assert_rejected(conn, "UPDATE partes_diarios SET tipo_entrenamiento_diario='incorrecto'")
+    with pytest.raises(RuntimeError, match="Downgrade bloqueado"):
+        migration.downgrade()
 
 
 def test_new_type_migration_preserves_history_and_guards_downgrade(isolated_connection, monkeypatch):
